@@ -16,8 +16,8 @@ tool for planning our endurance line-ups. About 10 minutes, no coding.
 **3. Make a page for it**
 - Create a new page called "Team Builder".
 - Make it visible to logged-in team members (members-only / behind login), not fully
-  public. The tool itself handles the rest: admins can edit the plan, and everyone
-  else who can log in sees the same plan read-only.
+  public. Any logged-in member who opens the page can use and edit the shared plan
+  (only the plugin Settings page, with the API keys, stays admin-only).
 - Add a Shortcode block containing exactly: [edr_team_builder]
 - Publish.
 

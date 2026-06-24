@@ -55,8 +55,9 @@ Folder `edr-team-builder/`:
 - `INSTALL.md`, `HANDOFF.md` — install + site-manager notes.
 
 **Model (V2):** ONE **shared plan** stored in WP options (`edr_tb_plan`), read by everyone via
-`GET /wp-json/edr/v1/plan`, written by editors via `POST .../plan`. **Admins edit, members view
-read-only.** Credentials are one shared set in the settings page (server-side only, never sent
+`GET /wp-json/edr/v1/plan`, written by any logged-in member via `POST .../plan`. **The admin gate
+was removed: any logged-in member can edit; only the settings page (API keys) stays admin-only.**
+Credentials are one shared set in the settings page (server-side only, never sent
 to the browser). The Setup tab **auto-selects the nearest event** and pulls on an admin
 **Import / Refresh now** button (no cron). Survey-phase availability still needs the bookmarklet
 (admin clicks it on the logged-in iRacePlan survey page, pastes the JSON into the tool).
@@ -83,7 +84,7 @@ They go in the plugin's Settings → EDR Team Builder. For local pulls, pass via
 
 ## State / what's done vs pending
 - ✅ Front-end (builder.js) verified live in a browser against a **mocked** API: import,
-  name-match review, bookmarklet paste, shared-plan save/load, admin-edit vs member read-only.
+  name-match review, bookmarklet paste, shared-plan save/load (open to any logged-in member).
 - ✅ PHP backend is a faithful port of Python already validated against the live APIs.
 - ⏳ **Not yet run on a real WordPress install** (the original dev box had no PHP/Docker).
   Next step: install the V2 zip on a WP site (or local wp-env/Docker), enter the two tokens,
