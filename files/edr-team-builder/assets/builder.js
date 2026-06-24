@@ -35,19 +35,20 @@ const APP_HTML=`
 `;
 const _app=document.getElementById('edr-tb-app'); if(!_app){return;} _app.innerHTML=APP_HTML;
 
-const KEY = 'edrTeamBuilder_glen_v5';
+const KEY = 'edrTeamBuilder_spa_v6'; /* Spa 24h — S3 pace, survey 2307 availability */
 
-// --- Glen event timing (for the Stints tab) ---
-// Availability window starts 2026-06-19 22:00 UTC (= 20 Jun 08:00 Brisbane). All offsets in minutes from there.
-let WIN_START_MS = Date.parse('2026-06-19T22:00:00Z');
-let START_OFFSETS = {1:0, 2:540, 3:840, 4:1080, 5:1560};
-let START_LABELS = {1:'22:00Z', 2:'07:00Z', 3:'12:00Z', 4:'16:00Z', 5:'00:00Z'};
+// --- Spa 24h event timing (for the Stints tab) ---
+// Availability window starts 2026-07-10 22:00 UTC (= 11 Jul 08:00 Brisbane). All offsets in minutes from there.
+// 4 candidate start slots (iRacePlan survey 2307 session_times).
+let WIN_START_MS = Date.parse('2026-07-10T22:00:00Z');
+let START_OFFSETS = {1:0, 2:540, 3:840, 4:1080};
+let START_LABELS = {1:'22:00Z', 2:'07:00Z', 3:'12:00Z', 4:'16:00Z'};
 
-// Real Glen data: Garage 61 pace (all sessions, Watkins Glen Boot) + iRacePlan availability, merged.
-// Drivers with laps:0 / medianLap:null have no Watkins-Boot pace yet (seeded from car preference).
+// Spa 24h: Garage 61 pace (iRacing 2026 Season 3 only, from 2026-06-16; age=-1) for the 18 drivers in iRacePlan survey 2307.
+// Availability merged from iRacePlan survey 2307 timeline (green = available). Empty cars = no Spa data shared.
 const SAMPLE = [];
 
-let state = { drivers:[], w:{pace:50,clean:30,prep:20}, proPct:40, tab:'teams', teams:{}, stint:{window:5,len:60,race:360}, stintAssign:{}, stintWin:{}, stintSig:'' };
+let state = { drivers:[], w:{pace:50,clean:30,prep:20}, proPct:40, tab:'teams', teams:{}, stint:{window:1,len:120,race:1440}, stintAssign:{}, stintWin:{}, stintSig:'' };
 
 function seed(list){
   let id=1;
@@ -116,6 +117,13 @@ function buildPool(pool){
   }
   return teams.map(t=>t.map(d=>d.id));
 }
+const PRESET_TEAMS = {"GTP":[["Jake Lennox-Bradley","John Nyhouse","Erik van der Bijl"]],"GT3":[["Chris Wilson","Matt Halden","Sam Millar","Tom Williams"],["Thomaz Hernandes","Valentin Ozhiganov","Jarrod Williams"],["Dominic Bou-Samra","Michael Cullen","Sam Mackenzie","Joey Tavora"]]};
+function applyPreset(){
+  const byName={}; state.drivers.forEach(d=>byName[d.name]=d.id);
+  const next={};
+  Object.keys(PRESET_TEAMS).forEach(cls=>{ next[cls]={pro:PRESET_TEAMS[cls].map(car=>car.map(n=>byName[n]).filter(x=>x!=null)).filter(c=>c.length),casual:[]}; });
+  state.teams=next; state.stintAssign={}; state.stintSig=''; save();
+}
 function generate(){
   const model=computeModel(); const next={};
   Object.keys(model).forEach(cls=>{
@@ -130,28 +138,34 @@ function esc(s){ return String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;',
 function renderSummary(model){
   const classes=Object.keys(model);
   document.getElementById('summary').innerHTML =
-    '<span>Watkins Glen (Boot) · 6h</span><span>'+state.drivers.length+' drivers · '+classes.length+' classes</span>'+
+    '<span>Spa-Francorchamps (Endurance) · 24h</span><span>'+state.drivers.length+' drivers · '+classes.length+' classes</span>'+
     classes.map(c=>'<span style="color:var(--dim)">'+esc(c)+'</span>').join('');
 }
 
 function renderTeams(byId){
   const classes=Object.keys(state.teams);
-  if(!classes.length) return '<div class="meta">Hit Generate to build teams.</div>';
+  if(!classes.length) return '<div class="meta">Hit Generate or load teams.</div>';
+  // dropdown lists EVERY car (both tiers, all classes) so any driver can go anywhere
+  function moveOpts(curC,curT,curJ){
+    let o='';
+    classes.forEach(c=>['pro','casual'].forEach(t=>{ (state.teams[c][t]||[]).forEach((_,j)=>{ const v=c+'|'+t+'|'+j; const sel=(c===curC&&t===curT&&j===curJ)?' selected':''; o+='<option value="'+v+'"'+sel+'>'+esc(c)+' '+t[0].toUpperCase()+(j+1)+'</option>'; }); }));
+    return o;
+  }
   let html='';
   classes.forEach(cls=>{
-    html+='<div style="margin-bottom:28px"><h2 style="font-size:16px;letter-spacing:2px;margin:0 0 12px;border-bottom:1px solid var(--line);padding-bottom:8px">'+esc(cls)+'</h2>';
+    html+='<div style="margin-bottom:26px"><h2 style="font-size:16px;letter-spacing:.06em;text-transform:uppercase;margin:0 0 14px;border-bottom:2px solid var(--yellow);padding-bottom:8px;color:#fff">'+esc(cls)+'</h2>';
     [['pro','PRO','var(--gold)'],['casual','CASUAL','var(--steel)']].forEach(([tier,label,col])=>{
       const list=(state.teams[cls]&&state.teams[cls][tier])||[];
-      html+='<div style="margin-bottom:16px"><div style="display:flex;align-items:center;gap:8px;margin-bottom:10px"><span class="swatch" style="background:'+col+'"></span><span class="head" style="letter-spacing:2px;font-size:13px">'+label+'</span></div><div class="grid">';
+      html+='<div style="margin-bottom:16px"><div style="display:flex;align-items:center;gap:10px;margin-bottom:10px"><span class="swatch" style="background:'+col+'"></span><span class="head" style="letter-spacing:2px;font-size:13px;color:'+col+'">'+label+'</span><button class="btn btn-ghost" data-action="addcar" data-class="'+esc(cls)+'" data-tier="'+tier+'" style="font-size:10px;padding:3px 9px">+ car</button></div><div class="grid">';
       list.forEach((team,ti)=>{
         const members=team.map(id=>byId[id]).filter(Boolean);
         const meds=members.map(m=>m._median).filter(x=>x!=null);
         const avg=meds.length?meds.reduce((a,b)=>a+b,0)/meds.length:null;
-        html+='<div class="card" style="animation-delay:'+(ti*0.05)+'s"><div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:8px"><span class="head" style="color:'+col+';letter-spacing:1px">'+label[0]+(ti+1)+'</span><span class="meta">avg '+fmtLap(avg)+'</span></div>';
+        html+='<div class="card"><div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:8px"><span class="head" style="color:'+col+';letter-spacing:1px">'+label[0]+(ti+1)+'</span><span class="meta">avg '+fmtLap(avg)+(members.length?'':' <span data-action="delcar" data-class="'+esc(cls)+'" data-tier="'+tier+'" data-idx="'+ti+'" title="remove empty car" style="color:var(--red);cursor:pointer;font-size:13px">✕</span>')+'</span></div>';
         members.forEach(d=>{
-          let opts=''; list.forEach((_,j)=>{opts+='<option value="'+j+'"'+(j===ti?' selected':'')+'>'+label[0]+(j+1)+'</option>';});
-          html+='<div class="mem"><div style="min-width:0"><div style="font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'+esc(d.name)+'</div><div style="font-size:10px;color:var(--dim)">'+fmtLap(d._median)+' · '+d._laps+' laps · '+Math.round(d._clean*100)+'% clean'+(d.avail?' · <span style="color:'+(d.avail.pct>=80?'var(--green)':d.avail.pct>=40?'var(--amber)':'var(--red)')+'">'+d.avail.pct+'% avail</span>':'')+'</div></div><select data-action="move" data-class="'+esc(cls)+'" data-tier="'+tier+'" data-id="'+d.id+'">'+opts+'</select></div>';
+          html+='<div class="mem"><div style="min-width:0"><div style="font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'+esc(d.name)+'</div><div style="font-size:10px;color:var(--dim)">'+fmtLap(d._median)+' · '+d._laps+' laps · '+Math.round(d._clean*100)+'% clean'+(d.avail?' · <span style="color:'+(d.avail.pct>=80?'var(--green)':d.avail.pct>=40?'var(--amber)':'var(--red)')+'">'+d.avail.pct+'% avail</span>':'')+'</div></div><select data-action="move" data-id="'+d.id+'">'+moveOpts(cls,tier,ti)+'</select></div>';
         });
+        if(!members.length) html+='<div class="meta">empty</div>';
         html+='</div>';
       });
       html+='</div></div>';
@@ -230,7 +244,7 @@ function renderStints(byId){
   if(state.stintSig!==sig){ state.stintAssign={}; state.stintSig=sig; }  // block length / teams changed -> fresh auto-plan
   let html='<div class="importbox" style="display:flex;gap:18px;flex-wrap:wrap;align-items:flex-end">';
   html+='<div class="ctl"><label>DEFAULT START (UTC)</label><select data-action="stintwin">'+
-    [1,2,3,4,5].map(w=>'<option value="'+w+'"'+(w===state.stint.window?' selected':'')+'>#'+w+' · '+START_LABELS[w]+'</option>').join('')+'</select></div>';
+    [1,2,3,4].map(w=>'<option value="'+w+'"'+(w===state.stint.window?' selected':'')+'>#'+w+' · '+START_LABELS[w]+'</option>').join('')+'</select></div>';
   html+='<div class="ctl"><label>BLOCK LENGTH (min)</label><input type="number" min="10" max="240" step="5" value="'+state.stint.len+'" data-action="stintlen" style="width:90px;padding:6px"></div>';
   html+='<div class="ctl"><label>RACE LENGTH (min)</label><input type="number" min="30" max="1440" step="10" value="'+state.stint.race+'" data-action="stintrace" style="width:90px;padding:6px"></div>';
   html+='<button class="btn btn-ghost" data-action="stintreset" style="align-self:center">Auto-fill all</button>';
@@ -250,6 +264,15 @@ function renderStints(byId){
       +'<div class="meta">'+s.covered+'/'+s.cars+' cars coverable</div></button>';
   });
   html+='</div></div>';
+  // driver bank — drag any name onto any stint block
+  const bankByCls={}; Object.values(byId).forEach(d=>{(bankByCls[d._class]=bankByCls[d._class]||[]).push(d);});
+  Object.keys(bankByCls).forEach(c=>bankByCls[c].sort((a,b)=>a.name.localeCompare(b.name)));
+  html+='<div class="importbox" style="margin-bottom:16px"><div class="meta" style="margin-bottom:6px;text-transform:uppercase;letter-spacing:.04em">Driver bank — drag a name onto any block. (P)=Pro (C)=Casual</div><div style="display:flex;flex-wrap:wrap;align-items:center;gap:2px">';
+  Object.keys(bankByCls).sort().forEach(c=>{
+    html+='<span class="meta" style="margin:0 4px">'+esc(c)+'</span>';
+    html+=bankByCls[c].map(d=>'<span class="chip" data-bankchip data-driver="'+d.id+'" style="cursor:grab;user-select:none;touch-action:none">'+esc(d.name.split(' ')[0])+(d._tier==='pro'?' (P)':' (C)')+'</span>').join('');
+  });
+  html+='<span class="chip" data-bankchip data-driver="" style="cursor:grab;user-select:none;touch-action:none;color:var(--red);margin-left:8px">✕ empty</span></div></div>';
   classes.forEach(cls=>{
     [['pro','PRO','var(--gold)'],['casual','CASUAL','var(--steel)']].forEach(([tier,label,col])=>{
       const list=(state.teams[cls]&&state.teams[cls][tier])||[];
@@ -266,13 +289,15 @@ function renderStints(byId){
         let gaps=0, conflicts=0;
         const cells=arr.map((id,i)=>{
           const t=times[i];
-          if(id==null){ gaps++; return '<td data-stintcell data-key="'+key+'" data-block="'+i+'" draggable="true" style="padding:6px 10px;text-align:center;background:var(--panel2);color:var(--red);border:1px solid var(--line);cursor:grab">GAP</td>'; }
-          const m=byId[id]; const free=m&&driverFree(m,t.s,t.e); if(!free) conflicts++;
-          const bg=free?'rgba(95,211,138,.16)':'rgba(255,90,106,.20)';
-          return '<td data-stintcell data-key="'+key+'" data-block="'+i+'" draggable="true" title="'+(free?'available':'NOT available this block')+'" style="padding:6px 10px;text-align:center;background:'+bg+';border:1px solid var(--line);cursor:grab;white-space:nowrap">'+esc(m?m.name.split(' ')[0]:'?')+(free?'':' !')+'</td>';
+          const m=id!=null?byId[id]:null;
+          const free=m?driverFree(m,t.s,t.e):false;
+          if(id==null) gaps++; else if(!free) conflicts++;
+          const bg=id==null?'var(--panel2)':(free?'rgba(95,211,138,.16)':'rgba(255,90,106,.20)');
+          const lbl=m?(esc(m.name.split(' ')[0])+(free?'':' <span style="color:var(--red)">!</span>')):'<span style="color:var(--dim)">drop here</span>';
+          return '<td data-stintcell data-key="'+key+'" data-block="'+i+'" data-driver="'+(id==null?'':id)+'" title="'+(m?(free?'available':'NOT available this block'):'empty')+'" style="padding:10px 12px;text-align:center;background:'+bg+';border:1px solid var(--line);white-space:nowrap;cursor:grab;user-select:none;touch-action:none">'+lbl+'</td>';
         }).join('');
         const badge = gaps? '<span class="meta" style="color:var(--red)">'+gaps+' empty</span>' : conflicts? '<span class="meta" style="color:var(--red)">'+conflicts+' conflict'+(conflicts>1?'s':'')+'</span>' : '<span class="meta" style="color:var(--green)">all covered</span>';
-        const winSel='<select data-action="carwin" data-key="'+key+'">'+[1,2,3,4,5].map(w=>'<option value="'+w+'"'+(w===win?' selected':'')+'>start #'+w+' · '+START_LABELS[w]+'</option>').join('')+'</select>';
+        const winSel='<select data-action="carwin" data-key="'+key+'">'+[1,2,3,4].map(w=>'<option value="'+w+'"'+(w===win?' selected':'')+'>start #'+w+' · '+START_LABELS[w]+'</option>').join('')+'</select>';
         const best=carBestWindow(team,byId,len,race);
         const curCovGaps=times.filter(t=>!members.some(m=>driverFree(m,t.s,t.e))).length;
         const bestHint=(best && best.gaps<curCovGaps)? '<span class="meta" style="color:var(--green);cursor:pointer;text-decoration:underline" data-action="usebest" data-key="'+key+'" data-win="'+best.w+'">better fit: #'+best.w+' '+START_LABELS[best.w]+' ('+(best.gaps?best.gaps+' gaps':'full cover')+'), use</span>' : '';
@@ -280,9 +305,9 @@ function renderStints(byId){
         html+='<div style="overflow-x:auto"><table style="border-collapse:collapse;font-size:12px;min-width:100%"><tr><td style="padding:6px 10px;color:var(--dim)">Block</td>';
         times.forEach((t,i)=>{ html+='<td style="padding:6px 10px;text-align:center;color:var(--dim);white-space:nowrap;border-left:1px solid var(--line)">'+(i+1)+'<br><span style="font-size:9px">'+fmtClock(t.s)+'</span></td>'; });
         html+='</tr><tr><td style="padding:6px 10px;color:var(--dim)">Driver</td>'+cells+'</tr></table></div>';
-        html+='<div class="meta" style="margin-top:8px">Drag a driver into a block (or drag blocks to swap):</div><div style="margin-top:2px">';
-        html+=members.map(m=>'<span class="chip" draggable="true" data-stintchip data-key="'+key+'" data-driver="'+m.id+'">'+esc(m.name.split(' ')[0])+' · '+count[m.id]+'×'+state.stint.len+'m · '+availBadge(m)+'</span>').join('');
-        html+='<span class="chip" draggable="true" data-stintchip data-key="'+key+'" data-driver="" style="color:var(--red)">✕ empty</span></div></div>';
+        const cnt={}; arr.forEach(id=>{ if(id!=null) cnt[id]=(cnt[id]||0)+1; });
+        const summ2=Object.keys(cnt).map(id=>esc((byId[id]?byId[id].name.split(' ')[0]:'?'))+': '+cnt[id]+'×'+state.stint.len+'m').join('  ·  ');
+        html+='<div class="meta" style="margin-top:7px">Drag from the bank above onto a block, or drag a block onto another to swap.  '+(summ2?'&nbsp; Stints: '+summ2:'')+'</div></div>';
       });
     });
   });
@@ -336,9 +361,10 @@ document.getElementById('content').addEventListener('change',e=>{
   const a=e.target.dataset.action;
   if(a==='assign'){ const d=state.drivers.find(x=>x.id==e.target.dataset.id); if(d){ d.assignedCar=e.target.value; save(); renderContent(); } }
   else if(a==='move'){
-    const cls=e.target.dataset.class, tier=e.target.dataset.tier, id=+e.target.dataset.id, to=+e.target.value;
-    const arr=state.teams[cls][tier].map(team=>team.filter(x=>x!==id)); arr[to].push(id);
-    state.teams[cls][tier]=arr; renderContent();
+    const id=+e.target.dataset.id, p=e.target.value.split('|'), tc=p[0], tt=p[1], tj=+p[2];
+    Object.keys(state.teams).forEach(c=>['pro','casual'].forEach(t=>{ if(state.teams[c][t]) state.teams[c][t]=state.teams[c][t].map(car=>car.filter(x=>x!==id)); }));
+    if(state.teams[tc] && state.teams[tc][tt] && state.teams[tc][tt][tj]) state.teams[tc][tt][tj].push(id);
+    save(); renderContent();
   }
   else if(a==='stintwin'){ state.stint.window=+e.target.value; state.stintWin={}; state.stintAssign={}; save(); renderContent(); }
   else if(a==='carwin'){ const k=e.target.dataset.key; state.stintWin[k]=+e.target.value; delete state.stintAssign[k]; save(); renderContent(); }
@@ -351,28 +377,42 @@ document.getElementById('content').addEventListener('click',e=>{
   if(e.target.dataset.action==='remove'){ state.drivers=state.drivers.filter(x=>x.id!=e.target.dataset.id); generate(); save(); renderContent(); }
   else if(e.target.dataset.action==='stintreset'){ state.stintAssign={}; state.stintSig=''; save(); renderContent(); }
   else if(e.target.dataset.action==='usebest'){ const k=e.target.dataset.key; state.stintWin[k]=+e.target.dataset.win; delete state.stintAssign[k]; save(); renderContent(); }
+  else if(e.target.dataset.action==='addcar'){ const c=e.target.dataset.class, t=e.target.dataset.tier||'pro'; if(!state.teams[c])state.teams[c]={pro:[],casual:[]}; state.teams[c][t].push([]); save(); renderContent(); }
+  else if(e.target.dataset.action==='delcar'){ const c=e.target.dataset.class,t=e.target.dataset.tier,j=+e.target.dataset.idx; if(state.teams[c]&&state.teams[c][t]&&state.teams[c][t][j]&&!state.teams[c][t][j].length){ state.teams[c][t].splice(j,1); save(); renderContent(); } }
 });
 
-// ---- stint drag & drop: swap two blocks, or drop a driver chip into a block (same car only) ----
-let _dragSrc=null;
+// ---- custom pointer drag (works in embedded previews where native drag-and-drop does not) ----
+// Drag a bank chip onto a block to assign anyone; drag a block onto another to swap/move.
+let _pd=null,_ghost=null;
 const _stintContent=document.getElementById('content');
-_stintContent.addEventListener('dragstart',e=>{
+function _drvName(id){ const d=state.drivers.find(x=>x.id==id); return d?d.name.split(' ')[0]:'?'; }
+function _ghostAt(x,y){ if(_ghost) _ghost.style.transform='translate('+(x+12)+'px,'+(y+12)+'px)'; }
+_stintContent.addEventListener('pointerdown',e=>{
+  const chip=e.target.closest&&e.target.closest('[data-bankchip]');
   const cell=e.target.closest&&e.target.closest('[data-stintcell]');
-  if(cell){ _dragSrc={kind:'cell',key:cell.dataset.key,block:+cell.dataset.block}; cell.style.opacity='.4'; }
-  else { const chip=e.target.closest&&e.target.closest('[data-stintchip]'); if(!chip)return; _dragSrc={kind:'chip',key:chip.dataset.key,driver:chip.dataset.driver}; }
-  if(e.dataTransfer){e.dataTransfer.effectAllowed='move'; try{e.dataTransfer.setData('text/plain','1');}catch(_){}}
+  if(chip){ _pd={kind:'bank',driver:chip.dataset.driver}; }
+  else if(cell){ if(cell.dataset.driver==='') return; _pd={kind:'cell',key:cell.dataset.key,block:+cell.dataset.block,driver:cell.dataset.driver}; }
+  else return;
+  e.preventDefault();
+  _ghost=document.createElement('div');
+  _ghost.textContent=_pd.driver===''?'clear':_drvName(_pd.driver);
+  _ghost.style.cssText='position:fixed;left:0;top:0;z-index:99999;pointer-events:none;background:var(--yellow);color:#0a0a0a;font-family:Prompt,sans-serif;font-weight:700;font-size:12px;padding:4px 9px;border-radius:2px';
+  document.body.appendChild(_ghost); _ghostAt(e.clientX,e.clientY);
 });
-_stintContent.addEventListener('dragend',e=>{ const c=e.target.closest&&e.target.closest('[data-stintcell]'); if(c)c.style.opacity=''; });
-_stintContent.addEventListener('dragover',e=>{ if(e.target.closest&&e.target.closest('[data-stintcell]')) e.preventDefault(); });
-_stintContent.addEventListener('drop',e=>{
-  const c=e.target.closest&&e.target.closest('[data-stintcell]'); if(!c||!_dragSrc){_dragSrc=null;return;} e.preventDefault();
-  const k=c.dataset.key, b=+c.dataset.block, a=state.stintAssign[k];
-  if(a && k===_dragSrc.key){
-    if(_dragSrc.kind==='cell'){ const tmp=a[b]; a[b]=a[_dragSrc.block]; a[_dragSrc.block]=tmp; }
-    else { a[b]= _dragSrc.driver===''? null : (+_dragSrc.driver); }
-    save(); renderContent();
+document.addEventListener('pointermove',e=>{ if(_pd) _ghostAt(e.clientX,e.clientY); });
+document.addEventListener('pointerup',e=>{
+  if(_pd){
+    const el=document.elementFromPoint(e.clientX,e.clientY);
+    const cell=el&&el.closest&&el.closest('[data-stintcell]');
+    if(cell){ const k=cell.dataset.key,b=+cell.dataset.block,a=state.stintAssign[k];
+      if(a){
+        if(_pd.kind==='bank'){ a[b]=_pd.driver===''?null:(+_pd.driver); save(); renderContent(); }
+        else if(k===_pd.key){ const tmp=a[b]; a[b]=a[_pd.block]; a[_pd.block]=tmp; save(); renderContent(); }
+        else { a[b]=+_pd.driver; save(); renderContent(); }
+      }
+    }
   }
-  _dragSrc=null;
+  if(_ghost){ _ghost.remove(); _ghost=null; } _pd=null;
 });
 
 

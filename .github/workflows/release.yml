@@ -1,0 +1,57 @@
+name: Release plugin
+
+# Push a version tag (e.g. v2.0.1) to build the plugin and publish a GitHub
+# Release with the installable zip attached:
+#   git tag v2.0.1 && git push origin v2.0.1
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
+
+      - name: Resolve version from tag
+        id: ver
+        run: echo "v=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+
+      - name: Build plugin assets from the HTML source
+        run: python files/edr-team-builder/build/assemble_builder.py
+
+      - name: Stamp plugin version to match the tag
+        run: |
+          php=files/edr-team-builder/edr-team-builder.php
+          sed -i "s/^\( \* Version: \).*/\1${{ steps.ver.outputs.v }}/" "$php"
+          sed -i "s/define('EDR_TB_VER', '[^']*')/define('EDR_TB_VER', '${{ steps.ver.outputs.v }}')/" "$php"
+
+      - name: Verify build output
+        run: |
+          js=files/edr-team-builder/assets/builder.js
+          test -s "$js"
+          test "$(wc -c < "$js")" -gt 20000
+          grep -q 'const SAMPLE = \[\];' "$js"
+          grep -q "state.tab==='setup'" "$js"
+
+      - name: Package plugin zip
+        run: |
+          cd files
+          zip -r "$GITHUB_WORKSPACE/edr-team-builder-${{ steps.ver.outputs.v }}.zip" edr-team-builder \
+            -x '*/.DS_Store' '*/build/*'
+
+      - name: Publish GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: EDR Team Builder ${{ steps.ver.outputs.v }}
+          generate_release_notes: true
+          files: edr-team-builder-${{ steps.ver.outputs.v }}.zip
+          fail_on_unmatched_files: true

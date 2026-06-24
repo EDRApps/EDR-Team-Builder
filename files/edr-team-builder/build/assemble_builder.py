@@ -1,7 +1,9 @@
 #!/usr/bin/env python3
 import re, os
-SRC="/Users/hernandes/Library/Mobile Documents/com~apple~CloudDocs/EDR/Planning/files/EDR-Team-Builder.html"
-OUT="/Users/hernandes/Library/Mobile Documents/com~apple~CloudDocs/EDR/Planning/files/edr-team-builder/assets"
+# Paths are repo-relative by default (works in CI); override with EDR_SRC / EDR_OUT.
+_HERE = os.path.dirname(os.path.abspath(__file__))                      # files/edr-team-builder/build
+SRC = os.environ.get("EDR_SRC", os.path.normpath(os.path.join(_HERE, "..", "..", "EDR-Team-Builder.html")))
+OUT = os.environ.get("EDR_OUT", os.path.normpath(os.path.join(_HERE, "..", "assets")))
 os.makedirs(OUT, exist_ok=True)
 html=open(SRC,encoding="utf-8").read()
 

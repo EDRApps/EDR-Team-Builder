@@ -1,0 +1,57 @@
+name: Build plugin
+
+# Build and validate the WordPress plugin on every change, and publish the
+# built zip as a downloadable artifact (no release — see release.yml for that).
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'files/EDR-Team-Builder.html'
+      - 'files/edr-team-builder/**'
+      - '.github/workflows/**'
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
+
+      - name: Build plugin assets from the HTML source
+        run: python files/edr-team-builder/build/assemble_builder.py
+
+      - name: Verify build output
+        run: |
+          js=files/edr-team-builder/assets/builder.js
+          test -s "$js"
+          test "$(wc -c < "$js")" -gt 20000
+          grep -q 'const SAMPLE = \[\];' "$js"      # embedded sample data was stripped
+          grep -q "state.tab==='setup'" "$js"       # Setup tab wired in
+          test -s files/edr-team-builder/assets/builder.css
+
+      - name: Lint PHP
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y -qq php-cli
+          find files/edr-team-builder -name '*.php' -print0 | xargs -0 -n1 php -l
+
+      - name: Package plugin zip
+        run: |
+          cd files
+          zip -r "$GITHUB_WORKSPACE/edr-team-builder.zip" edr-team-builder \
+            -x '*/.DS_Store' '*/build/*'
+
+      - name: Upload built plugin
+        uses: actions/upload-artifact@v4
+        with:
+          name: edr-team-builder-plugin
+          path: edr-team-builder.zip
+          if-no-files-found: error
