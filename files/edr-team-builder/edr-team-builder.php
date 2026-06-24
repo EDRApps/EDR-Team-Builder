@@ -72,7 +72,7 @@ function edr_tb_settings_page() {
  * REST API  (/wp-json/edr/v1/...)  — capability gated
  * ---------------------------------------------------------------- */
 add_action('rest_api_init', function () {
-    $perm = function () { return current_user_can('edit_posts'); }; // logged-in team admins
+    $perm = function () { return is_user_logged_in(); }; // any logged-in member (admin gate removed)
     register_rest_route('edr/v1', '/tracks', array(
         'methods' => 'GET', 'permission_callback' => $perm, 'callback' => 'edr_tb_rest_tracks',
     ));
@@ -82,7 +82,7 @@ add_action('rest_api_init', function () {
     register_rest_route('edr/v1', '/import', array(
         'methods' => 'POST', 'permission_callback' => $perm, 'callback' => 'edr_tb_rest_import',
     ));
-    // shared plan: anyone logged in can read; only editors can write
+    // shared plan: any logged-in member can read and write
     register_rest_route('edr/v1', '/plan', array(
         array('methods' => 'GET',  'permission_callback' => 'is_user_logged_in', 'callback' => 'edr_tb_rest_plan_get'),
         array('methods' => 'POST', 'permission_callback' => $perm,               'callback' => 'edr_tb_rest_plan_set'),
@@ -92,7 +92,7 @@ add_action('rest_api_init', function () {
 function edr_tb_rest_plan_get() {
     return rest_ensure_response(array(
         'plan'     => get_option('edr_tb_plan', null),
-        'can_edit' => current_user_can('edit_posts'),
+        'can_edit' => is_user_logged_in(),
         'updated'  => get_option('edr_tb_plan_updated', ''),
     ));
 }
@@ -152,7 +152,7 @@ add_shortcode('edr_team_builder', function () {
         'root'  => esc_url_raw(rest_url('edr/v1/')),
         'nonce' => wp_create_nonce('wp_rest'),
         'logo'  => EDR_TB_URL . 'assets/edr_logo.png',
-        'can_edit' => current_user_can('edit_posts'),
+        'can_edit' => is_user_logged_in(),
     ));
     return '<div id="edr-tb-app"><noscript>This tool needs JavaScript.</noscript></div>';
 });

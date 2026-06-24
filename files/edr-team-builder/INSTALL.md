@@ -26,10 +26,11 @@ Pro/Casual teams and stint plans for an event. Built for endurotechracing.com.
    ```
 3. Publish. Open the page while logged in.
 
-## 4. Use it (shared plan: admins edit, members view)
+## 4. Use it (shared plan: any logged-in member can edit)
 There is **one shared team plan** stored on the site. Everyone who opens the page sees
-the same thing. Admins/editors can change it; everyone else sees it **read-only**
-(no Setup tab, no controls) and just views Teams / Drivers / Stints.
+the same thing, and **any logged-in member can edit it** (Setup tab, controls, save) —
+the admin gate has been removed. Only the **Settings page** (which holds the API keys)
+stays admin-only.
 
 As an admin, on the **Setup** tab: the **nearest event is auto-selected**; pick the
 **track** (Garage 61) and press **Import / Refresh now**.
