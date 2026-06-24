@@ -1,0 +1,57 @@
+/* EDR Team Builder styles (generated from EDR-Team-Builder.html) */
+#edr-tb-app{display:block}
+:root{
+    --bg:#0a0a0a; --navy:#1e1e42; --panel:#15152e; --panel2:#1d1d3a; --line:#2e2e55;
+    --text:#ffffff; --body:#cccccc; --dim:#8b8fb0;
+    --amber:#f0f000; --yellow:#f0f000; --yellowH:#d6d600;
+    --gold:#f0f000; --steel:#9aa3c0; --green:#5fd38a; --red:#ff5a6a;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--body);font-family:'Karla',system-ui,sans-serif;padding-bottom:60px}
+  h1,h2,.head{font-family:'Prompt','Karla',sans-serif}
+  @keyframes up{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
+  ::-webkit-scrollbar{height:8px;width:8px}::-webkit-scrollbar-thumb{background:var(--line);border-radius:4px}
+  .header{border-bottom:2px solid var(--yellow);background:var(--navy);padding:16px 18px;display:flex;align-items:center;gap:18px;flex-wrap:wrap}
+  .header img{height:48px;width:auto}
+  .controls{padding:16px;border-bottom:1px solid var(--line);display:flex;flex-wrap:wrap;gap:16px;align-items:flex-end;background:#0d0d1f}
+  .ctl{flex:1 1 140px;min-width:130px}
+  .ctl label{font-size:11px;color:var(--dim);display:block;margin-bottom:6px;text-transform:uppercase;letter-spacing:.04em}
+  input[type=range]{width:100%}
+  .btn{border:none;border-radius:2px;padding:9px 15px;font-size:12px;font-family:'Prompt',sans-serif;font-weight:600;letter-spacing:.06em;text-transform:uppercase;cursor:pointer;display:inline-flex;gap:6px;align-items:center}
+  .btn-amber,.btn-green{background:var(--yellow);color:#0a0a0a}
+  .btn-amber:hover,.btn-green:hover{background:var(--yellowH)}
+  .btn-ghost{background:transparent;color:var(--yellow);border:1px solid var(--yellow)}
+  .btn-ghost:hover{background:var(--yellow);color:#0a0a0a}
+  .tabs{display:flex;padding:0 16px;border-bottom:1px solid var(--line);background:#0d0d1f}
+  .tab{background:none;border:none;color:var(--dim);padding:14px 18px;font-size:12px;letter-spacing:.12em;cursor:pointer;text-transform:uppercase;font-family:'Prompt',sans-serif;font-weight:600;border-bottom:2px solid transparent}
+  .tab.active{color:#fff;border-bottom-color:var(--yellow)}
+  .wrap{padding:16px}
+  .classhdr{font-family:'Prompt',sans-serif;font-weight:700;font-size:16px;letter-spacing:.06em;text-transform:uppercase;margin:0 0 12px;border-bottom:2px solid var(--yellow);padding-bottom:8px;color:#fff}
+  .classhdr small{color:var(--dim);font-size:11px;letter-spacing:0;text-transform:none;font-weight:400}
+  .row{background:var(--panel);border:1px solid var(--line);border-radius:3px;padding:10px;display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+  .row.pro{border-left:3px solid var(--gold)} .row.casual{border-left:3px solid var(--steel)}
+  select,textarea,input[type=text],input[type=number]{background:#0a0a0a;color:var(--text);border:1px solid var(--line);border-radius:2px;font-family:'Karla',sans-serif}
+  select{font-size:12px;padding:5px 6px}
+  .meta{font-size:11px;color:var(--dim)}
+  .tier{font-size:11px;font-family:'Prompt',sans-serif;font-weight:600;letter-spacing:.04em}
+  .tier.pro{color:var(--gold)} .tier.casual{color:var(--steel)}
+  .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:12px}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:3px;padding:13px;animation:up .4s both}
+  .card .head{color:#fff}
+  .mem{background:var(--panel2);border-radius:2px;padding:7px 9px;display:flex;justify-content:space-between;align-items:center;gap:8px}
+  .x{background:none;border:none;color:var(--dim);cursor:pointer;margin-left:auto;font-size:16px}
+  .swatch{width:12px;height:12px;border-radius:2px;display:inline-block}
+  .importbox{background:var(--panel);border:1px solid var(--line);border-radius:3px;padding:12px;margin-bottom:12px}
+  .importbox textarea{width:100%;min-height:90px;padding:8px;font-size:12px;resize:vertical}
+  .status{color:var(--yellow);font-size:12px;align-self:center}
+  .chip{display:inline-block;padding:5px 9px;margin:4px 5px 0 0;background:var(--panel2);border:1px solid var(--line);border-radius:2px;font-size:12px;cursor:grab;color:var(--body)}
+  .chip:hover{border-color:var(--yellow)}
+  .hide{display:none}
+.edr-setup .ctl{min-width:220px}
+.edr-setup select,.edr-setup input{padding:7px;font-size:13px}
+.edr-match{font-size:12px}
+/* read-only mode for non-admin members */
+.readonly .controls{display:none}
+.readonly .tabs .tab[data-tab="setup"]{display:none}
+.readonly #content select,.readonly #content .chip,.readonly #content [data-stintcell],.readonly #content button{pointer-events:none;opacity:.85}
+.readonly .x{display:none}

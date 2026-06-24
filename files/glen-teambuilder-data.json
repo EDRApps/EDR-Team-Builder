@@ -1,0 +1,572 @@
+[
+  {
+    "name": "Chris Wilson",
+    "cars": {
+      "Porsche 911 GT3 R (992)": {
+        "laps": 128,
+        "medianLap": 106.522,
+        "cleanPct": 0.5
+      },
+      "Ford Mustang GT3": {
+        "laps": 102,
+        "medianLap": 105.493,
+        "cleanPct": 0.569
+      },
+      "Ferrari 296 GT3": {
+        "laps": 16,
+        "medianLap": 105.659,
+        "cleanPct": 0.688
+      },
+      "BMW M4 GT3 EVO": {
+        "laps": 12,
+        "medianLap": 105.606,
+        "cleanPct": 0.667
+      }
+    },
+    "avail": {
+      "hours": 33.0,
+      "pct": 100,
+      "starts": [
+        1,
+        2,
+        3,
+        4,
+        5
+      ],
+      "windows": [
+        [
+          0,
+          1980
+        ]
+      ]
+    }
+  },
+  {
+    "name": "Matt Halden",
+    "cars": {
+      "Porsche 911 GT3 R (992)": {
+        "laps": 39,
+        "medianLap": 107.119,
+        "cleanPct": 0.564
+      },
+      "BMW M4 GT3 EVO": {
+        "laps": 25,
+        "medianLap": 107.378,
+        "cleanPct": 0.56
+      },
+      "Ferrari 296 GT3": {
+        "laps": 10,
+        "medianLap": 107.124,
+        "cleanPct": 0.4
+      },
+      "Super Formula Lights": {
+        "laps": 23,
+        "medianLap": 98.865,
+        "cleanPct": 0.696
+      }
+    },
+    "avail": {
+      "hours": 19.0,
+      "pct": 58,
+      "starts": [
+        1,
+        5
+      ],
+      "windows": [
+        [
+          0,
+          420
+        ],
+        [
+          540,
+          840
+        ],
+        [
+          1560,
+          1980
+        ]
+      ]
+    }
+  },
+  {
+    "name": "Thomaz Hernandes",
+    "cars": {
+      "Ferrari 296 GT3": {
+        "laps": 140,
+        "medianLap": 105.987,
+        "cleanPct": 0.6
+      },
+      "Porsche 911 GT3 R (992)": {
+        "laps": 50,
+        "medianLap": 108.412,
+        "cleanPct": 0.48
+      },
+      "Ford Mustang GT3": {
+        "laps": 20,
+        "medianLap": 106.272,
+        "cleanPct": 0.5
+      },
+      "Dallara P217": {
+        "laps": 0,
+        "medianLap": null,
+        "cleanPct": 0
+      }
+    },
+    "avail": {
+      "hours": 33.0,
+      "pct": 100,
+      "starts": [
+        1,
+        2,
+        3,
+        4,
+        5
+      ],
+      "windows": [
+        [
+          0,
+          1980
+        ]
+      ]
+    }
+  },
+  {
+    "name": "Valentin Ozhiganov",
+    "cars": {
+      "Ferrari 296 GT3": {
+        "laps": 102,
+        "medianLap": 104.871,
+        "cleanPct": 0.539
+      },
+      "Mercedes-AMG GT3 2020": {
+        "laps": 11,
+        "medianLap": 106.198,
+        "cleanPct": 0.364
+      },
+      "Porsche 911 GT3 R (992)": {
+        "laps": 9,
+        "medianLap": 105.905,
+        "cleanPct": 0.333
+      },
+      "Ford Mustang GT3": {
+        "laps": 7,
+        "medianLap": 105.388,
+        "cleanPct": 0.286
+      },
+      "Dallara P217": {
+        "laps": 0,
+        "medianLap": null,
+        "cleanPct": 0
+      }
+    },
+    "avail": {
+      "hours": 7.0,
+      "pct": 21,
+      "starts": [
+        1
+      ],
+      "windows": [
+        [
+          0,
+          420
+        ]
+      ]
+    }
+  },
+  {
+    "name": "Dominic Bou-Samra",
+    "cars": {
+      "Porsche 911 GT3 R (992)": {
+        "laps": 138,
+        "medianLap": 107.757,
+        "cleanPct": 0.551
+      },
+      "Ferrari 296 GT3": {
+        "laps": 14,
+        "medianLap": 105.101,
+        "cleanPct": 0.429
+      },
+      "Mercedes-AMG GT3 2020": {
+        "laps": 14,
+        "medianLap": 106.432,
+        "cleanPct": 0.357
+      },
+      "Ford Mustang GT4": {
+        "laps": 10,
+        "medianLap": 118.492,
+        "cleanPct": 0.6
+      }
+    },
+    "avail": {
+      "hours": 19.0,
+      "pct": 58,
+      "starts": [
+        1,
+        5
+      ],
+      "windows": [
+        [
+          0,
+          420
+        ],
+        [
+          540,
+          840
+        ],
+        [
+          1560,
+          1980
+        ]
+      ]
+    }
+  },
+  {
+    "name": "Michael Cullen",
+    "cars": {
+      "Porsche 911 GT3 R (992)": {
+        "laps": 94,
+        "medianLap": 108.603,
+        "cleanPct": 0.585
+      },
+      "Acura ARX-06 GTP": {
+        "laps": 25,
+        "medianLap": 97.605,
+        "cleanPct": 0.64
+      },
+      "BMW M4 GT3 EVO": {
+        "laps": 0,
+        "medianLap": null,
+        "cleanPct": 0
+      },
+      "Lamborghini Hurac\u00e1n GT3 EVO": {
+        "laps": 0,
+        "medianLap": null,
+        "cleanPct": 0
+      }
+    },
+    "avail": {
+      "hours": 14.0,
+      "pct": 42,
+      "starts": [
+        1,
+        5
+      ],
+      "windows": [
+        [
+          0,
+          420
+        ],
+        [
+          1560,
+          1980
+        ]
+      ]
+    }
+  },
+  {
+    "name": "Jake Lennox-Bradley",
+    "cars": {
+      "Acura ARX-06 GTP": {
+        "laps": 150,
+        "medianLap": 95.635,
+        "cleanPct": 0.66
+      }
+    },
+    "avail": {
+      "hours": 28.0,
+      "pct": 85,
+      "starts": [
+        2,
+        3,
+        4,
+        5
+      ],
+      "windows": [
+        [
+          300,
+          1980
+        ]
+      ]
+    }
+  },
+  {
+    "name": "John Nyhouse",
+    "cars": {
+      "Acura ARX-06 GTP": {
+        "laps": 304,
+        "medianLap": 95.726,
+        "cleanPct": 0.579
+      },
+      "Cadillac V-Series.R GTP": {
+        "laps": 58,
+        "medianLap": 98.428,
+        "cleanPct": 0.362
+      },
+      "Ford Mustang GT3": {
+        "laps": 12,
+        "medianLap": 107.519,
+        "cleanPct": 0.333
+      },
+      "BMW M4 GT3 EVO": {
+        "laps": 7,
+        "medianLap": 110.074,
+        "cleanPct": 0.286
+      },
+      "Acura NSX GT3 EVO 22": {
+        "laps": 6,
+        "medianLap": 106.843,
+        "cleanPct": 0.333
+      },
+      "Porsche 963 GTP": {
+        "laps": 2,
+        "medianLap": null,
+        "cleanPct": 0.0
+      },
+      "Dallara P217": {
+        "laps": 0,
+        "medianLap": null,
+        "cleanPct": 0
+      }
+    },
+    "avail": {
+      "hours": 33.0,
+      "pct": 100,
+      "starts": [
+        1,
+        2,
+        3,
+        4,
+        5
+      ],
+      "windows": [
+        [
+          0,
+          1980
+        ]
+      ]
+    }
+  },
+  {
+    "name": "Erik van der Bijl",
+    "cars": {
+      "Porsche 963 GTP": {
+        "laps": 18,
+        "medianLap": 95.7,
+        "cleanPct": 0.389
+      },
+      "Acura ARX-06 GTP": {
+        "laps": 12,
+        "medianLap": 98.563,
+        "cleanPct": 0.333
+      },
+      "Aston Martin Vantage GT3 EVO": {
+        "laps": 0,
+        "medianLap": null,
+        "cleanPct": 0
+      }
+    },
+    "avail": {
+      "hours": 33.0,
+      "pct": 100,
+      "starts": [
+        1,
+        2,
+        3,
+        4,
+        5
+      ],
+      "windows": [
+        [
+          0,
+          1980
+        ]
+      ]
+    }
+  },
+  {
+    "name": "Joey Tavora",
+    "cars": {
+      "Porsche 911 GT3 R (992)": {
+        "laps": 19,
+        "medianLap": 106.895,
+        "cleanPct": 0.526
+      },
+      "Dallara P217": {
+        "laps": 0,
+        "medianLap": null,
+        "cleanPct": 0
+      }
+    },
+    "avail": {
+      "hours": 33.0,
+      "pct": 100,
+      "starts": [
+        1,
+        2,
+        3,
+        4,
+        5
+      ],
+      "windows": [
+        [
+          0,
+          1980
+        ]
+      ]
+    }
+  },
+  {
+    "name": "Sam Millar",
+    "cars": {
+      "Porsche 911 GT3 R (992)": {
+        "laps": 327,
+        "medianLap": 107.373,
+        "cleanPct": 0.633
+      },
+      "Ferrari 296 GT3": {
+        "laps": 40,
+        "medianLap": 106.656,
+        "cleanPct": 0.6
+      }
+    },
+    "avail": {
+      "hours": 33.0,
+      "pct": 100,
+      "starts": [
+        1,
+        2,
+        3,
+        4,
+        5
+      ],
+      "windows": [
+        [
+          0,
+          1980
+        ]
+      ]
+    }
+  },
+  {
+    "name": "Sam Mackenzie",
+    "cars": {
+      "McLaren 720S GT3 EVO": {
+        "laps": 40,
+        "medianLap": 104.962,
+        "cleanPct": 0.625
+      },
+      "Porsche 911 GT3 R (992)": {
+        "laps": 33,
+        "medianLap": 105.819,
+        "cleanPct": 0.606
+      }
+    },
+    "avail": {
+      "hours": 33.0,
+      "pct": 100,
+      "starts": [
+        1,
+        2,
+        3,
+        4,
+        5
+      ],
+      "windows": [
+        [
+          0,
+          1980
+        ]
+      ]
+    }
+  },
+  {
+    "name": "Tom Williams",
+    "cars": {
+      "Porsche 911 GT3 R (992)": {
+        "laps": 37,
+        "medianLap": 107.951,
+        "cleanPct": 0.703
+      },
+      "Dallara P217": {
+        "laps": 0,
+        "medianLap": null,
+        "cleanPct": 0
+      },
+      "Mercedes-AMG GT3 2020": {
+        "laps": 0,
+        "medianLap": null,
+        "cleanPct": 0
+      },
+      "Late Model Stock": {
+        "laps": 42,
+        "medianLap": 118.98,
+        "cleanPct": 0.595
+      },
+      "EURO NASCAR V8GP": {
+        "laps": 1,
+        "medianLap": null,
+        "cleanPct": 0.0
+      }
+    },
+    "avail": {
+      "hours": 33.0,
+      "pct": 100,
+      "starts": [
+        1,
+        2,
+        3,
+        4,
+        5
+      ],
+      "windows": [
+        [
+          0,
+          1980
+        ]
+      ]
+    }
+  },
+  {
+    "name": "Jarrod Williams",
+    "cars": {
+      "Porsche 911 GT3 R (992)": {
+        "laps": 34,
+        "medianLap": 109.404,
+        "cleanPct": 0.353
+      },
+      "Dallara P217": {
+        "laps": 0,
+        "medianLap": null,
+        "cleanPct": 0
+      },
+      "Mercedes-AMG GT3 2020": {
+        "laps": 0,
+        "medianLap": null,
+        "cleanPct": 0
+      },
+      "Late Model Stock": {
+        "laps": 34,
+        "medianLap": 120.885,
+        "cleanPct": 0.5
+      },
+      "Audi RS3 LMS Gen2 TCR": {
+        "laps": 2,
+        "medianLap": null,
+        "cleanPct": 0.0
+      }
+    },
+    "avail": {
+      "hours": 7.0,
+      "pct": 21,
+      "starts": [
+        1
+      ],
+      "windows": [
+        [
+          0,
+          420
+        ]
+      ]
+    }
+  }
+]
