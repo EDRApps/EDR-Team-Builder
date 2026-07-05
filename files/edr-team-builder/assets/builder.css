@@ -57,6 +57,45 @@
   .chip{display:inline-block;padding:6px 12px;margin:4px 5px 0 0;background:var(--panel2);border:1px solid var(--line);border-radius:999px;font-size:12px;cursor:grab;color:var(--body);transition:border-color .15s,color .15s}
   .chip:hover{border-color:var(--yellow);color:#fff}
   .hide{display:none}
+  /* ---- roles ---- */
+  .rolechip{font-family:'Prompt',sans-serif;font-weight:700;font-size:11px;letter-spacing:.1em;padding:5px 13px;border-radius:999px;border:1px solid var(--line);color:var(--dim)}
+  .rolechip.admin{border-color:var(--yellow);color:var(--yellow);background:rgba(240,240,0,.07)}
+  .readonly .controls{display:none}
+  .readonly #content select,.readonly #content .chip,.readonly #content [data-stintcell],.readonly #content [data-lanecell],.readonly #content button{pointer-events:none;opacity:.85}
+  .readonly #content .x{display:none}
+  .readonly #content .avfree,.readonly #content .calrow.target,.readonly #content [data-action="calfilter"],.readonly #content [data-action="caltargets"],.readonly #content [data-action="calpast"]{pointer-events:auto;opacity:1}
+  /* ---- event calendar ---- */
+  .pitboard{background:linear-gradient(120deg,var(--panel2),var(--panel));border:1px solid var(--lineSoft);border-radius:var(--rxl);padding:16px 20px;margin-bottom:16px;display:flex;justify-content:space-between;align-items:center;gap:16px;flex-wrap:wrap;box-shadow:var(--shadow)}
+  .pitcount{text-align:center;background:rgba(240,240,0,.08);border:1px solid rgba(240,240,0,.4);border-radius:var(--rlg);padding:10px 22px}
+  .pitcount .num{font-family:'Prompt',sans-serif;font-weight:700;font-size:30px;color:var(--yellow);line-height:1}
+  .chip.calactive{background:var(--yellow);color:#0a0a0a;border-color:var(--yellow)}
+  .calweek{background:var(--panel);border:1px solid var(--lineSoft);border-radius:var(--rlg);padding:12px 14px;margin-bottom:10px}
+  .calrow{display:flex;gap:12px;align-items:center;padding:9px 10px;border-radius:var(--rmd);border:1px solid transparent;transition:border-color .15s,background .15s}
+  .calrow.target{cursor:pointer}
+  .calrow.target:hover{border-color:var(--steel);background:rgba(255,255,255,.03)}
+  .calrow.sel{border-color:var(--yellow);background:rgba(240,240,0,.06)}
+  .calrow.past{opacity:.45}
+  .calbadge{font-size:9.5px;font-family:'Prompt',sans-serif;font-weight:600;letter-spacing:.08em;text-transform:uppercase;padding:2px 8px;border-radius:999px;border:1px solid var(--line);color:var(--dim)}
+  .calbadge.tgt{border-color:rgba(240,240,0,.5);color:var(--yellow)}
+  .calbadge.selb{background:var(--yellow);color:#0a0a0a;border-color:var(--yellow)}
+  .calbadge.next{border-color:var(--green);color:var(--green)}
+  /* ---- availability matrix ---- */
+  .avmatrix{border-collapse:collapse;font-size:12px;min-width:100%}
+  .avmatrix th,.avmatrix td{padding:7px 9px;text-align:center;border:1px solid var(--lineSoft);white-space:nowrap}
+  .avmatrix th{font-family:'Prompt',sans-serif;font-weight:600;font-size:11px;color:#fff;background:rgba(255,255,255,.03)}
+  .avmatrix .slot{text-align:left;color:var(--dim);font-size:11px}
+  .avmatrix .dayhead td{background:rgba(240,240,0,.06);color:var(--yellow);font-family:'Prompt',sans-serif;font-weight:600;font-size:11px;letter-spacing:.06em;text-transform:uppercase;text-align:left}
+  .avmatrix .me{background:rgba(240,240,0,.05)}
+  .avmatrix th.me{color:var(--yellow)}
+  .avmatrix input[type=checkbox]{accent-color:var(--yellow);width:15px;height:15px;cursor:pointer}
+  .avmatrix input[type=checkbox]:disabled{cursor:not-allowed;opacity:.35}
+  .avmatrix .cov{font-family:'Prompt',sans-serif;font-weight:700}
+  .avmatrix .cov.c0{color:var(--red)} .avmatrix .cov.c1{color:var(--amber)} .avmatrix .cov.c2{color:var(--green)}
+  .avmatrix .totals td{color:#fff;font-family:'Prompt',sans-serif;background:rgba(255,255,255,.03)}
+  .sumgrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin-top:14px}
+  .sumcard{background:var(--panel);border:1px solid var(--lineSoft);border-radius:var(--rlg);padding:14px;text-align:center;box-shadow:var(--shadow)}
+  .sumcard .v{font-family:'Prompt',sans-serif;font-weight:700;font-size:24px;color:var(--yellow)}
+  .sumcard .k{font-size:11px;color:var(--dim);text-transform:uppercase;letter-spacing:.05em;margin-top:3px}
   /* ---- stint planner ---- */
   .winbtn{text-align:left;cursor:pointer;background:var(--panel);border:1px solid var(--line);border-radius:var(--rlg);padding:11px 14px;min-width:170px;color:var(--body);font-family:'Karla',sans-serif;transition:border-color .15s,transform .15s,background .15s}
   .winbtn:hover{transform:translateY(-1px);border-color:var(--steel)}
@@ -83,8 +122,5 @@
 .edr-setup .ctl{min-width:220px}
 .edr-setup select,.edr-setup input{padding:7px;font-size:13px}
 .edr-match{font-size:12px}
-/* read-only mode for non-admin members */
-.readonly .controls{display:none}
+/* generic read-only rules live in the HTML <style>; WP only hides the Setup tab for non-admins */
 .readonly .tabs .tab[data-tab="setup"]{display:none}
-.readonly #content select,.readonly #content .chip,.readonly #content [data-stintcell],.readonly #content [data-lanecell],.readonly #content button{pointer-events:none;opacity:.85}
-.readonly .x{display:none}

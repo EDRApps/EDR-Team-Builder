@@ -7,13 +7,25 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 A self-contained **WordPress plugin** (`edr-team-builder/`) that plans iRacing
 endurance line-ups for Endurotech Racing (endurotechracing.com). It pulls **pace**
 from Garage 61 and **availability** from iRacePlan, then builds Pro/Casual teams and
-stint rotations. Activated by the `[edr_team_builder]` shortcode. There is one shared
-plan stored in WordPress options: **anyone who can reach the page can read it**
-(`GET /plan` is public — the viewer gate was removed in 2.0.3 so members with only the
-page password, not a WP account, still see data; the page itself should stay
-private/password-protected). **Editing (POST /plan) and the import endpoints still
-require a logged-in user**, and only the Settings page, which stores the API keys,
-stays admin-only (`manage_options`).
+stint rotations. Activated by the `[edr_team_builder]` shortcode. Workflow (tab order):
+**Event (season calendar) → Availability (drivers tick 4h blocks) → Drivers → Teams →
+Stints**, with a role model on top:
+
+- **Driver (default, no account):** browses the calendar, picks an event, submits their
+  own availability. Everything else is read-only. `GET /plan`, `GET/POST /avail` are
+  public by design — the page itself should stay private/password-protected; that is the
+  only thing hiding team data from the web.
+- **Admin:** a logged-in WP user, or anyone who unlocks with the **builder admin
+  password** (the `edit_pass` field in plugin Settings, verified server-side via
+  `POST /auth`; sent as `X-EDR-Pass` on writes — see `edr_tb_req_can_edit()`). Admins
+  edit Drivers/Teams/Stints, run imports, and their plan saves persist. The standalone
+  HTML has its own hash-checked password (`ADMIN_HASH` in the file; default `edr2026`).
+- The WP Settings page (API keys + edit password) stays `manage_options` only.
+
+The season calendar is the `CAL_EVENTS` array in `EDR-Team-Builder.html` (shared by both
+builds — edit it there). Per-driver availability lives in the `edr_tb_avail` option keyed
+by event, and converts client-side to the `{hours, pct, starts, windows}` shape the
+scoring/stints already use (`slotsToAvail()`).
 
 ## Build
 
@@ -43,9 +55,12 @@ dir (see `edr-team-builder-V2.zip` one level up); install/usage steps are in
 **Server (PHP).** `edr-team-builder.php` is the plugin entry: settings page (stores
 `g61_token`, `irp_key`, `team_slug` server-side only), the `[edr_team_builder]`
 shortcode, and the REST API under `/wp-json/edr/v1/`:
-- `GET /tracks`, `GET /events`, `POST /import` — available to any logged-in user.
-- `GET /plan` (public) / `POST /plan` (any logged-in user) — the single shared plan,
-  stored in the `edr_tb_plan` option.
+- `GET /tracks`, `GET /events`, `POST /import`, `POST /plan` — logged-in user OR the
+  builder admin password (`X-EDR-Pass` header, `edr_tb_req_can_edit()`).
+- `GET /plan` (public) — the single shared plan, stored in the `edr_tb_plan` option.
+- `POST /auth` (public) — verifies the admin password for the builder's role unlock.
+- `GET/POST /avail` (public) — per-driver availability slots per event
+  (`edr_tb_avail` option); drivers submit without an account.
 
 `includes/` are thin API clients returning plain arrays:
 - `garage61.php` — `edr_g61_roster()` pulls `/laps` for the team at the chosen track(s)

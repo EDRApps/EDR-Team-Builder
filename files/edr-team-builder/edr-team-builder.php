@@ -2,7 +2,7 @@
 /**
  * Plugin Name: EDR Team Builder
  * Description: Endurotech Racing endurance team + stint planner. Pulls Garage 61 pace and iRacePlan availability, builds Pro/Casual teams and stint rotations. Add the [edr_team_builder] shortcode to a page.
- * Version: 2.0.3
+ * Version: 2.1.0
  * Author: Endurotech Racing
  * License: GPL-2.0-or-later
  */
@@ -11,7 +11,7 @@ if (!defined('ABSPATH')) exit; // no direct access
 
 define('EDR_TB_DIR', plugin_dir_path(__FILE__));
 define('EDR_TB_URL', plugin_dir_url(__FILE__));
-define('EDR_TB_VER', '2.0.3');
+define('EDR_TB_VER', '2.1.0');
 
 require_once EDR_TB_DIR . 'includes/garage61.php';
 require_once EDR_TB_DIR . 'includes/iraceplan.php';
@@ -25,7 +25,20 @@ function edr_tb_settings() {
         'g61_token'  => '',
         'irp_key'    => '',
         'team_slug'  => 'edr-endurotech',
+        'edit_pass'  => '',
     ));
+}
+
+/**
+ * Editing is allowed for logged-in users, or for anyone presenting the admin
+ * password (plugin Settings) in the X-EDR-Pass header — the team's planner
+ * does not have a WordPress account.
+ */
+function edr_tb_req_can_edit(WP_REST_Request $req) {
+    if (is_user_logged_in()) return true;
+    $s = edr_tb_settings();
+    $p = (string) $req->get_header('x-edr-pass');
+    return $s['edit_pass'] !== '' && $p !== '' && hash_equals($s['edit_pass'], $p);
 }
 
 add_action('admin_menu', function () {
@@ -38,6 +51,7 @@ add_action('admin_init', function () {
             'g61_token' => sanitize_text_field($in['g61_token'] ?? ''),
             'irp_key'   => sanitize_text_field($in['irp_key'] ?? ''),
             'team_slug' => sanitize_text_field($in['team_slug'] ?? 'edr-endurotech'),
+            'edit_pass' => sanitize_text_field($in['edit_pass'] ?? ''),
         );
     });
 });
@@ -60,6 +74,9 @@ function edr_tb_settings_page() {
             <p class="description">iRacePlan &rarr; Settings &rarr; API Keys.</p></td></tr>
           <tr><th scope="row">Garage 61 team slug</th>
             <td><input type="text" name="edr_tb_settings[team_slug]" value="<?php echo esc_attr($s['team_slug']); ?>" class="regular-text"></td></tr>
+          <tr><th scope="row">Builder admin password</th>
+            <td><input type="text" name="edr_tb_settings[edit_pass]" value="<?php echo esc_attr($s['edit_pass']); ?>" class="regular-text" autocomplete="off">
+            <p class="description">Whoever knows this password can unlock admin mode in the builder (edit Drivers / Teams / Stints and run imports) without a WordPress account. Leave empty to require WordPress login.</p></td></tr>
         </table>
         <?php submit_button(); ?>
       </form>
@@ -72,24 +89,81 @@ function edr_tb_settings_page() {
  * REST API  (/wp-json/edr/v1/...)  — capability gated
  * ---------------------------------------------------------------- */
 add_action('rest_api_init', function () {
-    $perm = function () { return is_user_logged_in(); }; // any logged-in member (admin gate removed)
+    // editing (imports, plan writes) = logged-in user OR the builder admin password
     register_rest_route('edr/v1', '/tracks', array(
-        'methods' => 'GET', 'permission_callback' => $perm, 'callback' => 'edr_tb_rest_tracks',
+        'methods' => 'GET', 'permission_callback' => 'edr_tb_req_can_edit', 'callback' => 'edr_tb_rest_tracks',
     ));
     register_rest_route('edr/v1', '/events', array(
-        'methods' => 'GET', 'permission_callback' => $perm, 'callback' => 'edr_tb_rest_events',
+        'methods' => 'GET', 'permission_callback' => 'edr_tb_req_can_edit', 'callback' => 'edr_tb_rest_events',
     ));
     register_rest_route('edr/v1', '/import', array(
-        'methods' => 'POST', 'permission_callback' => $perm, 'callback' => 'edr_tb_rest_import',
+        'methods' => 'POST', 'permission_callback' => 'edr_tb_req_can_edit', 'callback' => 'edr_tb_rest_import',
     ));
-    // shared plan: anyone who can reach the page can READ it (viewer gate removed);
-    // writing still requires a logged-in member. Keep the builder page itself
-    // private/password-protected — that is the only thing hiding the plan from the web.
+    // shared plan: anyone who can reach the page can READ it; writing needs edit rights.
+    // Keep the builder page itself private/password-protected — that is the only thing
+    // hiding the plan from the web.
     register_rest_route('edr/v1', '/plan', array(
-        array('methods' => 'GET',  'permission_callback' => '__return_true', 'callback' => 'edr_tb_rest_plan_get'),
-        array('methods' => 'POST', 'permission_callback' => $perm,           'callback' => 'edr_tb_rest_plan_set'),
+        array('methods' => 'GET',  'permission_callback' => '__return_true',        'callback' => 'edr_tb_rest_plan_get'),
+        array('methods' => 'POST', 'permission_callback' => 'edr_tb_req_can_edit',  'callback' => 'edr_tb_rest_plan_set'),
+    ));
+    // admin-password check for the builder's role unlock
+    register_rest_route('edr/v1', '/auth', array(
+        'methods' => 'POST', 'permission_callback' => '__return_true', 'callback' => 'edr_tb_rest_auth',
+    ));
+    // per-driver availability: drivers on the (password-protected) page submit their own
+    // 4h blocks without any account, so both routes are public by design.
+    register_rest_route('edr/v1', '/avail', array(
+        array('methods' => 'GET',  'permission_callback' => '__return_true', 'callback' => 'edr_tb_rest_avail_get'),
+        array('methods' => 'POST', 'permission_callback' => '__return_true', 'callback' => 'edr_tb_rest_avail_set'),
+    ));
+    // full Garage 61 membership (every EDR team) for the availability roster —
+    // names only, cached; public so drivers can find themselves without an account
+    register_rest_route('edr/v1', '/roster', array(
+        'methods' => 'GET', 'permission_callback' => '__return_true', 'callback' => 'edr_tb_rest_roster',
     ));
 });
+
+function edr_tb_rest_roster(WP_REST_Request $req) {
+    $s = edr_tb_settings();
+    if (!$s['g61_token']) return rest_ensure_response(array());
+    $fresh = $req->get_param('fresh') && edr_tb_req_can_edit($req);
+    if (!$fresh) {
+        $cache = get_transient('edr_tb_roster');
+        if ($cache) return rest_ensure_response($cache);
+    }
+    $names = edr_g61_all_members($s['g61_token']);
+    if (is_wp_error($names)) return $names;
+    set_transient('edr_tb_roster', $names, 6 * HOUR_IN_SECONDS);
+    return rest_ensure_response($names);
+}
+
+function edr_tb_rest_auth(WP_REST_Request $req) {
+    $s  = edr_tb_settings();
+    $p  = (string) $req->get_param('pass');
+    $ok = ($s['edit_pass'] !== '' && $p !== '' && hash_equals($s['edit_pass'], $p));
+    if (!$ok) sleep(1); // slow down brute force a touch
+    return rest_ensure_response(array('ok' => $ok));
+}
+
+function edr_tb_rest_avail_get() {
+    $all = get_option('edr_tb_avail', array());
+    return rest_ensure_response(empty($all) ? new stdClass() : $all);
+}
+
+function edr_tb_rest_avail_set(WP_REST_Request $req) {
+    $ev   = substr(sanitize_text_field((string) $req->get_param('ev')), 0, 120);
+    $name = substr(sanitize_text_field((string) $req->get_param('name')), 0, 80);
+    if ($ev === '' || $name === '') return new WP_Error('bad_req', 'Need ev and name.', array('status' => 400));
+    $slots = array_slice(array_values(array_unique(array_filter(
+        array_map('intval', (array) $req->get_param('slots')),
+        function ($v) { return $v >= 0 && $v < 1000; }
+    ))), 0, 500);
+    $all = (array) get_option('edr_tb_avail', array());
+    if (!isset($all[$ev]) || !is_array($all[$ev])) $all[$ev] = array();
+    $all[$ev][$name] = $slots;
+    update_option('edr_tb_avail', $all, false);
+    return rest_ensure_response(array('ok' => true));
+}
 
 function edr_tb_rest_plan_get() {
     return rest_ensure_response(array(
