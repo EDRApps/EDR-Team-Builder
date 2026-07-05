@@ -7,52 +7,85 @@
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Prompt:wght@500;600;700&family=Karla:wght@400;500;700&display=swap">
 <style>
   :root{
-    --bg:#0a0a0a; --navy:#1e1e42; --panel:#15152e; --panel2:#1d1d3a; --line:#2e2e55;
-    --text:#ffffff; --body:#cccccc; --dim:#8b8fb0;
+    --bg:#0a0a12; --navy:#1e1e42; --panel:#15152e; --panel2:#1d1d3a; --line:#2e2e55; --lineSoft:#26264a;
+    --text:#ffffff; --body:#cfd2e6; --dim:#8b8fb0;
     --amber:#f0f000; --yellow:#f0f000; --yellowH:#d6d600;
     --gold:#f0f000; --steel:#9aa3c0; --green:#5fd38a; --red:#ff5a6a;
+    --rxl:18px; --rlg:14px; --rmd:10px; --rsm:8px;
+    --shadow:0 8px 22px rgba(0,0,0,.35);
   }
   *{box-sizing:border-box}
-  body{margin:0;background:var(--bg);color:var(--body);font-family:'Karla',system-ui,sans-serif;padding-bottom:60px}
+  body{margin:0;background:radial-gradient(1100px 460px at 75% -10%,rgba(240,240,0,.05),transparent 60%),var(--bg);color:var(--body);font-family:'Karla',system-ui,sans-serif;padding-bottom:60px}
   h1,h2,.head{font-family:'Prompt','Karla',sans-serif}
   @keyframes up{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
-  ::-webkit-scrollbar{height:8px;width:8px}::-webkit-scrollbar-thumb{background:var(--line);border-radius:4px}
-  .header{border-bottom:2px solid var(--yellow);background:var(--navy);padding:16px 18px;display:flex;align-items:center;gap:18px;flex-wrap:wrap}
+  ::-webkit-scrollbar{height:8px;width:8px}::-webkit-scrollbar-thumb{background:var(--line);border-radius:99px}
+  .header{border-bottom:1px solid var(--lineSoft);background:linear-gradient(120deg,#1c1c3e,#101024 65%);padding:18px 22px;display:flex;align-items:center;gap:18px;flex-wrap:wrap;position:relative}
+  .header:after{content:'';position:absolute;left:0;right:0;bottom:-1px;height:2px;background:linear-gradient(90deg,var(--yellow),rgba(240,240,0,.12) 55%,transparent)}
   .header img{height:48px;width:auto}
-  .controls{padding:16px;border-bottom:1px solid var(--line);display:flex;flex-wrap:wrap;gap:16px;align-items:flex-end;background:#0d0d1f}
+  .controls{padding:16px 22px;border-bottom:1px solid var(--lineSoft);display:flex;flex-wrap:wrap;gap:16px;align-items:flex-end;background:rgba(13,13,31,.6)}
   .ctl{flex:1 1 140px;min-width:130px}
   .ctl label{font-size:11px;color:var(--dim);display:block;margin-bottom:6px;text-transform:uppercase;letter-spacing:.04em}
   input[type=range]{width:100%}
-  .btn{border:none;border-radius:2px;padding:9px 15px;font-size:12px;font-family:'Prompt',sans-serif;font-weight:600;letter-spacing:.06em;text-transform:uppercase;cursor:pointer;display:inline-flex;gap:6px;align-items:center}
-  .btn-amber,.btn-green{background:var(--yellow);color:#0a0a0a}
+  .btn{border:none;border-radius:999px;padding:10px 18px;font-size:12px;font-family:'Prompt',sans-serif;font-weight:600;letter-spacing:.06em;text-transform:uppercase;cursor:pointer;display:inline-flex;gap:6px;align-items:center;transition:background .15s,color .15s,transform .1s,box-shadow .15s}
+  .btn:active{transform:translateY(1px)}
+  .btn-amber,.btn-green{background:var(--yellow);color:#0a0a0a;box-shadow:0 2px 12px rgba(240,240,0,.22)}
   .btn-amber:hover,.btn-green:hover{background:var(--yellowH)}
-  .btn-ghost{background:transparent;color:var(--yellow);border:1px solid var(--yellow)}
+  .btn-ghost{background:transparent;color:var(--yellow);border:1px solid rgba(240,240,0,.55)}
   .btn-ghost:hover{background:var(--yellow);color:#0a0a0a}
-  .tabs{display:flex;padding:0 16px;border-bottom:1px solid var(--line);background:#0d0d1f}
-  .tab{background:none;border:none;color:var(--dim);padding:14px 18px;font-size:12px;letter-spacing:.12em;cursor:pointer;text-transform:uppercase;font-family:'Prompt',sans-serif;font-weight:600;border-bottom:2px solid transparent}
-  .tab.active{color:#fff;border-bottom-color:var(--yellow)}
-  .wrap{padding:16px}
-  .classhdr{font-family:'Prompt',sans-serif;font-weight:700;font-size:16px;letter-spacing:.06em;text-transform:uppercase;margin:0 0 12px;border-bottom:2px solid var(--yellow);padding-bottom:8px;color:#fff}
+  .tabs{display:flex;gap:8px;padding:12px 22px;border-bottom:1px solid var(--lineSoft);background:rgba(13,13,31,.6)}
+  .tab{background:transparent;border:1px solid transparent;color:var(--dim);padding:9px 18px;font-size:12px;letter-spacing:.12em;cursor:pointer;text-transform:uppercase;font-family:'Prompt',sans-serif;font-weight:600;border-radius:999px;transition:color .15s,background .15s,border-color .15s}
+  .tab:hover{color:#fff;border-color:var(--line)}
+  .tab.active{color:#0a0a0a;background:var(--yellow);border-color:var(--yellow)}
+  .wrap{padding:20px 22px}
+  .classhdr{font-family:'Prompt',sans-serif;font-weight:700;font-size:16px;letter-spacing:.06em;text-transform:uppercase;margin:0 0 14px;color:#fff;display:flex;align-items:center;gap:10px}
+  .classhdr:before{content:'';width:5px;height:18px;border-radius:99px;background:var(--yellow);flex:0 0 auto}
   .classhdr small{color:var(--dim);font-size:11px;letter-spacing:0;text-transform:none;font-weight:400}
-  .row{background:var(--panel);border:1px solid var(--line);border-radius:3px;padding:10px;display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+  .row{background:var(--panel);border:1px solid var(--lineSoft);border-radius:var(--rmd);padding:10px 12px;display:flex;gap:8px;align-items:center;flex-wrap:wrap;transition:border-color .15s}
+  .row:hover{border-color:#3d3d70}
   .row.pro{border-left:3px solid var(--gold)} .row.casual{border-left:3px solid var(--steel)}
-  select,textarea,input[type=text],input[type=number]{background:#0a0a0a;color:var(--text);border:1px solid var(--line);border-radius:2px;font-family:'Karla',sans-serif}
-  select{font-size:12px;padding:5px 6px}
+  select,textarea,input[type=text],input[type=number]{background:#0a0a14;color:var(--text);border:1px solid var(--line);border-radius:var(--rsm);font-family:'Karla',sans-serif}
+  select{font-size:12px;padding:6px 8px;cursor:pointer}
+  select:hover{border-color:#3d3d70}
   .meta{font-size:11px;color:var(--dim)}
   .tier{font-size:11px;font-family:'Prompt',sans-serif;font-weight:600;letter-spacing:.04em}
   .tier.pro{color:var(--gold)} .tier.casual{color:var(--steel)}
-  .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:12px}
-  .card{background:var(--panel);border:1px solid var(--line);border-radius:3px;padding:13px;animation:up .4s both}
+  .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:14px}
+  .card{background:linear-gradient(180deg,var(--panel2),var(--panel));border:1px solid var(--lineSoft);border-radius:var(--rlg);padding:14px;animation:up .4s both;box-shadow:var(--shadow);transition:transform .15s,border-color .15s}
+  .card:hover{transform:translateY(-2px);border-color:#3d3d70}
   .card .head{color:#fff}
-  .mem{background:var(--panel2);border-radius:2px;padding:7px 9px;display:flex;justify-content:space-between;align-items:center;gap:8px}
-  .x{background:none;border:none;color:var(--dim);cursor:pointer;margin-left:auto;font-size:16px}
-  .swatch{width:12px;height:12px;border-radius:2px;display:inline-block}
-  .importbox{background:var(--panel);border:1px solid var(--line);border-radius:3px;padding:12px;margin-bottom:12px}
-  .importbox textarea{width:100%;min-height:90px;padding:8px;font-size:12px;resize:vertical}
+  .mem{background:rgba(255,255,255,.045);border-radius:var(--rmd);padding:8px 10px;display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:6px}
+  .x{background:none;border:none;color:var(--dim);cursor:pointer;margin-left:auto;font-size:16px;border-radius:99px}
+  .x:hover{color:var(--red)}
+  .swatch{width:12px;height:12px;border-radius:4px;display:inline-block}
+  .importbox{background:var(--panel);border:1px solid var(--lineSoft);border-radius:var(--rlg);padding:14px;margin-bottom:14px;box-shadow:var(--shadow)}
+  .importbox textarea{width:100%;min-height:90px;padding:10px;font-size:12px;resize:vertical}
   .status{color:var(--yellow);font-size:12px;align-self:center}
-  .chip{display:inline-block;padding:5px 9px;margin:4px 5px 0 0;background:var(--panel2);border:1px solid var(--line);border-radius:2px;font-size:12px;cursor:grab;color:var(--body)}
-  .chip:hover{border-color:var(--yellow)}
+  .chip{display:inline-block;padding:6px 12px;margin:4px 5px 0 0;background:var(--panel2);border:1px solid var(--line);border-radius:999px;font-size:12px;cursor:grab;color:var(--body);transition:border-color .15s,color .15s}
+  .chip:hover{border-color:var(--yellow);color:#fff}
   .hide{display:none}
+  /* ---- stint planner ---- */
+  .winbtn{text-align:left;cursor:pointer;background:var(--panel);border:1px solid var(--line);border-radius:var(--rlg);padding:11px 14px;min-width:170px;color:var(--body);font-family:'Karla',sans-serif;transition:border-color .15s,transform .15s,background .15s}
+  .winbtn:hover{transform:translateY(-1px);border-color:var(--steel)}
+  .winbtn.best{border-color:var(--green)}
+  .winbtn.sel{border-color:var(--yellow);background:rgba(240,240,0,.07);box-shadow:0 0 0 1px var(--yellow)}
+  .stintcar{background:var(--panel);border:1px solid var(--lineSoft);border-radius:var(--rxl);padding:16px;margin-bottom:18px;box-shadow:var(--shadow);animation:up .4s both}
+  .stintwrap{overflow-x:auto;padding-bottom:4px}
+  .stintgrid{display:grid;gap:5px;min-width:max-content;align-items:stretch}
+  .sg-corner{position:sticky;left:0;z-index:2;background:var(--panel);font-size:10px;color:var(--dim);text-transform:uppercase;letter-spacing:.06em;display:flex;align-items:flex-end;padding:0 8px 3px}
+  .sg-time{text-align:center;color:var(--dim);font-size:9.5px;padding:2px 4px;white-space:nowrap}
+  .sg-time b{display:block;color:#fff;font-family:'Prompt',sans-serif;font-size:12px}
+  .sg-label{position:sticky;left:0;z-index:2;background:var(--panel);display:flex;align-items:center;gap:7px;font-size:12px;padding:0 8px;white-space:nowrap;overflow:hidden}
+  .sg-dot{width:9px;height:9px;border-radius:50%;flex:0 0 auto}
+  .sg-block{border-radius:var(--rmd);min-height:42px;display:flex;align-items:center;justify-content:center;gap:5px;font-size:12px;font-weight:600;font-family:'Prompt',sans-serif;color:#fff;cursor:grab;user-select:none;touch-action:none;border:1px solid color-mix(in srgb,var(--dc) 55%,transparent);background:color-mix(in srgb,var(--dc) 26%,transparent);transition:filter .12s}
+  .sg-block:hover{filter:brightness(1.25)}
+  .sg-block.conflict{border-color:var(--red);box-shadow:inset 0 0 0 1px var(--red)}
+  .sg-block.empty{border:1.5px dashed var(--line);background:transparent;color:var(--dim);font-weight:400;cursor:copy}
+  .sg-block .warn{color:var(--red);font-size:13px}
+  .sg-lane{height:24px;border-radius:7px;cursor:pointer;border:1px solid transparent;transition:filter .12s;align-self:center;width:100%}
+  .sg-lane.free{background:rgba(95,211,138,.14)}
+  .sg-lane.busy{background:repeating-linear-gradient(45deg,rgba(255,90,106,.12) 0 6px,rgba(255,90,106,.04) 6px 12px)}
+  .sg-lane.driving{background:color-mix(in srgb,var(--dc) 55%,#101020);border-color:var(--dc)}
+  .sg-lane:hover{filter:brightness(1.4)}
 </style>
 </head>
 <body>
@@ -93,18 +126,18 @@
 </div>
 
 <script>
-const KEY = 'edrTeamBuilder_spa_v6'; /* Spa 24h — S3 pace, survey 2307 availability */
+const KEY = 'edrTeamBuilder_spa_v14'; /* Spa 24h — S3 pace, survey 2307 availability */
 
 // --- Spa 24h event timing (for the Stints tab) ---
 // Availability window starts 2026-07-10 22:00 UTC (= 11 Jul 08:00 Brisbane). All offsets in minutes from there.
 // 4 candidate start slots (iRacePlan survey 2307 session_times).
 const WIN_START_MS = Date.parse('2026-07-10T22:00:00Z');
 const START_OFFSETS = {1:0, 2:540, 3:840, 4:1080};
-const START_LABELS  = {1:'22:00Z', 2:'07:00Z', 3:'12:00Z', 4:'16:00Z'};
+const START_LABELS  = {1:'Sat 08:00 · 22:00Z', 2:'Sat 17:00 · 07:00Z', 3:'Sat 22:00 · 12:00Z', 4:'Sun 02:00 · 16:00Z'};
 
 // Spa 24h: Garage 61 pace (iRacing 2026 Season 3 only, from 2026-06-16; age=-1) for the 18 drivers in iRacePlan survey 2307.
 // Availability merged from iRacePlan survey 2307 timeline (green = available). Empty cars = no Spa data shared.
-const SAMPLE = [{"name":"Aaron Werth","cars":{"Ford Mustang GT3":{"laps":41,"medianLap":139.654,"cleanPct":0.293}},"avail":{"hours":42.8,"pct":100,"starts":[1,2,3,4],"windows":[[0,2568]]}},{"name":"Aden Lennox-Bradley","cars":{},"avail":{"hours":0,"pct":0,"starts":[],"windows":[]}},{"name":"Brock Hellmech","cars":{"McLaren 720S GT3 EVO":{"laps":129,"medianLap":138.388,"cleanPct":0.457},"Ford Mustang GT3":{"laps":9,"medianLap":137.711,"cleanPct":0.333}},"avail":{"hours":19,"pct":44,"starts":[3],"windows":[[210,420],[660,960],[1200,1410],[1650,1860],[2100,2310]]}},{"name":"Chris Wilson","cars":{},"avail":{"hours":0,"pct":0,"starts":[],"windows":[]}},{"name":"Dominic Bou-Samra","cars":{"Ferrari 296 GT3":{"laps":9,"medianLap":139.455,"cleanPct":0.333}},"avail":{"hours":0,"pct":0,"starts":[],"windows":[]}},{"name":"Erik van der Bijl","cars":{},"avail":{"hours":42.8,"pct":100,"starts":[1,2,3,4],"windows":[[0,2568]]}},{"name":"Jake Lennox-Bradley","cars":{"Ford Mustang GT3":{"laps":27,"medianLap":139.16,"cleanPct":0.407}},"avail":{"hours":32.5,"pct":76,"starts":[2,3,4],"windows":[[300,2250]]}},{"name":"Jarrod Williams","cars":{},"avail":{"hours":42.8,"pct":100,"starts":[1,2,3,4],"windows":[[0,2568]]}},{"name":"Joey Tavora","cars":{"Porsche 911 GT3 R (992)":{"laps":33,"medianLap":139.517,"cleanPct":0.606}},"avail":{"hours":42.8,"pct":100,"starts":[1,2,3,4],"windows":[[0,2568]]}},{"name":"John Nyhouse","cars":{"Acura NSX GT3 EVO 22":{"laps":32,"medianLap":141.031,"cleanPct":0.344},"Ferrari 296 GT3":{"laps":9,"medianLap":140.133,"cleanPct":0.222},"Ford Mustang GT3":{"laps":10,"medianLap":145.237,"cleanPct":0.2},"BMW M4 GT3 EVO":{"laps":5,"medianLap":140.538,"cleanPct":0.2}},"avail":{"hours":42.8,"pct":100,"starts":[1,2,3,4],"windows":[[0,2568]]}},{"name":"Luke Hay","cars":{},"avail":{"hours":42.8,"pct":100,"starts":[1,2,3,4],"windows":[[0,2568]]}},{"name":"Matt Blee","cars":{},"avail":{"hours":0,"pct":0,"starts":[],"windows":[]}},{"name":"Matt Halden","cars":{},"avail":{"hours":39,"pct":91,"starts":[1,2,3,4],"windows":[[0,2340]]}},{"name":"Michael Cullen","cars":{},"avail":{"hours":0,"pct":0,"starts":[],"windows":[]}},{"name":"Sam Millar","cars":{"Porsche 911 GT3 R (992)":{"laps":68,"medianLap":139.132,"cleanPct":0.588}},"avail":{"hours":39.3,"pct":92,"starts":[1,3,4],"windows":[[0,390],[600,2568]]}},{"name":"Stipe Ljubic","cars":{"BMW M4 GT3 EVO":{"laps":19,"medianLap":137.826,"cleanPct":0.316}},"avail":{"hours":42.8,"pct":100,"starts":[1,2,3,4],"windows":[[0,2568]]}},{"name":"Thomaz Hernandes","cars":{"Ferrari 296 GT3":{"laps":61,"medianLap":137.512,"cleanPct":0.541}},"avail":{"hours":42.8,"pct":100,"starts":[1,2,3,4],"windows":[[0,2568]]}},{"name":"Tom Williams","cars":{},"avail":{"hours":0,"pct":0,"starts":[],"windows":[]}}];
+const SAMPLE = [{"name":"Aaron Werth","cars":{"Ferrari 296 GT3":{"laps":95,"medianLap":138.018,"cleanPct":0.495},"Ford Mustang GT3":{"laps":41,"medianLap":139.654,"cleanPct":0.293},"McLaren 720S GT3 EVO":{"laps":20,"medianLap":139.674,"cleanPct":0.25}},"avail":{"hours":42.8,"pct":100,"starts":[1,2,3,4],"windows":[[0,2568]]}},{"name":"Bernardo Hickmann","cars":{"Ferrari 296 GT3":{"laps":32,"medianLap":137.498,"cleanPct":0.562}},"avail":{"hours":42.8,"pct":100,"starts":[1,2,3,4],"windows":[[0,2568]]}},{"name":"Erik van der Bijl","cars":{"McLaren 720S GT3 EVO":{"laps":10,"medianLap":138.072,"cleanPct":0.5},"Ferrari 296 GT3":{"laps":316,"medianLap":138.113,"cleanPct":0.668},"Ford Mustang GT3":{"laps":10,"medianLap":137.893,"cleanPct":0.4},"Porsche 911 GT3 R (992)":{"laps":14,"medianLap":138.227,"cleanPct":0.429}},"avail":{"hours":42.8,"pct":100,"starts":[1,2,3,4],"windows":[[0,2568]]}},{"name":"Joey Tavora","cars":{"Porsche 911 GT3 R (992)":{"laps":55,"medianLap":139.418,"cleanPct":0.545},"Ferrari 296 GT3":{"laps":49,"medianLap":137.949,"cleanPct":0.694}},"avail":{"hours":42.8,"pct":100,"starts":[1,2,3,4],"windows":[[0,2568]]}},{"name":"John Nyhouse","cars":{"BMW M4 GT3 EVO":{"laps":15,"medianLap":141.213,"cleanPct":0.533},"McLaren 720S GT3 EVO":{"laps":81,"medianLap":139.572,"cleanPct":0.543},"Ferrari 296 GT3":{"laps":117,"medianLap":139.546,"cleanPct":0.402},"Acura NSX GT3 EVO 22":{"laps":37,"medianLap":141.031,"cleanPct":0.351},"Mercedes-AMG GT3 2020":{"laps":5,"medianLap":141.084,"cleanPct":0.6}},"avail":{"hours":42.8,"pct":100,"starts":[1,2,3,4],"windows":[[0,2568]]}},{"name":"Luke Hay","cars":{"Ferrari 296 GT3":{"laps":32,"medianLap":138.193,"cleanPct":0.281},"Porsche 911 GT3 R (992)":{"laps":32,"medianLap":139.237,"cleanPct":0.312},"Ford Mustang GT3":{"laps":11,"medianLap":137.831,"cleanPct":0.273}},"avail":{"hours":42.8,"pct":100,"starts":[1,2,3,4],"windows":[[0,2568]]}},{"name":"Stipe Ljubic","cars":{"BMW M4 GT3 EVO":{"laps":65,"medianLap":137.917,"cleanPct":0.446},"Ferrari 296 GT3":{"laps":128,"medianLap":136.251,"cleanPct":0.453}},"avail":{"hours":42.8,"pct":100,"starts":[1,2,3,4],"windows":[[0,2568]]}},{"name":"Thomaz Hernandes","cars":{"Ferrari 296 GT3":{"laps":243,"medianLap":138.202,"cleanPct":0.597},"Lamborghini Huracán GT3 EVO":{"laps":21,"medianLap":138.581,"cleanPct":0.571},"Ford Mustang GT3":{"laps":67,"medianLap":138.406,"cleanPct":0.448},"McLaren 720S GT3 EVO":{"laps":85,"medianLap":139.774,"cleanPct":0.576},"BMW M4 GT3 EVO":{"laps":36,"medianLap":139.116,"cleanPct":0.667},"Mercedes-AMG GT3 2020":{"laps":11,"medianLap":138.788,"cleanPct":0.455},"Porsche 911 GT3 R (992)":{"laps":25,"medianLap":138.826,"cleanPct":0.28}},"avail":{"hours":42.8,"pct":100,"starts":[1,2,3,4],"windows":[[0,2568]]}},{"name":"Sam Millar","cars":{"Porsche 911 GT3 R (992)":{"laps":94,"medianLap":139.149,"cleanPct":0.574},"Ferrari 296 GT3":{"laps":350,"medianLap":138.881,"cleanPct":0.603}},"avail":{"hours":39.3,"pct":92,"starts":[1,3,4],"windows":[[0,390],[600,2568]]}},{"name":"Matt Halden","cars":{"Ferrari 296 GT3":{"laps":39,"medianLap":137.796,"cleanPct":0.641}},"avail":{"hours":39,"pct":91,"starts":[1,2,3,4],"windows":[[0,2340]]}},{"name":"Sam Mackenzie","cars":{"Ferrari 296 GT3":{"laps":41,"medianLap":137.648,"cleanPct":0.366},"McLaren 720S GT3 EVO":{"laps":80,"medianLap":137.824,"cleanPct":0.662}},"avail":{"hours":34,"pct":79,"starts":[1,2,3,4],"windows":[[0,2040]]}},{"name":"Zach Martin","cars":{"Ferrari 296 GT3":{"laps":3,"medianLap":null,"cleanPct":0}},"avail":{"hours":33.8,"pct":79,"starts":[2,3,4],"windows":[[540,2568]]}},{"name":"Jake Lennox-Bradley","cars":{"BMW M4 GT3 EVO":{"laps":55,"medianLap":137.365,"cleanPct":0.691},"Ferrari 296 GT3":{"laps":56,"medianLap":138.339,"cleanPct":0.571},"Porsche 911 GT3 R (992)":{"laps":14,"medianLap":138.281,"cleanPct":0.429},"Ford Mustang GT3":{"laps":27,"medianLap":139.16,"cleanPct":0.407}},"avail":{"hours":32.5,"pct":76,"starts":[2,3,4],"windows":[[300,2250]]}},{"name":"Brock Hellmech","cars":{"McLaren 720S GT3 EVO":{"laps":239,"medianLap":138.084,"cleanPct":0.439},"Ferrari 296 GT3":{"laps":147,"medianLap":139.086,"cleanPct":0.286},"Ford Mustang GT3":{"laps":49,"medianLap":137.744,"cleanPct":0.265}},"avail":{"hours":19,"pct":44,"starts":[3],"windows":[[210,420],[660,960],[1200,1410],[1650,1860],[2100,2310]]}},{"name":"Michael Cullen","cars":{"Lamborghini Huracán GT3 EVO":{"laps":32,"medianLap":137.639,"cleanPct":0.812}},"avail":{"hours":8,"pct":19,"starts":[1,3],"windows":[[0,270],[690,900]]}},{"name":"Valentin Ozhiganov","cars":{"Ferrari 296 GT3":{"laps":35,"medianLap":137.467,"cleanPct":0.6}},"avail":{"hours":5,"pct":12,"starts":[],"windows":[[1230,1530]]}}];
 
 let state = { drivers:[], w:{pace:50,clean:30,prep:20}, proPct:40, tab:'teams', teams:{}, stint:{window:1,len:120,race:1440}, stintAssign:{}, stintWin:{}, stintSig:'' };
 
@@ -193,10 +226,22 @@ function generate(){
 
 function esc(s){ return String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
 
+/* Upcoming iRacePlan survey events (snapshot pulled 2026-06-25; iRacePlan has no browser CORS). */
+const EVENTS=[
+  {id:2307,name:"24 Hours of Spa",date:"2026-07-10",slots:4},
+  {id:2530,name:"Global Endurance Tour",date:"2026-07-11",slots:3},
+  {id:2529,name:"Creventic Endurance Series",date:"2026-07-18",slots:2},
+  {id:1526,name:"Bathurst 1000 AU",date:"2026-10-03",slots:1}
+];
+let EVT_SEL=2307, _lastModel={};
+function setEvent(id){ EVT_SEL=parseInt(id,10); renderSummary(_lastModel); }
 function renderSummary(model){
+  _lastModel=model;
   const classes=Object.keys(model);
+  const opts=EVENTS.map(e=>'<option value="'+e.id+'"'+(e.id===EVT_SEL?' selected':'')+'>'+esc(e.name)+' · '+e.date.slice(8,10)+'/'+e.date.slice(5,7)+' ('+e.slots+' slot'+(e.slots>1?'s':'')+')</option>').join('');
   document.getElementById('summary').innerHTML =
-    '<span>Spa-Francorchamps (Endurance) · 24h</span><span>'+state.drivers.length+' drivers · '+classes.length+' classes</span>'+
+    '<span>Event: <select onchange="setEvent(this.value)" style="background:var(--panel);color:#fff;border:1px solid var(--line);border-radius:8px;padding:4px 8px;font-family:inherit;font-size:12px;cursor:pointer">'+opts+'</select></span>'+
+    '<span>'+state.drivers.length+' drivers · '+classes.length+' classes</span>'+
     classes.map(c=>'<span style="color:var(--dim)">'+esc(c)+'</span>').join('');
 }
 
@@ -211,7 +256,7 @@ function renderTeams(byId){
   }
   let html='';
   classes.forEach(cls=>{
-    html+='<div style="margin-bottom:26px"><h2 style="font-size:16px;letter-spacing:.06em;text-transform:uppercase;margin:0 0 14px;border-bottom:2px solid var(--yellow);padding-bottom:8px;color:#fff">'+esc(cls)+'</h2>';
+    html+='<div style="margin-bottom:26px"><h2 class="classhdr" style="font-size:17px">'+esc(cls)+'</h2>';
     [['pro','PRO','var(--gold)'],['casual','CASUAL','var(--steel)']].forEach(([tier,label,col])=>{
       const list=(state.teams[cls]&&state.teams[cls][tier])||[];
       html+='<div style="margin-bottom:16px"><div style="display:flex;align-items:center;gap:10px;margin-bottom:10px"><span class="swatch" style="background:'+col+'"></span><span class="head" style="letter-spacing:2px;font-size:13px;color:'+col+'">'+label+'</span><button class="btn btn-ghost" data-action="addcar" data-class="'+esc(cls)+'" data-tier="'+tier+'" style="font-size:10px;padding:3px 9px">+ car</button></div><div class="grid">';
@@ -301,23 +346,22 @@ function renderStints(byId){
   const sig=[len,race,JSON.stringify(state.teams)].join('|');
   if(state.stintSig!==sig){ state.stintAssign={}; state.stintSig=sig; }  // block length / teams changed -> fresh auto-plan
   let html='<div class="importbox" style="display:flex;gap:18px;flex-wrap:wrap;align-items:flex-end">';
-  html+='<div class="ctl"><label>DEFAULT START (UTC)</label><select data-action="stintwin">'+
+  html+='<div class="ctl"><label>DEFAULT START (LOCAL · UTC)</label><select data-action="stintwin">'+
     [1,2,3,4].map(w=>'<option value="'+w+'"'+(w===state.stint.window?' selected':'')+'>#'+w+' · '+START_LABELS[w]+'</option>').join('')+'</select></div>';
   html+='<div class="ctl"><label>BLOCK LENGTH (min)</label><input type="number" min="10" max="240" step="5" value="'+state.stint.len+'" data-action="stintlen" style="width:90px;padding:6px"></div>';
   html+='<div class="ctl"><label>RACE LENGTH (min)</label><input type="number" min="30" max="1440" step="10" value="'+state.stint.race+'" data-action="stintrace" style="width:90px;padding:6px"></div>';
   html+='<button class="btn btn-ghost" data-action="stintreset" style="align-self:center">Auto-fill all</button>';
-  html+='<div class="meta" style="align-self:center;max-width:340px"><b>Each car can run a different session.</b> Pick its start below (or set a default for all). Clock = Brisbane. green=available, red !=not free, GAP=empty.</div>';
+  html+='<div class="meta" style="align-self:center;max-width:360px"><b style="color:#fff">Each car can run a different session.</b> Pick its start below (or set a default for all). Clock = Brisbane. Drag blocks or bank names, or click a driver\'s lane to hand them that stint.</div>';
   html+='</div>';
   const classes=Object.keys(state.teams);
   if(!classes.length) return html+'<div class="meta">Hit Generate to build teams first.</div>';
   const summ=windowSummary(byId,len,race);
   const bestW=summ.slice().sort((a,b)=>(b.covered-a.covered)||(b.free-a.free))[0];
-  html+='<div style="margin:2px 0 18px"><div class="meta" style="margin-bottom:6px;text-transform:uppercase;letter-spacing:.04em">Session finder, click a window to set it as the default for all cars</div><div style="display:flex;gap:8px;flex-wrap:wrap">';
+  html+='<div style="margin:2px 0 18px"><div class="meta" style="margin-bottom:8px;text-transform:uppercase;letter-spacing:.04em">Session finder, click a window to set it as the default for all cars</div><div style="display:flex;gap:10px;flex-wrap:wrap">';
   summ.forEach(s=>{
     const sel=s.w===state.stint.window, isBest=bestW&&s.w===bestW.w;
-    const bd=sel?'2px solid var(--yellow)':isBest?'1px solid var(--green)':'1px solid var(--line)';
-    html+='<button data-action="stintwin" value="'+s.w+'" style="text-align:left;cursor:pointer;background:'+(sel?'rgba(240,240,0,.08)':'var(--panel)')+';border:'+bd+';border-radius:3px;padding:9px 12px;min-width:158px;color:var(--body);font-family:Karla">'
-      +'<div style="font-family:Prompt;font-weight:600;color:#fff;text-transform:uppercase;font-size:12px">#'+s.w+' · '+fmtClock(s.off)+(isBest?' <span style="color:var(--green)">best</span>':'')+'</div>'
+    html+='<button data-action="stintwin" value="'+s.w+'" class="winbtn'+(sel?' sel':'')+(isBest?' best':'')+'">'
+      +'<div style="font-family:Prompt;font-weight:600;color:#fff;text-transform:uppercase;font-size:12px">#'+s.w+' · '+START_LABELS[s.w]+(isBest?' <span style="color:var(--green)">● best</span>':'')+'</div>'
       +'<div class="meta">'+s.free+'/'+s.total+' drivers free (full race)</div>'
       +'<div class="meta">'+s.covered+'/'+s.cars+' cars coverable</div></button>';
   });
@@ -331,6 +375,7 @@ function renderStints(byId){
     html+=bankByCls[c].map(d=>'<span class="chip" data-bankchip data-driver="'+d.id+'" style="cursor:grab;user-select:none;touch-action:none">'+esc(d.name.split(' ')[0])+(d._tier==='pro'?' (P)':' (C)')+'</span>').join('');
   });
   html+='<span class="chip" data-bankchip data-driver="" style="cursor:grab;user-select:none;touch-action:none;color:var(--red);margin-left:8px">✕ empty</span></div></div>';
+  const PALETTE=['#6ea8ff','#5fd38a','#ffb454','#d78cff','#4fd1c5','#ff8fa3','#c8e05a','#9aa3c0'];
   classes.forEach(cls=>{
     [['pro','PRO','var(--gold)'],['casual','CASUAL','var(--steel)']].forEach(([tier,label,col])=>{
       const list=(state.teams[cls]&&state.teams[cls][tier])||[];
@@ -343,29 +388,34 @@ function renderStints(byId){
         const times=blockTimes(off,len,race);
         if(!state.stintAssign[key] || state.stintAssign[key].length!==times.length) state.stintAssign[key]=autoPlan(team,byId,times);
         const arr=state.stintAssign[key];
+        const colr={}; members.forEach((m,i)=>colr[m.id]=PALETTE[i%PALETTE.length]);
         const count={}; members.forEach(m=>count[m.id]=0); arr.forEach(id=>{ if(id!=null && count[id]!=null) count[id]++; });
         let gaps=0, conflicts=0;
-        const cells=arr.map((id,i)=>{
-          const t=times[i];
-          const m=id!=null?byId[id]:null;
-          const free=m?driverFree(m,t.s,t.e):false;
-          if(id==null) gaps++; else if(!free) conflicts++;
-          const bg=id==null?'var(--panel2)':(free?'rgba(95,211,138,.16)':'rgba(255,90,106,.20)');
-          const lbl=m?(esc(m.name.split(' ')[0])+(free?'':' <span style="color:var(--red)">!</span>')):'<span style="color:var(--dim)">drop here</span>';
-          return '<td data-stintcell data-key="'+key+'" data-block="'+i+'" data-driver="'+(id==null?'':id)+'" title="'+(m?(free?'available':'NOT available this block'):'empty')+'" style="padding:10px 12px;text-align:center;background:'+bg+';border:1px solid var(--line);white-space:nowrap;cursor:grab;user-select:none;touch-action:none">'+lbl+'</td>';
-        }).join('');
+        arr.forEach((id,i)=>{ const t=times[i], m=id!=null?byId[id]:null; if(id==null) gaps++; else if(!m||!driverFree(m,t.s,t.e)) conflicts++; });
         const badge = gaps? '<span class="meta" style="color:var(--red)">'+gaps+' empty</span>' : conflicts? '<span class="meta" style="color:var(--red)">'+conflicts+' conflict'+(conflicts>1?'s':'')+'</span>' : '<span class="meta" style="color:var(--green)">all covered</span>';
         const winSel='<select data-action="carwin" data-key="'+key+'">'+[1,2,3,4].map(w=>'<option value="'+w+'"'+(w===win?' selected':'')+'>start #'+w+' · '+START_LABELS[w]+'</option>').join('')+'</select>';
         const best=carBestWindow(team,byId,len,race);
         const curCovGaps=times.filter(t=>!members.some(m=>driverFree(m,t.s,t.e))).length;
         const bestHint=(best && best.gaps<curCovGaps)? '<span class="meta" style="color:var(--green);cursor:pointer;text-decoration:underline" data-action="usebest" data-key="'+key+'" data-win="'+best.w+'">better fit: #'+best.w+' '+START_LABELS[best.w]+' ('+(best.gaps?best.gaps+' gaps':'full cover')+'), use</span>' : '';
-        html+='<div style="margin-bottom:22px"><div style="display:flex;align-items:center;gap:10px;margin-bottom:8px;flex-wrap:wrap"><span class="swatch" style="background:'+col+'"></span><span class="head" style="letter-spacing:.04em;color:#fff">'+esc(cls)+' · '+label[0]+(ti+1)+'</span>'+winSel+badge+bestHint+'</div>';
-        html+='<div style="overflow-x:auto"><table style="border-collapse:collapse;font-size:12px;min-width:100%"><tr><td style="padding:6px 10px;color:var(--dim)">Block</td>';
-        times.forEach((t,i)=>{ html+='<td style="padding:6px 10px;text-align:center;color:var(--dim);white-space:nowrap;border-left:1px solid var(--line)">'+(i+1)+'<br><span style="font-size:9px">'+fmtClock(t.s)+'</span></td>'; });
-        html+='</tr><tr><td style="padding:6px 10px;color:var(--dim)">Driver</td>'+cells+'</tr></table></div>';
-        const cnt={}; arr.forEach(id=>{ if(id!=null) cnt[id]=(cnt[id]||0)+1; });
-        const summ2=Object.keys(cnt).map(id=>esc((byId[id]?byId[id].name.split(' ')[0]:'?'))+': '+cnt[id]+'×'+state.stint.len+'m').join('  ·  ');
-        html+='<div class="meta" style="margin-top:7px">Drag from the bank above onto a block, or drag a block onto another to swap.  '+(summ2?'&nbsp; Stints: '+summ2:'')+'</div></div>';
+        html+='<div class="stintcar"><div style="display:flex;align-items:center;gap:10px;margin-bottom:12px;flex-wrap:wrap"><span class="swatch" style="background:'+col+'"></span><span class="head" style="letter-spacing:.04em;color:#fff;font-size:15px">'+esc(cls)+' · '+label[0]+(ti+1)+'</span>'+winSel+badge+bestHint+'</div>';
+        html+='<div class="stintwrap"><div class="stintgrid" style="grid-template-columns:150px repeat('+times.length+',minmax(84px,1fr))">';
+        html+='<div class="sg-corner">stint →</div>';
+        times.forEach((t,i)=>{ html+='<div class="sg-time"><b>'+(i+1)+'</b>'+fmtClock(t.s)+'</div>'; });
+        html+='<div class="sg-label" style="font-family:Prompt;font-weight:600;color:#fff;text-transform:uppercase;font-size:11px;letter-spacing:.05em">Driving</div>';
+        arr.forEach((id,i)=>{
+          const t=times[i], m=id!=null?byId[id]:null;
+          const free=m?driverFree(m,t.s,t.e):false;
+          html+='<div class="sg-block'+(m?(free?'':' conflict'):' empty')+'" data-stintcell data-key="'+key+'" data-block="'+i+'" data-driver="'+(id==null?'':id)+'" style="--dc:'+(m?colr[id]:'transparent')+'" title="'+(m?(free?'available · drag to move or swap':'NOT available this block'):'empty · drag a driver here')+'">'+(m?esc(m.name.split(' ')[0])+(free?'':' <span class="warn">!</span>'):'+')+'</div>';
+        });
+        members.forEach(m=>{
+          html+='<div class="sg-label"><span class="sg-dot" style="background:'+colr[m.id]+'"></span><span style="overflow:hidden;text-overflow:ellipsis">'+esc(m.name.split(' ')[0])+'</span><span class="meta">'+(count[m.id]||0)+'× · '+availBadge(m)+'</span></div>';
+          times.forEach((t,i)=>{
+            const free=driverFree(m,t.s,t.e), driving=arr[i]===m.id;
+            html+='<div class="sg-lane '+(driving?'driving':free?'free':'busy')+'" data-lanecell data-key="'+key+'" data-block="'+i+'" data-driver="'+m.id+'" style="--dc:'+colr[m.id]+'" title="'+esc(m.name.split(' ')[0])+' · stint '+(i+1)+' · '+(free?'available':'not available')+(driving?' · driving, click to clear':' · click to assign')+'"></div>';
+          });
+        });
+        html+='</div></div>';
+        html+='<div class="meta" style="margin-top:10px">Lanes: <span style="color:var(--green)">green = available</span> · striped = not free · solid = driving that stint. Click a lane cell to assign, drag blocks to swap, or drag names from the bank.</div></div>';
       });
     });
   });
@@ -432,6 +482,8 @@ document.getElementById('content').addEventListener('change',e=>{
 document.getElementById('content').addEventListener('click',e=>{
   const winBtn=e.target.closest&&e.target.closest('button[data-action="stintwin"]');
   if(winBtn){ state.stint.window=+winBtn.value; state.stintWin={}; state.stintAssign={}; save(); renderContent(); return; }
+  const lane=e.target.closest&&e.target.closest('[data-lanecell]');
+  if(lane){ const k=lane.dataset.key,b=+lane.dataset.block,d=+lane.dataset.driver,a=state.stintAssign[k]; if(a){ a[b]=(a[b]===d)?null:d; save(); renderContent(); } return; }
   if(e.target.dataset.action==='remove'){ state.drivers=state.drivers.filter(x=>x.id!=e.target.dataset.id); generate(); save(); renderContent(); }
   else if(e.target.dataset.action==='stintreset'){ state.stintAssign={}; state.stintSig=''; save(); renderContent(); }
   else if(e.target.dataset.action==='usebest'){ const k=e.target.dataset.key; state.stintWin[k]=+e.target.dataset.win; delete state.stintAssign[k]; save(); renderContent(); }
@@ -454,7 +506,7 @@ _stintContent.addEventListener('pointerdown',e=>{
   e.preventDefault();
   _ghost=document.createElement('div');
   _ghost.textContent=_pd.driver===''?'clear':_drvName(_pd.driver);
-  _ghost.style.cssText='position:fixed;left:0;top:0;z-index:99999;pointer-events:none;background:var(--yellow);color:#0a0a0a;font-family:Prompt,sans-serif;font-weight:700;font-size:12px;padding:4px 9px;border-radius:2px';
+  _ghost.style.cssText='position:fixed;left:0;top:0;z-index:99999;pointer-events:none;background:var(--yellow);color:#0a0a0a;font-family:Prompt,sans-serif;font-weight:700;font-size:12px;padding:5px 12px;border-radius:999px;box-shadow:0 4px 14px rgba(0,0,0,.4)';
   document.body.appendChild(_ghost); _ghostAt(e.clientX,e.clientY);
 });
 document.addEventListener('pointermove',e=>{ if(_pd) _ghostAt(e.clientX,e.clientY); });
