@@ -12,7 +12,30 @@ css=re.search(r"<style>(.*?)</style>", html, re.S).group(1).strip()
 open(os.path.join(OUT,"builder.css"),"w",encoding="utf-8").write("/* EDR Team Builder styles (generated from EDR-Team-Builder.html) */\n#edr-tb-app{display:block}\n"+css+"\n"
   +".edr-setup .ctl{min-width:220px}\n.edr-setup select,.edr-setup input{padding:7px;font-size:13px}\n.edr-match{font-size:12px}\n"
   +"/* generic read-only rules live in the HTML <style>; WP only hides the Setup tab for non-admins */\n"
-  +".readonly .tabs .tab[data-tab=\"setup\"]{display:none}\n")
+  +".readonly .tabs .tab[data-tab=\"setup\"]{display:none}\n"
+  +"""/* ---- theme armor: WordPress themes style input/button/select globally and bleed into
+   the app (white slider boxes, theme-coloured buttons). Force ours back. ---- */
+#edr-tb-app input[type=range]{-webkit-appearance:auto!important;appearance:auto!important;background:transparent!important;border:0!important;box-shadow:none!important;padding:0!important;margin:0!important;min-height:0!important;height:auto!important;width:100%!important;border-radius:0!important}
+#edr-tb-app input[type=checkbox]{-webkit-appearance:auto!important;appearance:auto!important;background:transparent!important;border:none!important;box-shadow:none!important;padding:0!important;min-height:0!important}
+#edr-tb-app select,#edr-tb-app textarea,#edr-tb-app input[type=text],#edr-tb-app input[type=number]{background:#0a0a14!important;color:#fff!important;border:1px solid var(--line)!important;border-radius:8px!important;box-shadow:none!important;text-shadow:none!important;line-height:1.4!important;min-height:0!important}
+#edr-tb-app button{box-shadow:none!important;text-shadow:none!important;text-decoration:none!important;letter-spacing:inherit;min-height:0!important}
+#edr-tb-app button:focus{outline:2px solid rgba(240,240,0,.55);outline-offset:1px}
+#edr-tb-app .tab{background:transparent!important;border:1px solid transparent!important;color:var(--dim)!important;border-radius:999px!important;padding:9px 18px!important;text-transform:uppercase!important}
+#edr-tb-app .tab:hover{color:#fff!important;border-color:var(--line)!important}
+#edr-tb-app .tab.active{color:#0a0a0a!important;background:var(--yellow)!important;border-color:var(--yellow)!important}
+#edr-tb-app .btn-amber,#edr-tb-app .btn-green{background:var(--yellow)!important;color:#0a0a0a!important;border:none!important;border-radius:999px!important}
+#edr-tb-app .btn-amber:hover,#edr-tb-app .btn-green:hover{background:var(--yellowH)!important}
+#edr-tb-app .btn-ghost{background:transparent!important;color:var(--yellow)!important;border:1px solid rgba(240,240,0,.55)!important;border-radius:999px!important}
+#edr-tb-app .btn-ghost:hover{background:var(--yellow)!important;color:#0a0a0a!important}
+#edr-tb-app .chip{background:var(--panel2)!important;color:var(--body)!important;border:1px solid var(--line)!important;border-radius:999px!important}
+#edr-tb-app .chip:hover{border-color:var(--yellow)!important;color:#fff!important}
+#edr-tb-app .chip.calactive{background:var(--yellow)!important;color:#0a0a0a!important;border-color:var(--yellow)!important}
+#edr-tb-app .winbtn{background:var(--panel)!important;color:var(--body)!important;border:1px solid var(--line)!important;border-radius:14px!important;text-transform:none!important}
+#edr-tb-app .winbtn.sel{border-color:var(--yellow)!important;background:rgba(240,240,0,.07)!important}
+#edr-tb-app .x{background:none!important;border:none!important;color:var(--dim)!important}
+#edr-tb-app a{text-decoration:none}
+#edr-tb-app p{margin:0}
+""")
 
 # ---- SCRIPT ----
 script=re.search(r"<script>(.*?)</script>", html, re.S).group(1)

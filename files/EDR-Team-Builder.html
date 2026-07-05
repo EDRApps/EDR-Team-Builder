@@ -425,7 +425,17 @@ function slotsToAvail(slots){
 function applyAvailToDrivers(){
   if(!state.evsel) return;
   const a=state.availStore[state.evsel]||{};
-  state.drivers.forEach(d=>{ if(a[d.name]) d.avail=slotsToAvail(a[d.name]); });
+  const byKey={}; state.drivers.forEach(d=>{ byKey[nameKey(d.name)]=d; });
+  Object.keys(a).forEach(n=>{
+    let d=byKey[nameKey(n)];
+    if(!d){
+      /* anyone who submits availability joins the driver pool; pace fills in on the next import */
+      const id=state.drivers.reduce((m,x)=>Math.max(m,x.id),0)+1;
+      d={id:id, name:n, cars:{}, assignedCar:undefined, avail:null};
+      state.drivers.push(d); byKey[nameKey(n)]=d;
+    }
+    d.avail=slotsToAvail(a[n]);
+  });
 }
 function persistAvail(evk,name){}  /* WP build overrides: syncs this driver's slots to the server */
 /* EDR membership pulled live from Garage 61 on 2026-07-05 (teams edr-endurotech +
