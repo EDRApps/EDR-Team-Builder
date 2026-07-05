@@ -8,9 +8,12 @@ A self-contained **WordPress plugin** (`edr-team-builder/`) that plans iRacing
 endurance line-ups for Endurotech Racing (endurotechracing.com). It pulls **pace**
 from Garage 61 and **availability** from iRacePlan, then builds Pro/Casual teams and
 stint rotations. Activated by the `[edr_team_builder]` shortcode. There is one shared
-plan stored in WordPress options that **any logged-in user can edit** (the admin gate was
-removed). Only the Settings page, which stores the API keys, stays admin-only
-(`manage_options`).
+plan stored in WordPress options: **anyone who can reach the page can read it**
+(`GET /plan` is public — the viewer gate was removed in 2.0.3 so members with only the
+page password, not a WP account, still see data; the page itself should stay
+private/password-protected). **Editing (POST /plan) and the import endpoints still
+require a logged-in user**, and only the Settings page, which stores the API keys,
+stays admin-only (`manage_options`).
 
 ## Build
 
@@ -41,7 +44,7 @@ dir (see `edr-team-builder-V2.zip` one level up); install/usage steps are in
 `g61_token`, `irp_key`, `team_slug` server-side only), the `[edr_team_builder]`
 shortcode, and the REST API under `/wp-json/edr/v1/`:
 - `GET /tracks`, `GET /events`, `POST /import` — available to any logged-in user.
-- `GET /plan` / `POST /plan` (any logged-in user) — the single shared plan,
+- `GET /plan` (public) / `POST /plan` (any logged-in user) — the single shared plan,
   stored in the `edr_tb_plan` option.
 
 `includes/` are thin API clients returning plain arrays:

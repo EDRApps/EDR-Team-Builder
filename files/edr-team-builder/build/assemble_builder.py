@@ -14,7 +14,7 @@ open(os.path.join(OUT,"builder.css"),"w",encoding="utf-8").write("/* EDR Team Bu
   +"/* read-only mode for non-admin members */\n"
   +".readonly .controls{display:none}\n"
   +".readonly .tabs .tab[data-tab=\"setup\"]{display:none}\n"
-  +".readonly #content select,.readonly #content .chip,.readonly #content [data-stintcell],.readonly #content button{pointer-events:none;opacity:.85}\n"
+  +".readonly #content select,.readonly #content .chip,.readonly #content [data-stintcell],.readonly #content [data-lanecell],.readonly #content button{pointer-events:none;opacity:.85}\n"
   +".readonly .x{display:none}\n")
 
 # ---- SCRIPT ----
@@ -24,6 +24,18 @@ script=re.sub(r"const SAMPLE = \[.*?\];", "const SAMPLE = [];", script, count=1,
 # 2) make event params reassignable (set from import)
 for c in ["WIN_START_MS","START_OFFSETS","START_LABELS"]:
     script=re.sub(r"const\s+"+c+r"\s*=", "let "+c+" =", script, count=1)
+# 2b) strip the standalone-only event-selector snapshot (its `const EVENTS` collides with
+#     the REST-backed `let EVENTS` in the WP layer and broke builder.js with a SyntaxError);
+#     the WP build gets a plain summary line — event selection lives in the Setup tab.
+WP_SUMMARY = """function renderSummary(model){
+  const classes=Object.keys(model);
+  document.getElementById('summary').innerHTML =
+    '<span>'+state.drivers.length+' drivers · '+classes.length+' classes</span>'+
+    classes.map(c=>'<span style="color:var(--dim)">'+esc(c)+'</span>').join('');
+}"""
+script, n = re.subn(r"/\* Upcoming iRacePlan survey events.*?\nfunction renderSummary\(model\)\{.*?\n\}",
+    WP_SUMMARY.replace("\\", "\\\\"), script, count=1, flags=re.S)
+assert n == 1, "event-snapshot block not found in EDR-Team-Builder.html — check renderSummary markers"
 # 3) renderContent: add a Setup branch
 script=script.replace(
   "el.innerHTML = state.tab==='teams' ? renderTeams(byId) : state.tab==='stints' ? renderStints(byId) : renderDrivers(model);",
@@ -68,9 +80,11 @@ APPEND = r"""
 /* ===== EDR Team Builder — data import (WordPress plugin) ===== */
 const API=(window.EDR_TB&&EDR_TB.root)||''; const NONCE=(window.EDR_TB&&EDR_TB.nonce)||'';
 const H={'X-WP-Nonce':NONCE,'Content-Type':'application/json'};
-function apiGET(p){return fetch(API+p,{headers:{'X-WP-Nonce':NONCE}}).then(r=>r.json());}
-function apiPOST(p,b){return fetch(API+p,{method:'POST',headers:H,body:JSON.stringify(b)}).then(r=>r.json());}
 const CAN=!!(window.EDR_TB&&EDR_TB.can_edit);
+/* read-only viewers skip the nonce: public GETs need no auth, and a stale cached-page
+   nonce would otherwise make WordPress 403 even public REST routes */
+function apiGET(p){return fetch(API+p,{headers:CAN?{'X-WP-Nonce':NONCE}:{}}).then(r=>r.json());}
+function apiPOST(p,b){return fetch(API+p,{method:'POST',headers:H,body:JSON.stringify(b)}).then(r=>r.json());}
 let lastTrackIds=[], _saveT=null;
 function serializePlan(){ return {drivers:state.drivers,w:state.w,proPct:state.proPct,teams:state.teams,stint:state.stint,stintAssign:state.stintAssign,stintWin:state.stintWin,stintSig:state.stintSig,overrides:overrides,meta:IMPORT_META,winStart:WIN_START_MS,startOffsets:START_OFFSETS,startLabels:START_LABELS,matches:lastMatches,trackIds:lastTrackIds}; }
 function save(){ if(!CAN) return; clearTimeout(_saveT); _saveT=setTimeout(function(){ try{ apiPOST('plan',{plan:serializePlan()}); }catch(e){} }, 600); }

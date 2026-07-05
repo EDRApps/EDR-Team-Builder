@@ -2,7 +2,7 @@
 /**
  * Plugin Name: EDR Team Builder
  * Description: Endurotech Racing endurance team + stint planner. Pulls Garage 61 pace and iRacePlan availability, builds Pro/Casual teams and stint rotations. Add the [edr_team_builder] shortcode to a page.
- * Version: 2.0.2
+ * Version: 2.0.3
  * Author: Endurotech Racing
  * License: GPL-2.0-or-later
  */
@@ -11,7 +11,7 @@ if (!defined('ABSPATH')) exit; // no direct access
 
 define('EDR_TB_DIR', plugin_dir_path(__FILE__));
 define('EDR_TB_URL', plugin_dir_url(__FILE__));
-define('EDR_TB_VER', '2.0.2');
+define('EDR_TB_VER', '2.0.3');
 
 require_once EDR_TB_DIR . 'includes/garage61.php';
 require_once EDR_TB_DIR . 'includes/iraceplan.php';
@@ -82,10 +82,12 @@ add_action('rest_api_init', function () {
     register_rest_route('edr/v1', '/import', array(
         'methods' => 'POST', 'permission_callback' => $perm, 'callback' => 'edr_tb_rest_import',
     ));
-    // shared plan: any logged-in member can read and write
+    // shared plan: anyone who can reach the page can READ it (viewer gate removed);
+    // writing still requires a logged-in member. Keep the builder page itself
+    // private/password-protected — that is the only thing hiding the plan from the web.
     register_rest_route('edr/v1', '/plan', array(
-        array('methods' => 'GET',  'permission_callback' => 'is_user_logged_in', 'callback' => 'edr_tb_rest_plan_get'),
-        array('methods' => 'POST', 'permission_callback' => $perm,               'callback' => 'edr_tb_rest_plan_set'),
+        array('methods' => 'GET',  'permission_callback' => '__return_true', 'callback' => 'edr_tb_rest_plan_get'),
+        array('methods' => 'POST', 'permission_callback' => $perm,           'callback' => 'edr_tb_rest_plan_set'),
     ));
 });
 

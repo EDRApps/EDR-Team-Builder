@@ -35,14 +35,14 @@ const APP_HTML=`
 `;
 const _app=document.getElementById('edr-tb-app'); if(!_app){return;} _app.innerHTML=APP_HTML;
 
-const KEY = 'edrTeamBuilder_spa_v6'; /* Spa 24h — S3 pace, survey 2307 availability */
+const KEY = 'edrTeamBuilder_spa_v14'; /* Spa 24h — S3 pace, survey 2307 availability */
 
 // --- Spa 24h event timing (for the Stints tab) ---
 // Availability window starts 2026-07-10 22:00 UTC (= 11 Jul 08:00 Brisbane). All offsets in minutes from there.
 // 4 candidate start slots (iRacePlan survey 2307 session_times).
 let WIN_START_MS = Date.parse('2026-07-10T22:00:00Z');
 let START_OFFSETS = {1:0, 2:540, 3:840, 4:1080};
-let START_LABELS = {1:'22:00Z', 2:'07:00Z', 3:'12:00Z', 4:'16:00Z'};
+let START_LABELS = {1:'Sat 08:00 · 22:00Z', 2:'Sat 17:00 · 07:00Z', 3:'Sat 22:00 · 12:00Z', 4:'Sun 02:00 · 16:00Z'};
 
 // Spa 24h: Garage 61 pace (iRacing 2026 Season 3 only, from 2026-06-16; age=-1) for the 18 drivers in iRacePlan survey 2307.
 // Availability merged from iRacePlan survey 2307 timeline (green = available). Empty cars = no Spa data shared.
@@ -138,7 +138,7 @@ function esc(s){ return String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;',
 function renderSummary(model){
   const classes=Object.keys(model);
   document.getElementById('summary').innerHTML =
-    '<span>Spa-Francorchamps (Endurance) · 24h</span><span>'+state.drivers.length+' drivers · '+classes.length+' classes</span>'+
+    '<span>'+state.drivers.length+' drivers · '+classes.length+' classes</span>'+
     classes.map(c=>'<span style="color:var(--dim)">'+esc(c)+'</span>').join('');
 }
 
@@ -153,7 +153,7 @@ function renderTeams(byId){
   }
   let html='';
   classes.forEach(cls=>{
-    html+='<div style="margin-bottom:26px"><h2 style="font-size:16px;letter-spacing:.06em;text-transform:uppercase;margin:0 0 14px;border-bottom:2px solid var(--yellow);padding-bottom:8px;color:#fff">'+esc(cls)+'</h2>';
+    html+='<div style="margin-bottom:26px"><h2 class="classhdr" style="font-size:17px">'+esc(cls)+'</h2>';
     [['pro','PRO','var(--gold)'],['casual','CASUAL','var(--steel)']].forEach(([tier,label,col])=>{
       const list=(state.teams[cls]&&state.teams[cls][tier])||[];
       html+='<div style="margin-bottom:16px"><div style="display:flex;align-items:center;gap:10px;margin-bottom:10px"><span class="swatch" style="background:'+col+'"></span><span class="head" style="letter-spacing:2px;font-size:13px;color:'+col+'">'+label+'</span><button class="btn btn-ghost" data-action="addcar" data-class="'+esc(cls)+'" data-tier="'+tier+'" style="font-size:10px;padding:3px 9px">+ car</button></div><div class="grid">';
@@ -243,23 +243,22 @@ function renderStints(byId){
   const sig=[len,race,JSON.stringify(state.teams)].join('|');
   if(state.stintSig!==sig){ state.stintAssign={}; state.stintSig=sig; }  // block length / teams changed -> fresh auto-plan
   let html='<div class="importbox" style="display:flex;gap:18px;flex-wrap:wrap;align-items:flex-end">';
-  html+='<div class="ctl"><label>DEFAULT START (UTC)</label><select data-action="stintwin">'+
+  html+='<div class="ctl"><label>DEFAULT START (LOCAL · UTC)</label><select data-action="stintwin">'+
     [1,2,3,4].map(w=>'<option value="'+w+'"'+(w===state.stint.window?' selected':'')+'>#'+w+' · '+START_LABELS[w]+'</option>').join('')+'</select></div>';
   html+='<div class="ctl"><label>BLOCK LENGTH (min)</label><input type="number" min="10" max="240" step="5" value="'+state.stint.len+'" data-action="stintlen" style="width:90px;padding:6px"></div>';
   html+='<div class="ctl"><label>RACE LENGTH (min)</label><input type="number" min="30" max="1440" step="10" value="'+state.stint.race+'" data-action="stintrace" style="width:90px;padding:6px"></div>';
   html+='<button class="btn btn-ghost" data-action="stintreset" style="align-self:center">Auto-fill all</button>';
-  html+='<div class="meta" style="align-self:center;max-width:340px"><b>Each car can run a different session.</b> Pick its start below (or set a default for all). Clock = Brisbane. green=available, red !=not free, GAP=empty.</div>';
+  html+='<div class="meta" style="align-self:center;max-width:360px"><b style="color:#fff">Each car can run a different session.</b> Pick its start below (or set a default for all). Clock = Brisbane. Drag blocks or bank names, or click a driver\'s lane to hand them that stint.</div>';
   html+='</div>';
   const classes=Object.keys(state.teams);
   if(!classes.length) return html+'<div class="meta">Hit Generate to build teams first.</div>';
   const summ=windowSummary(byId,len,race);
   const bestW=summ.slice().sort((a,b)=>(b.covered-a.covered)||(b.free-a.free))[0];
-  html+='<div style="margin:2px 0 18px"><div class="meta" style="margin-bottom:6px;text-transform:uppercase;letter-spacing:.04em">Session finder, click a window to set it as the default for all cars</div><div style="display:flex;gap:8px;flex-wrap:wrap">';
+  html+='<div style="margin:2px 0 18px"><div class="meta" style="margin-bottom:8px;text-transform:uppercase;letter-spacing:.04em">Session finder, click a window to set it as the default for all cars</div><div style="display:flex;gap:10px;flex-wrap:wrap">';
   summ.forEach(s=>{
     const sel=s.w===state.stint.window, isBest=bestW&&s.w===bestW.w;
-    const bd=sel?'2px solid var(--yellow)':isBest?'1px solid var(--green)':'1px solid var(--line)';
-    html+='<button data-action="stintwin" value="'+s.w+'" style="text-align:left;cursor:pointer;background:'+(sel?'rgba(240,240,0,.08)':'var(--panel)')+';border:'+bd+';border-radius:3px;padding:9px 12px;min-width:158px;color:var(--body);font-family:Karla">'
-      +'<div style="font-family:Prompt;font-weight:600;color:#fff;text-transform:uppercase;font-size:12px">#'+s.w+' · '+fmtClock(s.off)+(isBest?' <span style="color:var(--green)">best</span>':'')+'</div>'
+    html+='<button data-action="stintwin" value="'+s.w+'" class="winbtn'+(sel?' sel':'')+(isBest?' best':'')+'">'
+      +'<div style="font-family:Prompt;font-weight:600;color:#fff;text-transform:uppercase;font-size:12px">#'+s.w+' · '+START_LABELS[s.w]+(isBest?' <span style="color:var(--green)">● best</span>':'')+'</div>'
       +'<div class="meta">'+s.free+'/'+s.total+' drivers free (full race)</div>'
       +'<div class="meta">'+s.covered+'/'+s.cars+' cars coverable</div></button>';
   });
@@ -273,6 +272,7 @@ function renderStints(byId){
     html+=bankByCls[c].map(d=>'<span class="chip" data-bankchip data-driver="'+d.id+'" style="cursor:grab;user-select:none;touch-action:none">'+esc(d.name.split(' ')[0])+(d._tier==='pro'?' (P)':' (C)')+'</span>').join('');
   });
   html+='<span class="chip" data-bankchip data-driver="" style="cursor:grab;user-select:none;touch-action:none;color:var(--red);margin-left:8px">✕ empty</span></div></div>';
+  const PALETTE=['#6ea8ff','#5fd38a','#ffb454','#d78cff','#4fd1c5','#ff8fa3','#c8e05a','#9aa3c0'];
   classes.forEach(cls=>{
     [['pro','PRO','var(--gold)'],['casual','CASUAL','var(--steel)']].forEach(([tier,label,col])=>{
       const list=(state.teams[cls]&&state.teams[cls][tier])||[];
@@ -285,29 +285,34 @@ function renderStints(byId){
         const times=blockTimes(off,len,race);
         if(!state.stintAssign[key] || state.stintAssign[key].length!==times.length) state.stintAssign[key]=autoPlan(team,byId,times);
         const arr=state.stintAssign[key];
+        const colr={}; members.forEach((m,i)=>colr[m.id]=PALETTE[i%PALETTE.length]);
         const count={}; members.forEach(m=>count[m.id]=0); arr.forEach(id=>{ if(id!=null && count[id]!=null) count[id]++; });
         let gaps=0, conflicts=0;
-        const cells=arr.map((id,i)=>{
-          const t=times[i];
-          const m=id!=null?byId[id]:null;
-          const free=m?driverFree(m,t.s,t.e):false;
-          if(id==null) gaps++; else if(!free) conflicts++;
-          const bg=id==null?'var(--panel2)':(free?'rgba(95,211,138,.16)':'rgba(255,90,106,.20)');
-          const lbl=m?(esc(m.name.split(' ')[0])+(free?'':' <span style="color:var(--red)">!</span>')):'<span style="color:var(--dim)">drop here</span>';
-          return '<td data-stintcell data-key="'+key+'" data-block="'+i+'" data-driver="'+(id==null?'':id)+'" title="'+(m?(free?'available':'NOT available this block'):'empty')+'" style="padding:10px 12px;text-align:center;background:'+bg+';border:1px solid var(--line);white-space:nowrap;cursor:grab;user-select:none;touch-action:none">'+lbl+'</td>';
-        }).join('');
+        arr.forEach((id,i)=>{ const t=times[i], m=id!=null?byId[id]:null; if(id==null) gaps++; else if(!m||!driverFree(m,t.s,t.e)) conflicts++; });
         const badge = gaps? '<span class="meta" style="color:var(--red)">'+gaps+' empty</span>' : conflicts? '<span class="meta" style="color:var(--red)">'+conflicts+' conflict'+(conflicts>1?'s':'')+'</span>' : '<span class="meta" style="color:var(--green)">all covered</span>';
         const winSel='<select data-action="carwin" data-key="'+key+'">'+[1,2,3,4].map(w=>'<option value="'+w+'"'+(w===win?' selected':'')+'>start #'+w+' · '+START_LABELS[w]+'</option>').join('')+'</select>';
         const best=carBestWindow(team,byId,len,race);
         const curCovGaps=times.filter(t=>!members.some(m=>driverFree(m,t.s,t.e))).length;
         const bestHint=(best && best.gaps<curCovGaps)? '<span class="meta" style="color:var(--green);cursor:pointer;text-decoration:underline" data-action="usebest" data-key="'+key+'" data-win="'+best.w+'">better fit: #'+best.w+' '+START_LABELS[best.w]+' ('+(best.gaps?best.gaps+' gaps':'full cover')+'), use</span>' : '';
-        html+='<div style="margin-bottom:22px"><div style="display:flex;align-items:center;gap:10px;margin-bottom:8px;flex-wrap:wrap"><span class="swatch" style="background:'+col+'"></span><span class="head" style="letter-spacing:.04em;color:#fff">'+esc(cls)+' · '+label[0]+(ti+1)+'</span>'+winSel+badge+bestHint+'</div>';
-        html+='<div style="overflow-x:auto"><table style="border-collapse:collapse;font-size:12px;min-width:100%"><tr><td style="padding:6px 10px;color:var(--dim)">Block</td>';
-        times.forEach((t,i)=>{ html+='<td style="padding:6px 10px;text-align:center;color:var(--dim);white-space:nowrap;border-left:1px solid var(--line)">'+(i+1)+'<br><span style="font-size:9px">'+fmtClock(t.s)+'</span></td>'; });
-        html+='</tr><tr><td style="padding:6px 10px;color:var(--dim)">Driver</td>'+cells+'</tr></table></div>';
-        const cnt={}; arr.forEach(id=>{ if(id!=null) cnt[id]=(cnt[id]||0)+1; });
-        const summ2=Object.keys(cnt).map(id=>esc((byId[id]?byId[id].name.split(' ')[0]:'?'))+': '+cnt[id]+'×'+state.stint.len+'m').join('  ·  ');
-        html+='<div class="meta" style="margin-top:7px">Drag from the bank above onto a block, or drag a block onto another to swap.  '+(summ2?'&nbsp; Stints: '+summ2:'')+'</div></div>';
+        html+='<div class="stintcar"><div style="display:flex;align-items:center;gap:10px;margin-bottom:12px;flex-wrap:wrap"><span class="swatch" style="background:'+col+'"></span><span class="head" style="letter-spacing:.04em;color:#fff;font-size:15px">'+esc(cls)+' · '+label[0]+(ti+1)+'</span>'+winSel+badge+bestHint+'</div>';
+        html+='<div class="stintwrap"><div class="stintgrid" style="grid-template-columns:150px repeat('+times.length+',minmax(84px,1fr))">';
+        html+='<div class="sg-corner">stint →</div>';
+        times.forEach((t,i)=>{ html+='<div class="sg-time"><b>'+(i+1)+'</b>'+fmtClock(t.s)+'</div>'; });
+        html+='<div class="sg-label" style="font-family:Prompt;font-weight:600;color:#fff;text-transform:uppercase;font-size:11px;letter-spacing:.05em">Driving</div>';
+        arr.forEach((id,i)=>{
+          const t=times[i], m=id!=null?byId[id]:null;
+          const free=m?driverFree(m,t.s,t.e):false;
+          html+='<div class="sg-block'+(m?(free?'':' conflict'):' empty')+'" data-stintcell data-key="'+key+'" data-block="'+i+'" data-driver="'+(id==null?'':id)+'" style="--dc:'+(m?colr[id]:'transparent')+'" title="'+(m?(free?'available · drag to move or swap':'NOT available this block'):'empty · drag a driver here')+'">'+(m?esc(m.name.split(' ')[0])+(free?'':' <span class="warn">!</span>'):'+')+'</div>';
+        });
+        members.forEach(m=>{
+          html+='<div class="sg-label"><span class="sg-dot" style="background:'+colr[m.id]+'"></span><span style="overflow:hidden;text-overflow:ellipsis">'+esc(m.name.split(' ')[0])+'</span><span class="meta">'+(count[m.id]||0)+'× · '+availBadge(m)+'</span></div>';
+          times.forEach((t,i)=>{
+            const free=driverFree(m,t.s,t.e), driving=arr[i]===m.id;
+            html+='<div class="sg-lane '+(driving?'driving':free?'free':'busy')+'" data-lanecell data-key="'+key+'" data-block="'+i+'" data-driver="'+m.id+'" style="--dc:'+colr[m.id]+'" title="'+esc(m.name.split(' ')[0])+' · stint '+(i+1)+' · '+(free?'available':'not available')+(driving?' · driving, click to clear':' · click to assign')+'"></div>';
+          });
+        });
+        html+='</div></div>';
+        html+='<div class="meta" style="margin-top:10px">Lanes: <span style="color:var(--green)">green = available</span> · striped = not free · solid = driving that stint. Click a lane cell to assign, drag blocks to swap, or drag names from the bank.</div></div>';
       });
     });
   });
@@ -374,6 +379,8 @@ document.getElementById('content').addEventListener('change',e=>{
 document.getElementById('content').addEventListener('click',e=>{
   const winBtn=e.target.closest&&e.target.closest('button[data-action="stintwin"]');
   if(winBtn){ state.stint.window=+winBtn.value; state.stintWin={}; state.stintAssign={}; save(); renderContent(); return; }
+  const lane=e.target.closest&&e.target.closest('[data-lanecell]');
+  if(lane){ const k=lane.dataset.key,b=+lane.dataset.block,d=+lane.dataset.driver,a=state.stintAssign[k]; if(a){ a[b]=(a[b]===d)?null:d; save(); renderContent(); } return; }
   if(e.target.dataset.action==='remove'){ state.drivers=state.drivers.filter(x=>x.id!=e.target.dataset.id); generate(); save(); renderContent(); }
   else if(e.target.dataset.action==='stintreset'){ state.stintAssign={}; state.stintSig=''; save(); renderContent(); }
   else if(e.target.dataset.action==='usebest'){ const k=e.target.dataset.key; state.stintWin[k]=+e.target.dataset.win; delete state.stintAssign[k]; save(); renderContent(); }
@@ -396,7 +403,7 @@ _stintContent.addEventListener('pointerdown',e=>{
   e.preventDefault();
   _ghost=document.createElement('div');
   _ghost.textContent=_pd.driver===''?'clear':_drvName(_pd.driver);
-  _ghost.style.cssText='position:fixed;left:0;top:0;z-index:99999;pointer-events:none;background:var(--yellow);color:#0a0a0a;font-family:Prompt,sans-serif;font-weight:700;font-size:12px;padding:4px 9px;border-radius:2px';
+  _ghost.style.cssText='position:fixed;left:0;top:0;z-index:99999;pointer-events:none;background:var(--yellow);color:#0a0a0a;font-family:Prompt,sans-serif;font-weight:700;font-size:12px;padding:5px 12px;border-radius:999px;box-shadow:0 4px 14px rgba(0,0,0,.4)';
   document.body.appendChild(_ghost); _ghostAt(e.clientX,e.clientY);
 });
 document.addEventListener('pointermove',e=>{ if(_pd) _ghostAt(e.clientX,e.clientY); });
@@ -420,9 +427,11 @@ document.addEventListener('pointerup',e=>{
 /* ===== EDR Team Builder — data import (WordPress plugin) ===== */
 const API=(window.EDR_TB&&EDR_TB.root)||''; const NONCE=(window.EDR_TB&&EDR_TB.nonce)||'';
 const H={'X-WP-Nonce':NONCE,'Content-Type':'application/json'};
-function apiGET(p){return fetch(API+p,{headers:{'X-WP-Nonce':NONCE}}).then(r=>r.json());}
-function apiPOST(p,b){return fetch(API+p,{method:'POST',headers:H,body:JSON.stringify(b)}).then(r=>r.json());}
 const CAN=!!(window.EDR_TB&&EDR_TB.can_edit);
+/* read-only viewers skip the nonce: public GETs need no auth, and a stale cached-page
+   nonce would otherwise make WordPress 403 even public REST routes */
+function apiGET(p){return fetch(API+p,{headers:CAN?{'X-WP-Nonce':NONCE}:{}}).then(r=>r.json());}
+function apiPOST(p,b){return fetch(API+p,{method:'POST',headers:H,body:JSON.stringify(b)}).then(r=>r.json());}
 let lastTrackIds=[], _saveT=null;
 function serializePlan(){ return {drivers:state.drivers,w:state.w,proPct:state.proPct,teams:state.teams,stint:state.stint,stintAssign:state.stintAssign,stintWin:state.stintWin,stintSig:state.stintSig,overrides:overrides,meta:IMPORT_META,winStart:WIN_START_MS,startOffsets:START_OFFSETS,startLabels:START_LABELS,matches:lastMatches,trackIds:lastTrackIds}; }
 function save(){ if(!CAN) return; clearTimeout(_saveT); _saveT=setTimeout(function(){ try{ apiPOST('plan',{plan:serializePlan()}); }catch(e){} }, 600); }
