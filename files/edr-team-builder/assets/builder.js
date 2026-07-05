@@ -61,6 +61,11 @@ function fastestCar(cars){
 function seed(list){
   let id=1;
   state.drivers = list.map(d => ({ id:id++, name:d.name, cars:d.cars||{}, assignedCar:fastestCar(d.cars), avail:d.avail||null }));
+  /* fold the sample's survey availability into the per-event store so the Spa pool
+     survives event switching (availability is strictly per event now) */
+  const SPA='Spa 24HR|2026-07-10';
+  const st=state.availStore[SPA]=state.availStore[SPA]||{};
+  state.drivers.forEach(d=>{ if(d.avail&&d.avail.windows&&d.avail.windows.length&&!(st[d.name]&&st[d.name].length)) st[d.name]=windowsToSlots(d.avail.windows); });
 }
 
 function save(){ try{ localStorage.setItem(KEY, JSON.stringify({drivers:state.drivers,w:state.w,proPct:state.proPct,stint:state.stint,stintAssign:state.stintAssign,stintWin:state.stintWin,stintSig:state.stintSig,evsel:state.evsel,role:state.role,me:state.me,pass:state.pass,availStore:state.availStore,evWinMin:EV_WIN_MIN,winStart:WIN_START_MS,startOffsets:START_OFFSETS,startLabels:START_LABELS})); }catch(e){} }
@@ -89,8 +94,14 @@ function classOf(name){
 }
 function fmtLap(s){ if(s==null)return '—'; const m=Math.floor(s/60); const sec=(s%60).toFixed(3); return m+':'+String(sec).padStart(6,'0'); }
 
+/* with an event selected, the pool is drivers with availability for THAT event
+   (hours > 0) — same rule as the old survey flow. No event = everyone. */
+function eventPool(){
+  if(!state.evsel) return state.drivers;
+  return state.drivers.filter(d=>d.avail && d.avail.hours>0);
+}
 function computeModel(){
-  const enriched = state.drivers.map(d=>{
+  const enriched = eventPool().map(d=>{
     const car = (d.cars && d.cars[d.assignedCar]) ? d.assignedCar : fastestCar(d.cars);
     const st = (d.cars && d.cars[car]) || {laps:0,medianLap:null,cleanPct:0};
     return Object.assign({}, d, {_car:car,_class:classOf(car),_laps:st.laps,_median:st.medianLap,_clean:st.cleanPct});
@@ -295,6 +306,9 @@ function slotsToAvail(slots){
 function applyAvailToDrivers(){
   if(!state.evsel) return;
   const a=state.availStore[state.evsel]||{};
+  /* availability is strictly per event: wipe first so nobody carries a previous
+     event's windows into this one (e.g. Spa availability showing up at NEC) */
+  state.drivers.forEach(d=>{ d.avail=null; });
   const byKey={}; state.drivers.forEach(d=>{ byKey[nameKey(d.name)]=d; });
   Object.keys(a).forEach(n=>{
     let d=byKey[nameKey(n)];
@@ -306,6 +320,14 @@ function applyAvailToDrivers(){
     }
     d.avail=slotsToAvail(a[n]);
   });
+}
+function windowsToSlots(windows){
+  const out=[]; const n=evSlots();
+  for(let i=0;i<n;i++){
+    const s=i*AV_BLOCK, e=Math.min((i+1)*AV_BLOCK, EV_WIN_MIN);
+    if((windows||[]).some(w=>Math.min(w[1],e)-Math.max(w[0],s) >= (e-s)/2)) out.push(i);
+  }
+  return out;
 }
 function persistAvail(evk,name){}  /* WP build overrides: syncs this driver's slots to the server */
 /* EDR membership pulled live from Garage 61 on 2026-07-05 (teams edr-endurotech +
@@ -496,7 +518,13 @@ function renderTeams(byId){
 }
 
 function renderDrivers(model){
-  let html='<div style="display:flex;justify-content:flex-end;margin-bottom:12px"></div>';
+  let html='';
+  if(state.evsel){
+    const pool=eventPool().length, hidden=state.drivers.length-pool;
+    const ev=calEvent(state.evsel);
+    html+='<div class="meta" style="margin-bottom:14px">Showing the <b style="color:#fff">'+pool+'</b> driver'+(pool===1?'':'s')+' with availability for <b style="color:var(--yellow)">'+esc(ev?ev.n:state.evsel)+'</b>'+(hidden>0?' · '+hidden+' without availability hidden':'')+'.</div>';
+    if(!pool) return html+'<div class="importbox"><div class="meta">No one has submitted availability for this event yet — drivers appear here as soon as they hit Submit on the Availability tab.</div></div>';
+  }
   Object.keys(model).forEach(cls=>{
     const grp=model[cls];
     html+='<div style="margin-bottom:18px"><div class="classhdr">'+esc(cls)+' <small>· '+grp.length+' drivers · ranked within class</small></div><div style="display:flex;flex-direction:column;gap:8px">';
@@ -888,7 +916,15 @@ function applyImport(payload, scrape){
     (payload.roster||[]).forEach(r=>{ drivers.push({id:id++, name:r.name, cars:r.cars, assignedCar:fastestCar(r.cars), avail:null}); });
   }
   lastMatches=matches; state.drivers=drivers; state.stintAssign={}; state.stintSig=''; state.stintWin={};
-  applyAvailToDrivers();  // our own availability submissions overlay the iRacePlan data
+  /* fold iRacePlan availability into the per-event store (as 4h slots) so it lives in the
+     same system as direct submissions; direct submissions win on conflict */
+  if(state.evsel && availList.length){
+    const st=state.availStore[state.evsel]=state.availStore[state.evsel]||{};
+    availList.forEach(function(a){
+      if((a.windows||[]).length && !(st[a.name]&&st[a.name].length)){ st[a.name]=windowsToSlots(a.windows); persistAvail(state.evsel,a.name); }
+    });
+  }
+  applyAvailToDrivers();  // per-event availability is the single source of truth
   generate(); save();
 }
 
@@ -909,16 +945,18 @@ function applyPaste(txt){
   catch(e){ setSetupMsg('Paste failed: '+e.message); }
 }
 
+let SETUP_MANUAL=false;
 function renderSetup(){
   const selEv=state.evsel?calEvent(state.evsel):null;
-  const evTrackIds=(selEv&&selEv.g61Tracks)||null;
+  const evTrackIds=(selEv&&selEv.g61Tracks&&!SETUP_MANUAL)?selEv.g61Tracks:null;
   let h='<div class="edr-setup">';
   h+='<div class="importbox" style="display:flex;gap:16px;flex-wrap:wrap;align-items:flex-end">';
   if(evTrackIds){
     const tnames=evTrackIds.map(function(id){ const t=(TRACKS||[]).find(x=>x.id===id); return t?(t.name+(t.variant?' - '+t.variant:'')):('#'+id); });
-    h+='<div class="ctl"><label>TRACK — from the selected event</label><div style="font-size:13px;color:#fff;padding:6px 0">'+esc(selEv.n)+': '+esc(tnames.join(' + '))+'</div></div>';
+    h+='<div class="ctl"><label>TRACK — from the selected event</label><div style="font-size:13px;color:#fff;padding:6px 0">'+esc(selEv.n)+': '+esc(tnames.join(' + '))+'</div><span class="meta" data-s="manualtrack" style="cursor:pointer;text-decoration:underline">use the manual track picker instead</span></div>';
   } else {
-    h+='<div class="ctl"><label>TRACK (Garage 61)</label><select data-s="track">'+(TRACKS?TRACKS.map(t=>'<option value="'+t.id+'"'+(t.id===SEL_TRACK?' selected':'')+'>'+esc(t.name+(t.variant?' - '+t.variant:''))+'</option>').join(''):'<option>loading...</option>')+'</select></div>';
+    h+='<div class="ctl"><label>TRACK (Garage 61)</label><select data-s="track">'+(TRACKS?TRACKS.map(t=>'<option value="'+t.id+'"'+(t.id===SEL_TRACK?' selected':'')+'>'+esc(t.name+(t.variant?' - '+t.variant:''))+'</option>').join(''):'<option>loading...</option>')+'</select>'
+      +((selEv&&selEv.g61Tracks)?'<div><span class="meta" data-s="autotrack" style="cursor:pointer;text-decoration:underline">back to the event tracks</span></div>':'')+'</div>';
   }
   h+='<div class="ctl"><label>EVENT (iRacePlan) <span style="color:var(--green)">nearest auto-selected</span></label><select data-s="event"><option value=""'+(SEL_SURVEY?'':' selected')+'>(none, pace only)</option>'+(EVENTS?EVENTS.map(e=>'<option value="'+e.id+'"'+(e.id===SEL_SURVEY?' selected':'')+'>'+esc(e.title)+(e.responses!=null?' ('+e.responses+'/'+e.drivers+')':'')+'</option>').join(''):'')+'</select></div>';
   h+='<button class="btn btn-amber" data-s="import">Import / Refresh now</button>';
@@ -950,9 +988,11 @@ document.getElementById('content').addEventListener('change',function(e){
 });
 document.getElementById('content').addEventListener('click',function(e){
   const s=e.target.dataset.s;
-  if(s==='import'){
+  if(s==='manualtrack'){ SETUP_MANUAL=true; renderContent(); }
+  else if(s==='autotrack'){ SETUP_MANUAL=false; renderContent(); }
+  else if(s==='import'){
     const selEv=state.evsel?calEvent(state.evsel):null;
-    const evIds=(selEv&&selEv.g61Tracks)||null;
+    const evIds=(selEv&&selEv.g61Tracks&&!SETUP_MANUAL)?selEv.g61Tracks:null;
     const tEl=document.querySelector('[data-s=track]'); const eEl=document.querySelector('[data-s=event]');
     const ids=evIds||(tEl?[parseInt(tEl.value,10)]:[]);
     if(ids.length) doImport(ids, (eEl&&eEl.value)?parseInt(eEl.value,10):0);

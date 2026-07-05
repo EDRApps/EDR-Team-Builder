@@ -191,7 +191,15 @@ function applyImport(payload, scrape){
     (payload.roster||[]).forEach(r=>{ drivers.push({id:id++, name:r.name, cars:r.cars, assignedCar:fastestCar(r.cars), avail:null}); });
   }
   lastMatches=matches; state.drivers=drivers; state.stintAssign={}; state.stintSig=''; state.stintWin={};
-  applyAvailToDrivers();  // our own availability submissions overlay the iRacePlan data
+  /* fold iRacePlan availability into the per-event store (as 4h slots) so it lives in the
+     same system as direct submissions; direct submissions win on conflict */
+  if(state.evsel && availList.length){
+    const st=state.availStore[state.evsel]=state.availStore[state.evsel]||{};
+    availList.forEach(function(a){
+      if((a.windows||[]).length && !(st[a.name]&&st[a.name].length)){ st[a.name]=windowsToSlots(a.windows); persistAvail(state.evsel,a.name); }
+    });
+  }
+  applyAvailToDrivers();  // per-event availability is the single source of truth
   generate(); save();
 }
 
@@ -212,16 +220,18 @@ function applyPaste(txt){
   catch(e){ setSetupMsg('Paste failed: '+e.message); }
 }
 
+let SETUP_MANUAL=false;
 function renderSetup(){
   const selEv=state.evsel?calEvent(state.evsel):null;
-  const evTrackIds=(selEv&&selEv.g61Tracks)||null;
+  const evTrackIds=(selEv&&selEv.g61Tracks&&!SETUP_MANUAL)?selEv.g61Tracks:null;
   let h='<div class="edr-setup">';
   h+='<div class="importbox" style="display:flex;gap:16px;flex-wrap:wrap;align-items:flex-end">';
   if(evTrackIds){
     const tnames=evTrackIds.map(function(id){ const t=(TRACKS||[]).find(x=>x.id===id); return t?(t.name+(t.variant?' - '+t.variant:'')):('#'+id); });
-    h+='<div class="ctl"><label>TRACK — from the selected event</label><div style="font-size:13px;color:#fff;padding:6px 0">'+esc(selEv.n)+': '+esc(tnames.join(' + '))+'</div></div>';
+    h+='<div class="ctl"><label>TRACK — from the selected event</label><div style="font-size:13px;color:#fff;padding:6px 0">'+esc(selEv.n)+': '+esc(tnames.join(' + '))+'</div><span class="meta" data-s="manualtrack" style="cursor:pointer;text-decoration:underline">use the manual track picker instead</span></div>';
   } else {
-    h+='<div class="ctl"><label>TRACK (Garage 61)</label><select data-s="track">'+(TRACKS?TRACKS.map(t=>'<option value="'+t.id+'"'+(t.id===SEL_TRACK?' selected':'')+'>'+esc(t.name+(t.variant?' - '+t.variant:''))+'</option>').join(''):'<option>loading...</option>')+'</select></div>';
+    h+='<div class="ctl"><label>TRACK (Garage 61)</label><select data-s="track">'+(TRACKS?TRACKS.map(t=>'<option value="'+t.id+'"'+(t.id===SEL_TRACK?' selected':'')+'>'+esc(t.name+(t.variant?' - '+t.variant:''))+'</option>').join(''):'<option>loading...</option>')+'</select>'
+      +((selEv&&selEv.g61Tracks)?'<div><span class="meta" data-s="autotrack" style="cursor:pointer;text-decoration:underline">back to the event tracks</span></div>':'')+'</div>';
   }
   h+='<div class="ctl"><label>EVENT (iRacePlan) <span style="color:var(--green)">nearest auto-selected</span></label><select data-s="event"><option value=""'+(SEL_SURVEY?'':' selected')+'>(none, pace only)</option>'+(EVENTS?EVENTS.map(e=>'<option value="'+e.id+'"'+(e.id===SEL_SURVEY?' selected':'')+'>'+esc(e.title)+(e.responses!=null?' ('+e.responses+'/'+e.drivers+')':'')+'</option>').join(''):'')+'</select></div>';
   h+='<button class="btn btn-amber" data-s="import">Import / Refresh now</button>';
@@ -253,9 +263,11 @@ document.getElementById('content').addEventListener('change',function(e){
 });
 document.getElementById('content').addEventListener('click',function(e){
   const s=e.target.dataset.s;
-  if(s==='import'){
+  if(s==='manualtrack'){ SETUP_MANUAL=true; renderContent(); }
+  else if(s==='autotrack'){ SETUP_MANUAL=false; renderContent(); }
+  else if(s==='import'){
     const selEv=state.evsel?calEvent(state.evsel):null;
-    const evIds=(selEv&&selEv.g61Tracks)||null;
+    const evIds=(selEv&&selEv.g61Tracks&&!SETUP_MANUAL)?selEv.g61Tracks:null;
     const tEl=document.querySelector('[data-s=track]'); const eEl=document.querySelector('[data-s=event]');
     const ids=evIds||(tEl?[parseInt(tEl.value,10)]:[]);
     if(ids.length) doImport(ids, (eEl&&eEl.value)?parseInt(eEl.value,10):0);

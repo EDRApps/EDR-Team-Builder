@@ -110,7 +110,11 @@ function edr_g61_roster($token, $trackIds, $teamSlug) {
     $bucket = array(); // name => car => ['clean'=>[], 'total'=>int]
     foreach ($laps as $lap) {
         $drv = isset($lap['driver']) && is_array($lap['driver']) ? $lap['driver'] : array();
-        $name = !empty($drv['name']) ? $drv['name'] : (!empty($drv['slug']) ? $drv['slug'] : 'Unknown');
+        // display name from firstName+lastName (project convention) — the API's `name`
+        // field is usually empty, and when set it is the raw iRacing name with a digit
+        // suffix ("Sam Millar2") that never matches the roster
+        $name = trim((isset($drv['firstName']) ? $drv['firstName'] : '') . ' ' . (isset($drv['lastName']) ? $drv['lastName'] : ''));
+        if ($name === '') $name = !empty($drv['name']) ? $drv['name'] : (!empty($drv['slug']) ? $drv['slug'] : 'Unknown');
         $car  = isset($lap['car']) && !empty($lap['car']['name']) ? $lap['car']['name'] : 'Unknown car';
         if (!isset($bucket[$name])) $bucket[$name] = array();
         if (!isset($bucket[$name][$car])) $bucket[$name][$car] = array('clean' => array(), 'total' => 0);
