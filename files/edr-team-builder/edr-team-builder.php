@@ -203,7 +203,9 @@ function edr_tb_rest_import(WP_REST_Request $req) {
     $trackIds  = array_map('intval', (array) $req->get_param('trackIds'));
     $surveyId  = intval($req->get_param('surveyId'));
     if ($surveyId <= 0) { $surveyId = edr_irp_nearest_survey($s['irp_key']); } // auto-pick nearest event
-    $teamSlug  = sanitize_text_field($req->get_param('teamSlug') ?: $s['team_slug']);
+    // an empty team slug would silently drop the teams= filter and return only the
+    // key owner's laps ("only Sam Millar") — always fall back to the team default
+    $teamSlug  = sanitize_text_field($req->get_param('teamSlug') ?: ($s['team_slug'] ?: 'edr-endurotech'));
     $overrides = (array) $req->get_param('overrides'); // {surveyName: g61Slug}
 
     if (!$trackIds) return new WP_Error('no_track', 'Pick a track first.', array('status' => 400));
