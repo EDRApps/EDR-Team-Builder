@@ -51,7 +51,7 @@ let START_LABELS = {1:'Sat 08:00 · 22:00Z', 2:'Sat 17:00 · 07:00Z', 3:'Sat 22:
 // Availability merged from iRacePlan survey 2307 timeline (green = available). Empty cars = no Spa data shared.
 const SAMPLE = [];
 
-let state = { drivers:[], w:{pace:50,clean:30,prep:20}, proPct:40, tab:'event', teams:{}, stint:{window:1,len:120,race:1440}, stintAssign:{}, stintWin:{}, stintSig:'', evsel:null, role:'driver', me:'', pass:'', availStore:{}, evWinMin:0 };
+let state = { drivers:[], w:{pace:50,clean:30,prep:20}, proPct:40, tab:'event', teams:{}, stint:{window:1,len:120,race:1440}, stintAssign:{}, stintWin:{}, stintSig:'', evsel:null, role:'driver', me:'', pass:'', availStore:{}, evWinMin:0, evTiming:{} };
 
 function fastestCar(cars){
   let best=null, bt=Infinity;
@@ -61,23 +61,25 @@ function fastestCar(cars){
 function seed(list){
   let id=1;
   state.drivers = list.map(d => ({ id:id++, name:d.name, cars:d.cars||{}, assignedCar:fastestCar(d.cars), avail:d.avail||null }));
-  /* fold the sample's survey availability into the per-event store so the Spa pool
-     survives event switching (availability is strictly per event now) */
-  const SPA='Spa 24HR|2026-07-10';
-  const st=state.availStore[SPA]=state.availStore[SPA]||{};
-  state.drivers.forEach(d=>{ if(d.avail&&d.avail.windows&&d.avail.windows.length&&!(st[d.name]&&st[d.name].length)) st[d.name]=windowsToSlots(d.avail.windows); });
+  seedSpaAvail();
 }
 
-function save(){ try{ localStorage.setItem(KEY, JSON.stringify({drivers:state.drivers,w:state.w,proPct:state.proPct,stint:state.stint,stintAssign:state.stintAssign,stintWin:state.stintWin,stintSig:state.stintSig,evsel:state.evsel,role:state.role,me:state.me,pass:state.pass,availStore:state.availStore,evWinMin:EV_WIN_MIN,winStart:WIN_START_MS,startOffsets:START_OFFSETS,startLabels:START_LABELS})); }catch(e){} }
+function save(){ try{ localStorage.setItem(KEY, JSON.stringify({drivers:state.drivers,w:state.w,proPct:state.proPct,teams:state.teams,stint:state.stint,stintAssign:state.stintAssign,stintWin:state.stintWin,stintSig:state.stintSig,evsel:state.evsel,role:state.role,me:state.me,pass:state.pass,availStore:state.availStore,evTiming:state.evTiming,evWinMin:EV_WIN_MIN,winStart:WIN_START_MS,startOffsets:START_OFFSETS,startLabels:START_LABELS})); }catch(e){} }
 function load(){
   try{
     const s = JSON.parse(localStorage.getItem(KEY));
     if(s && s.drivers && s.drivers.length){
-      state.drivers=s.drivers; state.w=s.w||state.w; state.proPct=(typeof s.proPct==='number')?s.proPct:state.proPct; state.stint=Object.assign(state.stint, s.stint||{}); state.stintAssign=s.stintAssign||{}; state.stintWin=s.stintWin||{}; state.stintSig=s.stintSig||'';
-      state.evsel=s.evsel||null; state.role=s.role||'driver'; state.me=s.me||''; state.pass=s.pass||''; state.availStore=s.availStore||{};
+      state.drivers=s.drivers; state.w=s.w||state.w; state.proPct=(typeof s.proPct==='number')?s.proPct:state.proPct; state.teams=s.teams||{}; state.stint=Object.assign(state.stint, s.stint||{}); state.stintAssign=s.stintAssign||{}; state.stintWin=s.stintWin||{}; state.stintSig=s.stintSig||'';
+      state.evsel=s.evsel||null; state.role=s.role||'driver'; state.me=s.me||''; state.pass=s.pass||''; state.availStore=s.availStore||{}; state.evTiming=s.evTiming||{};
       if(s.evWinMin) EV_WIN_MIN=s.evWinMin;
       if(s.winStart) WIN_START_MS=s.winStart;
       if(s.startOffsets&&Object.keys(s.startOffsets).length){ START_OFFSETS=s.startOffsets; START_LABELS=s.startLabels||START_LABELS; }
+      /* migrate pre-2.1 saves: no event selected + availability living only on the driver
+         objects (survey windows). Default to Spa and fold the windows into the per-event
+         store so the pool/stints keep working without re-ticking anything. */
+      if(!state.evsel) state.evsel='Spa 24HR|2026-07-10';
+      const st=state.availStore[state.evsel]=state.availStore[state.evsel]||{};
+      state.drivers.forEach(d=>{ if(d.avail&&d.avail.windows&&d.avail.windows.length&&!(st[d.name]&&st[d.name].length)) st[d.name]=windowsToSlots(d.avail.windows); });
       return true;
     }
   }catch(e){}
@@ -244,24 +246,60 @@ const ADMIN_HASH='1rdbl5c';
 function _hash(s){ let x=5381; for(let i=0;i<s.length;i++) x=(((x*33)>>>0)^s.charCodeAt(i))>>>0; return x.toString(36); }
 function verifyAdminPass(p,cb){ cb(_hash(p)===ADMIN_HASH); }  /* WP build overrides: asks the server */
 function onAdminUnlocked(){}  /* WP build overrides: loads the Setup tab's track/event lists */
-function unlockAdmin(){
-  const p=prompt('Admin password:'); if(p==null||p==='') return;
+/* inline password field (never window.prompt — that is blocked in sandboxed
+   iframes/embeds and the Admin button would silently do nothing) */
+let _unlockOpen=false, _unlockMsg='';
+function unlockAdmin(){ _unlockOpen=true; _unlockMsg=''; renderRolebar(); const i=document.getElementById('adminpass'); if(i) i.focus(); }
+function submitUnlock(){
+  const i=document.getElementById('adminpass'); const p=(i&&i.value)||'';
+  if(!p) return;
   verifyAdminPass(p, ok=>{
-    if(ok){ state.role='admin'; state.pass=p; save(); renderRolebar(); onAdminUnlocked(); renderContent(); setStatus('Admin unlocked'); }
-    else { alert('Wrong password.'); }
+    if(ok){ _unlockOpen=false; _unlockMsg=''; state.role='admin'; state.pass=p; save(); renderRolebar(); onAdminUnlocked(); renderContent(); setStatus('Admin unlocked'); }
+    else { _unlockMsg='wrong password'; renderRolebar(); const j=document.getElementById('adminpass'); if(j) j.focus(); }
   });
 }
-function lockAdmin(){ state.role='driver'; state.pass=''; save(); renderRolebar(); renderContent(); }
+function lockAdmin(){ state.role='driver'; state.pass=''; _unlockOpen=false; save(); renderRolebar(); renderContent(); }
 function renderRolebar(){
   const el=document.getElementById('rolebar'); if(!el) return;
-  el.innerHTML = isAdmin()
-    ? '<span class="rolechip admin">ADMIN</span><button class="btn btn-ghost" data-role-action="lock" style="font-size:10px;padding:4px 12px">Lock</button>'
-    : '<span class="rolechip">DRIVER</span><button class="btn btn-ghost" data-role-action="unlock" style="font-size:10px;padding:4px 12px">Admin</button>';
+  if(isAdmin()){
+    el.innerHTML='<span class="rolechip admin">ADMIN</span><button class="btn btn-ghost" data-role-action="lock" style="font-size:10px;padding:4px 12px">Lock</button>';
+  } else if(_unlockOpen){
+    el.innerHTML='<input type="password" id="adminpass" placeholder="admin password" autocomplete="off" style="padding:7px 12px;font-size:12px;width:150px">'
+      +'<button class="btn btn-amber" data-role-action="go" style="font-size:10px;padding:5px 13px">Unlock</button>'
+      +'<button class="btn btn-ghost" data-role-action="cancel" style="font-size:10px;padding:5px 11px">✕</button>'
+      +(_unlockMsg?'<span class="meta" style="color:var(--red)">'+_unlockMsg+'</span>':'');
+  } else {
+    el.innerHTML='<span class="rolechip">DRIVER</span><button class="btn btn-ghost" data-role-action="unlock" style="font-size:10px;padding:4px 12px">Admin</button>';
+  }
 }
 
 /* ===== Event selection → timing (window, candidate starts, race length) ===== */
 let EV_WIN_MIN=2568;  // availability-window length (min) for the selected event; Spa default
-function applyEventTiming(ev){
+/* Format an absolute timestamp as "Sat 08:00 · 22:00Z" (Brisbane clock + UTC) — used for
+   candidate-start labels so they read the same whichever event's window is loaded. */
+function fmtStartLabel(ms){
+  const bris=new Date(ms).toLocaleString('en-AU',{timeZone:'Australia/Brisbane',weekday:'short',hour:'2-digit',minute:'2-digit',hour12:false});
+  const d=new Date(ms); const utc=String(d.getUTCHours()).padStart(2,'0')+':'+String(d.getUTCMinutes()).padStart(2,'0');
+  return bris+' · '+utc+'Z';
+}
+/* Turn official iRacing session times into a per-event timing override (winStart,
+   candidate starts, race length). Reproduces the hand-typed Spa values exactly. */
+function applyIrTiming(ev, sea){
+  const times=(sea.sessions||[]).map(t=>Date.parse(t)).filter(x=>!isNaN(x)).sort((a,b)=>a-b);
+  if(!times.length) return false;
+  const winStart=times[0], offsets={}, labels={};
+  times.slice(0,6).forEach((t,i)=>{ offsets[i+1]=Math.round((t-winStart)/60000); labels[i+1]=fmtStartLabel(t); });
+  const raceMin=sea.race_min||state.stint.race||360;
+  const maxOff=Math.max.apply(null,Object.values(offsets));
+  // availability window spans the first start to the last candidate race end (we have exact
+  // times here, so don't pad to calendar days); respect a larger hand-typed winMin if set
+  const winMin=Math.max(maxOff+raceMin, ev.winMin||0);
+  state.evTiming[evKey(ev)]={winStart:new Date(winStart).toISOString(), raceMin:raceMin, offsets:offsets, labels:labels, winMin:winMin, src:sea.name||'iRacing'};
+  return true;
+}
+function applyEventTiming(ev0){
+  const ovr=state.evTiming&&state.evTiming[evKey(ev0)];
+  const ev=ovr?Object.assign({},ev0,ovr):ev0;
   WIN_START_MS = ev.winStart ? Date.parse(ev.winStart) : Date.parse(ev.s+'T00:00:00+10:00');
   const days=Math.round((Date.parse(ev.e+'T00:00:00Z')-Date.parse(ev.s+'T00:00:00Z'))/86400000)+1;
   EV_WIN_MIN = ev.winMin || days*1440;
@@ -321,15 +359,32 @@ function applyAvailToDrivers(){
     d.avail=slotsToAvail(a[n]);
   });
 }
-function windowsToSlots(windows){
-  const out=[]; const n=evSlots();
+function windowsToSlots(windows, winMin){
+  const W=winMin||EV_WIN_MIN;
+  const out=[]; const n=Math.max(1, Math.ceil(W/AV_BLOCK));
   for(let i=0;i<n;i++){
-    const s=i*AV_BLOCK, e=Math.min((i+1)*AV_BLOCK, EV_WIN_MIN);
+    const s=i*AV_BLOCK, e=Math.min((i+1)*AV_BLOCK, W);
     if((windows||[]).some(w=>Math.min(w[1],e)-Math.max(w[0],s) >= (e-s)/2)) out.push(i);
   }
   return out;
 }
+/* Re-seed Spa availability from the embedded SAMPLE (survey 2307) on every boot.
+   Idempotent and never overwrites blocks a driver has submitted since; repairs saves
+   where event-switching wiped the survey availability before it reached the store. */
+function seedSpaAvail(){
+  const SPA='Spa 24HR|2026-07-10', SPA_WIN=2568;
+  const st=state.availStore[SPA]=state.availStore[SPA]||{};
+  SAMPLE.forEach(s=>{ if(s.avail&&s.avail.windows&&s.avail.windows.length&&!(st[s.name]&&st[s.name].length)) st[s.name]=windowsToSlots(s.avail.windows, SPA_WIN); });
+}
 function persistAvail(evk,name){}  /* WP build overrides: syncs this driver's slots to the server */
+function releaseLock(name){}       /* WP build overrides: admin clears a driver's submission lock */
+/* Per-driver locking: a random device token identifies this browser; the first browser to
+   submit a name owns it (server-enforced in the WP build — admins bypass and can release). */
+let DEV_TOKEN=(function(){ try{ let t=localStorage.getItem('edrTB_devtok'); if(!t){ t=Array.from((window.crypto&&crypto.getRandomValues)?crypto.getRandomValues(new Uint8Array(16)):[...Array(16)].map(()=>Math.floor(Math.random()*256))).map(b=>b.toString(16).padStart(2,'0')).join(''); localStorage.setItem('edrTB_devtok',t); } return t; }catch(e){ return 'mem-'+Math.random().toString(36).slice(2); } })();
+let LOCKED_NAMES=[];               /* names locked server-side (WP build fills this from GET /avail) */
+function ownedNames(){ try{ return JSON.parse(localStorage.getItem('edrTB_owned'))||[]; }catch(e){ return []; } }
+function markOwned(name){ try{ const o=ownedNames(); if(o.indexOf(name)<0){ o.push(name); localStorage.setItem('edrTB_owned',JSON.stringify(o)); } }catch(e){} }
+function lockedForMe(name){ return LOCKED_NAMES.indexOf(name)>=0 && ownedNames().indexOf(name)<0; }
 /* EDR membership pulled live from Garage 61 on 2026-07-05 (teams edr-endurotech +
    edr-endurotech-casual).
    Baked-in fallback; the WP build replaces it with the live list from GET /roster. */
@@ -405,6 +460,44 @@ function renderEventTab(){
 }
 
 /* ===== Availability tab ===== */
+function canEditAvail(name){ return isAdmin()||(!!state.me&&name===state.me&&!lockedForMe(name)); }
+function toggleAvail(name,slot,want){
+  if(!canEditAvail(name)) return false;
+  const store=state.availStore[state.evsel]=state.availStore[state.evsel]||{};
+  const arr=store[name]=store[name]||[];
+  const i=arr.indexOf(slot);
+  const on=(want===undefined)?(i<0):want;
+  if(on&&i<0) arr.push(slot);
+  if(!on&&i>=0) arr.splice(i,1);
+  (_availDirty[state.evsel]=_availDirty[state.evsel]||{})[name]=1; _avMsg='';
+  applyAvailToDrivers(); save(); return true;
+}
+function setAllAvail(name,on){
+  if(!canEditAvail(name)) return false;
+  const store=state.availStore[state.evsel]=state.availStore[state.evsel]||{};
+  store[name]= on ? Array.from({length:evSlots()},(_,i)=>i) : [];
+  (_availDirty[state.evsel]=_availDirty[state.evsel]||{})[name]=1; _avMsg='';
+  applyAvailToDrivers(); save(); return true;
+}
+function renderMyBlocks(a){
+  const nm=state.me; const arr=a[nm]||[]; const n=evSlots(); const canEdit=canEditAvail(nm);
+  const groups=[]; let cur=null;
+  for(let i=0;i<n;i++){ const d=fmtDay(i*AV_BLOCK); if(!cur||cur.day!==d){ cur={day:d,slots:[]}; groups.push(cur);} cur.slots.push(i); }
+  let h='<div class="importbox">';
+  h+='<div class="myblocks-head"><span class="head" style="color:#fff;font-size:15px">Your blocks · '+esc(nm.split(' ')[0])+(lockedForMe(nm)?' 🔒':'')+'</span>'
+    +(canEdit?'<span class="myblocks-btns"><button class="btn btn-amber avfree" data-action="avtickall">Tick all</button><button class="btn btn-ghost avfree" data-action="avclear">Clear</button></span>':'')+'</div>';
+  h+='<div class="meta" style="margin:2px 0 4px">Tap every 4-hour block you can race (Brisbane time), or use Tick all. Then Submit below.</div>';
+  groups.forEach(function(g){
+    h+='<div class="blockday">'+g.day+'</div><div class="blockrow">';
+    g.slots.forEach(function(i){
+      const on=arr.indexOf(i)>=0;
+      const lbl=fmtClock(i*AV_BLOCK).split(' ').slice(1).join(' ')+'–'+fmtClock(Math.min((i+1)*AV_BLOCK,EV_WIN_MIN)).split(' ').slice(1).join(' ');
+      h+='<button class="blockcell'+(on?' on':'')+'"'+(canEdit?' data-avtoggle data-name="'+esc(nm)+'" data-slot="'+i+'"':' disabled')+'>'+lbl+'</button>';
+    });
+    h+='</div>';
+  });
+  h+='</div>'; return h;
+}
 function renderAvail(){
   if(!state.evsel) return '<div class="importbox"><div class="meta" style="margin-bottom:10px">No event selected yet.</div><button class="btn btn-amber avfree" data-action="gotoevent">Pick an event first</button></div>';
   const ev=calEvent(state.evsel);
@@ -420,8 +513,8 @@ function renderAvail(){
   } else {
     html+='<div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-top:10px"><label class="meta">I am</label>'
       +'<select class="avfree" data-action="meselect"><option value="">— pick your name —</option>'
-      +roster.map(nm=>'<option value="'+esc(nm)+'"'+(nm===state.me?' selected':'')+'>'+esc(nm)+'</option>').join('')+'</select>'
-      +'<span class="meta">Tick the 4-hour blocks <b style="color:#fff">you</b> can race (Brisbane time). Your column is highlighted; everyone else is read-only.</span></div>';
+      +roster.map(nm=>'<option value="'+esc(nm)+'"'+(nm===state.me?' selected':'')+(lockedForMe(nm)?' disabled':'')+'>'+esc(nm)+(lockedForMe(nm)?' 🔒':'')+'</option>').join('')+'</select>'
+      +(state.me?'':'<span class="meta">Pick your name to enter availability.</span>')+'</div>';
   }
   const dirtyN=Object.keys(_availDirty[state.evsel]||{}).length;
   html+='<div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap;margin-top:12px">'
@@ -431,9 +524,11 @@ function renderAvail(){
         :'<span class="meta">Tick your blocks, then Submit — everyone sees it from then on.</span>'))
     +'</div>';
   html+='</div>';
-  // matrix
-  html+='<div class="importbox" style="overflow-x:auto"><table class="avmatrix"><thead><tr><th class="slot">Block (Brisbane)</th>';
-  roster.forEach(nm=>{ const me=!isAdmin()&&nm===state.me; html+='<th'+(me?' class="me"':'')+'>'+esc(nm.split(' ')[0])+(me?' <span style="color:var(--yellow)">(you)</span>':'')+'</th>'; });
+  // driver: mobile-friendly personal block picker (primary editor)
+  if(!isAdmin() && state.me) html+=renderMyBlocks(a);
+  // team coverage matrix (driver: read-only overview; admin: editable)
+  html+='<div class="importbox" style="overflow-x:auto"><div class="meta" style="margin-bottom:6px;text-transform:uppercase;letter-spacing:.04em">Team coverage'+(isAdmin()?' — tick any driver, or use all/clr':'')+'</div><table class="avmatrix"><thead><tr><th class="slot">Block (Brisbane)</th>';
+  roster.forEach(nm=>{ const me=!isAdmin()&&nm===state.me; html+='<th'+(me?' class="me"':'')+'>'+esc(nm.split(' ')[0])+(me?' <span style="color:var(--yellow)">(you)</span>':'')+(isAdmin()?'<br><span class="meta" style="font-weight:400" data-action="avcol" data-name="'+esc(nm)+'" data-op="all">all</span> <span class="meta" style="font-weight:400" data-action="avcol" data-name="'+esc(nm)+'" data-op="clr">clr</span>':'')+'</th>'; });
   html+='<th>Covered</th></tr></thead><tbody>';
   let lastDay='';
   for(let i=0;i<n;i++){
@@ -443,7 +538,7 @@ function renderAvail(){
     html+='<tr><td class="slot">'+fmtClock(i*AV_BLOCK).split(' ').slice(1).join(' ')+' – '+fmtClock(Math.min((i+1)*AV_BLOCK,EV_WIN_MIN)).split(' ').slice(1).join(' ')+'</td>';
     roster.forEach(nm=>{
       const on=(a[nm]||[]).indexOf(i)>=0; if(on) cov++;
-      const can=isAdmin()||(!!state.me&&nm===state.me);
+      const can=isAdmin();  // drivers edit via the block picker above; matrix is their read-only overview
       const me=!isAdmin()&&nm===state.me;
       html+='<td'+(me?' class="me"':'')+'><input type="checkbox" class="avfree" data-avtoggle data-name="'+esc(nm)+'" data-slot="'+i+'"'+(on?' checked':'')+(can?'':' disabled')+'></td>';
     });
@@ -455,6 +550,11 @@ function renderAvail(){
   if(isAdmin()){
     html+='<div style="display:flex;gap:8px;margin-top:10px;align-items:center"><input type="text" id="avnewdrv" placeholder="Add a driver by name" style="padding:7px 10px;font-size:12px">'
       +'<button class="btn btn-ghost" data-action="avadddrv" style="font-size:10px;padding:5px 12px">+ Add driver</button></div>';
+    if(LOCKED_NAMES.length){
+      html+='<div class="meta" style="margin-top:10px">Locked (submitted from their own device): '
+        +LOCKED_NAMES.map(nm=>'<span data-action="avrelease" data-name="'+esc(nm)+'" title="release this lock" style="cursor:pointer;text-decoration:underline;margin-right:8px">'+esc(nm)+' 🔓</span>').join('')
+        +'— click a name to release its lock (e.g. new device).</div>';
+    }
   }
   html+='</div>';
   // coverage summary
@@ -713,17 +813,10 @@ function setActiveTab(){ document.querySelectorAll('.tab').forEach(t=>t.classLis
 
 document.getElementById('content').addEventListener('change',e=>{
   const a=e.target.dataset.action;
-  if(e.target.dataset.avtoggle!==undefined){
+  if(e.target.dataset.avtoggle!==undefined && e.target.type==='checkbox'){
     const name=e.target.dataset.name, slot=+e.target.dataset.slot;
-    if(!(isAdmin()||(state.me&&name===state.me))){ e.target.checked=!e.target.checked; return; }
-    const store=state.availStore[state.evsel]=state.availStore[state.evsel]||{};
-    const arr=store[name]=store[name]||[];
-    const i=arr.indexOf(slot);
-    if(e.target.checked && i<0) arr.push(slot);
-    if(!e.target.checked && i>=0) arr.splice(i,1);
-    (_availDirty[state.evsel]=_availDirty[state.evsel]||{})[name]=1; _avMsg='';
-    applyAvailToDrivers(); save(); renderContent();
-    return;
+    if(!toggleAvail(name,slot,e.target.checked)){ e.target.checked=!e.target.checked; return; }
+    renderContent(); return;
   }
   if(a==='meselect'){ state.me=e.target.value; save(); renderContent(); return; }
   if(a==='caltargets'){ _calTargets=e.target.checked; renderContent(); return; }
@@ -747,14 +840,30 @@ document.getElementById('content').addEventListener('click',e=>{
   const filt=e.target.closest&&e.target.closest('[data-action="calfilter"]');
   if(filt){ _calFilter=filt.dataset.val; renderContent(); return; }
   if(e.target.dataset.action==='gotoevent'){ state.tab='event'; setActiveTab(); renderContent(); return; }
+  const bcell=e.target.closest&&e.target.closest('button[data-avtoggle]');
+  if(bcell){ if(toggleAvail(bcell.dataset.name,+bcell.dataset.slot)) renderContent(); return; }
+  if(e.target.dataset.action==='avtickall'){ if(state.me&&setAllAvail(state.me,true)) renderContent(); return; }
+  if(e.target.dataset.action==='avclear'){ if(state.me&&setAllAvail(state.me,false)) renderContent(); return; }
+  const avcol=e.target.closest&&e.target.closest('[data-action="avcol"]');
+  if(avcol){ if(setAllAvail(avcol.dataset.name,avcol.dataset.op==='all')) renderContent(); return; }
   if(e.target.dataset.action==='avsubmit'){
     const evk=state.evsel; if(!evk) return;
     const dirty=Object.keys(_availDirty[evk]||{});
     const names=dirty.length?dirty:(isAdmin()?Object.keys(state.availStore[evk]||{}):(state.me?[state.me]:[]));
     if(!names.length){ _avMsg='Nothing to submit — pick your name and tick your blocks first.'; renderContent(); return; }
     Promise.all(names.map(function(n){ return Promise.resolve(persistAvail(evk,n)); }))
-      .then(function(){ _availDirty[evk]={}; _avMsg='Submitted — availability saved for the team.'; save(); renderContent(); })
-      .catch(function(){ _avMsg='Save failed — check your connection and hit Submit again.'; renderContent(); });
+      .then(function(){
+        _availDirty[evk]={};
+        names.forEach(function(n){ markOwned(n); if(!isAdmin() && LOCKED_NAMES.indexOf(n)<0) LOCKED_NAMES.push(n); });
+        _avMsg='Submitted — availability saved for the team. Your entry is now locked to this device.';
+        save(); renderContent();
+      })
+      .catch(function(err){ _avMsg=(err&&err.message&&/locked/i.test(err.message))?err.message:'Save failed — check your connection and hit Submit again.'; renderContent(); });
+    return;
+  }
+  if(e.target.dataset.action==='avrelease'){
+    if(!isAdmin()) return;
+    releaseLock(e.target.dataset.name);
     return;
   }
   if(e.target.dataset.action==='avadddrv'){
@@ -838,17 +947,30 @@ function onAdminUnlocked(){
     try{ EVENTS=await apiGET('events'); }catch(e){ EVENTS=[]; }
     preselectNearest();
     renderContent();
+    loadIracing().then(renderContent);
   })();
 }
 /* per-driver availability syncs through its own public route, not the plan.
+   Carries the device token (per-driver locking) and admin credentials when present.
    Returns the fetch promise so the Submit button can await it and confirm. */
 function persistAvail(evk,name){
   const slots=((state.availStore[evk]||{})[name])||[];
-  return fetch(API+'avail',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({ev:evk,name:name,slots:slots})})
-    .then(function(r){ if(!r.ok) throw new Error('avail save failed'); return r.json(); });
+  return fetch(API+'avail',{method:'POST',headers:_hdrs(true),body:JSON.stringify({ev:evk,name:name,slots:slots,token:DEV_TOKEN})})
+    .then(function(r){
+      return r.json().catch(function(){ return {}; }).then(function(j){
+        if(!r.ok) throw new Error((j&&j.message)||'avail save failed');
+        if(j&&j.locked) LOCKED_NAMES=j.locked;
+        return j;
+      });
+    });
+}
+function releaseLock(name){
+  apiPOST('avail',{name:name,release:1}).then(function(r){
+    if(r&&r.ok){ LOCKED_NAMES=LOCKED_NAMES.filter(function(n){return n!==name;}); renderContent(); }
+  }).catch(function(){});
 }
 let lastTrackIds=[], _saveT=null;
-function serializePlan(){ return {drivers:state.drivers,w:state.w,proPct:state.proPct,teams:state.teams,stint:state.stint,stintAssign:state.stintAssign,stintWin:state.stintWin,stintSig:state.stintSig,overrides:overrides,meta:IMPORT_META,winStart:WIN_START_MS,startOffsets:START_OFFSETS,startLabels:START_LABELS,matches:lastMatches,trackIds:lastTrackIds,evsel:state.evsel,evWinMin:EV_WIN_MIN}; }
+function serializePlan(){ return {drivers:state.drivers,w:state.w,proPct:state.proPct,teams:state.teams,stint:state.stint,stintAssign:state.stintAssign,stintWin:state.stintWin,stintSig:state.stintSig,overrides:overrides,meta:IMPORT_META,winStart:WIN_START_MS,startOffsets:START_OFFSETS,startLabels:START_LABELS,matches:lastMatches,trackIds:lastTrackIds,evsel:state.evsel,evWinMin:EV_WIN_MIN,evTiming:state.evTiming}; }
 function save(){
   try{ localStorage.setItem('edrTB_local', JSON.stringify({role:state.role,me:state.me,pass:state.pass})); }catch(e){}
   if(!isAdmin()) return;
@@ -859,8 +981,30 @@ function loadPlan(){ return apiGET('plan').then(function(r){ var p=r&&r.plan; if
   state.stint=Object.assign(state.stint,p.stint||{}); state.stintAssign=p.stintAssign||{}; state.stintWin=p.stintWin||{}; state.stintSig=p.stintSig||'';
   if(p.overrides)overrides=p.overrides; if(p.meta)IMPORT_META=p.meta; if(p.winStart)WIN_START_MS=p.winStart;
   if(p.startOffsets&&Object.keys(p.startOffsets).length)START_OFFSETS=p.startOffsets; if(p.startLabels&&Object.keys(p.startLabels).length)START_LABELS=p.startLabels;
-  if(p.evsel)state.evsel=p.evsel; if(p.evWinMin)EV_WIN_MIN=p.evWinMin;
+  if(p.evsel)state.evsel=p.evsel; if(p.evWinMin)EV_WIN_MIN=p.evWinMin; if(p.evTiming)state.evTiming=p.evTiming;
   lastMatches=p.matches||[]; lastTrackIds=p.trackIds||[]; return true; }).catch(function(){return false;}); }
+var IR_SEASONS=[], IR_STATUS='';
+function loadIracing(){
+  return apiGET('iracing').then(function(r){
+    if(r&&r.ok){ IR_SEASONS=r.seasons||[]; IR_STATUS=IR_SEASONS.length?'':'iRacing connected, but no active events expose session times right now.'; }
+    else if(r&&r.reason==='not_configured'){ IR_SEASONS=[]; IR_STATUS='iRacing proxy not set in plugin Settings — using calendar/derived session times.'; }
+    else { IR_SEASONS=[]; IR_STATUS=(r&&r.message)||'iRacing unavailable right now.'; }
+  }).catch(function(){ IR_SEASONS=[]; IR_STATUS='iRacing unavailable right now.'; });
+}
+function irMatchFor(ev){
+  if(!ev||!IR_SEASONS.length) return null;
+  var nk=function(s){return String(s||'').toLowerCase().replace(/[^a-z0-9]/g,'');};
+  var evk=nk(ev.n), evtk=nk(ev.track);
+  var best=null,bs=0;
+  IR_SEASONS.forEach(function(se){
+    var nn=nk(se.name), tk=nk(se.track), sc=0;
+    // token overlap on the event name
+    (ev.n.toLowerCase().match(/[a-z0-9]+/g)||[]).forEach(function(w){ if(w.length>2 && nn.indexOf(w)>=0) sc+=2; });
+    if(evtk && tk && (tk.indexOf(evtk.slice(0,8))>=0 || evtk.indexOf(tk.slice(0,8))>=0)) sc+=3;
+    if(sc>bs){ bs=sc; best=se; }
+  });
+  return bs>=3?best:null;
+}
 let SEL_SURVEY=0, SEL_TRACK=0;
 function preselectNearest(){
   if(EVENTS&&EVENTS.length){ var now=Date.now(),best=0,bd=Infinity; EVENTS.forEach(function(e){var t=Date.parse(e.start_time);if(!t)return;var d=Math.abs(t-now);if(d<bd){bd=d;best=e.id;}}); SEL_SURVEY=best; }
@@ -962,10 +1106,24 @@ function renderSetup(){
   h+='<button class="btn btn-amber" data-s="import">Import / Refresh now</button>';
   h+='<span class="meta" style="align-self:center;max-width:360px">'+esc(setupMsg||'This is the shared team plan, saved for everyone. Nearest event is auto-selected. Pick a track, then Import / Refresh.')+'</span>';
   h+='</div>';
-  // availability paste (fallback)
-  h+='<div class="importbox"><div class="meta" style="margin-bottom:6px">AVAILABILITY (survey phase): run the iRacePlan bookmarklet on the logged-in survey page, then paste here.</div>';
-  h+='<textarea data-s="paste" style="width:100%;min-height:70px;padding:8px;font-size:12px" placeholder=\'[{"name":"...","cars":"Dallara P217, ...","windows_min":[[0,1980]]}]\'></textarea>';
-  h+='<button class="btn btn-green" data-s="dopaste" style="margin-top:8px">Merge availability</button></div>';
+  // official iRacing session start times + race length (via the proxy)
+  h+='<div class="importbox"><div class="meta" style="margin-bottom:6px;text-transform:uppercase;letter-spacing:.04em">Official iRacing session times</div>';
+  if(!selEv){ h+='<div class="meta">Select a target event on the Event tab to pull its official session start times and race length.</div>'; }
+  else {
+    var cur=state.evTiming&&state.evTiming[evKey(selEv)];
+    var match=irMatchFor(selEv);
+    h+='<div style="display:flex;gap:12px;flex-wrap:wrap;align-items:center">';
+    h+='<select data-s="irsel"><option value="">(pick the matching iRacing event)</option>'+IR_SEASONS.map(function(se,i){var sel=(match&&se.season_id===match.season_id)?' selected':''; return '<option value="'+i+'"'+sel+'>'+esc(se.name)+' · '+esc(se.track)+(se.race_min?' · '+Math.round(se.race_min/60)+'h':'')+'</option>';}).join('')+'</select>';
+    h+='<button class="btn btn-amber" data-s="irapply">Apply to '+esc(selEv.n)+'</button>';
+    h+='<span class="meta" data-s="irrefresh" style="cursor:pointer;text-decoration:underline">refresh</span>';
+    h+='</div>';
+    if(cur) h+='<div class="meta" style="margin-top:8px;color:var(--green)">Using official times'+(cur.src?' from "'+esc(cur.src)+'"':'')+' — '+Object.keys(cur.offsets||{}).length+' starts, '+Math.round((cur.raceMin||0)/60)+'h race. <span data-s="irclear" style="cursor:pointer;text-decoration:underline;color:var(--red)">revert to calendar</span></div>';
+    if(IR_STATUS) h+='<div class="meta" style="margin-top:8px">'+esc(IR_STATUS)+'</div>';
+    if(!IR_SEASONS.length && !IR_STATUS) h+='<div class="meta" style="margin-top:8px">Loading iRacing…</div>';
+  }
+  h+='</div>';
+  // (the old iRacePlan bookmarklet paste box is gone — availability comes from the
+  //  Availability tab; applyPaste() is kept for console-level emergencies only)
   // match review
   if(lastMatches&&lastMatches.length){
     h+='<div class="importbox edr-match"><div class="meta" style="margin-bottom:6px">NAME MATCHES (iRacePlan &rarr; Garage 61). Fix any wrong/blank ones:</div>';
@@ -997,7 +1155,18 @@ document.getElementById('content').addEventListener('click',function(e){
     const ids=evIds||(tEl?[parseInt(tEl.value,10)]:[]);
     if(ids.length) doImport(ids, (eEl&&eEl.value)?parseInt(eEl.value,10):0);
   }
-  else if(s==='dopaste'){ const p=document.querySelector('[data-s=paste]'); applyPaste(p.value); }
+  else if(s==='irrefresh'){ setSetupMsg('Refreshing iRacing…'); loadIracing().then(function(){ setSetupMsg(''); renderContent(); }); }
+  else if(s==='irapply'){
+    const selEv=state.evsel?calEvent(state.evsel):null; const sel=document.querySelector('[data-s=irsel]');
+    if(!selEv||!sel||sel.value===''){ setSetupMsg('Pick the matching iRacing event first.'); return; }
+    const se=IR_SEASONS[parseInt(sel.value,10)];
+    if(se && applyIrTiming(selEv, se)){ applyEventTiming(selEv); state.stintAssign={}; state.stintWin={}; state.stintSig=''; applyAvailToDrivers(); save(); setSetupMsg('Applied official session times from "'+se.name+'".'); renderContent(); }
+    else setSetupMsg('That iRacing event has no session times.');
+  }
+  else if(s==='irclear'){
+    const selEv=state.evsel?calEvent(state.evsel):null;
+    if(selEv){ delete state.evTiming[evKey(selEv)]; applyEventTiming(selEv); state.stintAssign={}; state.stintWin={}; state.stintSig=''; applyAvailToDrivers(); save(); setSetupMsg('Reverted to calendar session times.'); renderContent(); }
+  }
 });
 
 async function bootSetup(){
@@ -1006,13 +1175,24 @@ async function bootSetup(){
   document.getElementById('rolebar').addEventListener('click',function(e){
     const b=e.target.closest&&e.target.closest('[data-role-action]');
     if(!b) return;
-    if(b.dataset.roleAction==='unlock') unlockAdmin(); else lockAdmin();
+    const a=b.dataset.roleAction;
+    if(a==='unlock') unlockAdmin();
+    else if(a==='go') submitUnlock();
+    else if(a==='cancel'){ _unlockOpen=false; _unlockMsg=''; renderRolebar(); }
+    else lockAdmin();
+  });
+  document.getElementById('rolebar').addEventListener('keydown',function(e){
+    if(e.key==='Enter' && e.target.id==='adminpass') submitUnlock();
   });
   renderRolebar();
   syncControls();
   state.tab = CAN ? 'setup' : 'event'; setActiveTab();
   var ok=false; try{ ok=await loadPlan(); }catch(e){}
-  try{ const av=await apiGET('avail'); if(av&&typeof av==='object'&&!Array.isArray(av)) state.availStore=av; }catch(e){}
+  try{
+    const av=await apiGET('avail');
+    if(av&&av.store){ state.availStore=av.store; LOCKED_NAMES=av.locked||[]; }
+    else if(av&&typeof av==='object'&&!Array.isArray(av)) state.availStore=av;  /* pre-2.1.4 server shape */
+  }catch(e){}
   try{ const tr=await apiGET('roster'); if(Array.isArray(tr)&&tr.length) TEAM_ROSTER=tr; }catch(e){}
   applyAvailToDrivers();
   if(ok && state.drivers.length && !Object.keys(state.teams||{}).length) generate();
@@ -1022,6 +1202,7 @@ async function bootSetup(){
     try{ EVENTS=await apiGET('events'); }catch(e){ EVENTS=[]; }
     preselectNearest();
     if(state.tab==='setup') renderContent();
+    loadIracing().then(function(){ if(state.tab==='setup') renderContent(); });
   }
 }
 

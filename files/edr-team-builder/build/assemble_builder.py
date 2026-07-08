@@ -32,6 +32,8 @@ open(os.path.join(OUT,"builder.css"),"w",encoding="utf-8").write("/* EDR Team Bu
 #edr-tb-app .chip.calactive{background:var(--yellow)!important;color:#0a0a0a!important;border-color:var(--yellow)!important}
 #edr-tb-app .winbtn{background:var(--panel)!important;color:var(--body)!important;border:1px solid var(--line)!important;border-radius:14px!important;text-transform:none!important}
 #edr-tb-app .winbtn.sel{border-color:var(--yellow)!important;background:rgba(240,240,0,.07)!important}
+#edr-tb-app .blockcell{background:#0a0a14!important;color:var(--body)!important;border:1px solid var(--line)!important;border-radius:10px!important;text-transform:none!important;padding:13px 6px!important;font-weight:400!important}
+#edr-tb-app .blockcell.on{background:rgba(95,211,138,.18)!important;border-color:var(--green)!important;color:#fff!important;font-weight:700!important}
 #edr-tb-app .x{background:none!important;border:none!important;color:var(--dim)!important}
 #edr-tb-app a{text-decoration:none}
 #edr-tb-app p{margin:0}
@@ -113,17 +115,30 @@ function onAdminUnlocked(){
     try{ EVENTS=await apiGET('events'); }catch(e){ EVENTS=[]; }
     preselectNearest();
     renderContent();
+    loadIracing().then(renderContent);
   })();
 }
 /* per-driver availability syncs through its own public route, not the plan.
+   Carries the device token (per-driver locking) and admin credentials when present.
    Returns the fetch promise so the Submit button can await it and confirm. */
 function persistAvail(evk,name){
   const slots=((state.availStore[evk]||{})[name])||[];
-  return fetch(API+'avail',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({ev:evk,name:name,slots:slots})})
-    .then(function(r){ if(!r.ok) throw new Error('avail save failed'); return r.json(); });
+  return fetch(API+'avail',{method:'POST',headers:_hdrs(true),body:JSON.stringify({ev:evk,name:name,slots:slots,token:DEV_TOKEN})})
+    .then(function(r){
+      return r.json().catch(function(){ return {}; }).then(function(j){
+        if(!r.ok) throw new Error((j&&j.message)||'avail save failed');
+        if(j&&j.locked) LOCKED_NAMES=j.locked;
+        return j;
+      });
+    });
+}
+function releaseLock(name){
+  apiPOST('avail',{name:name,release:1}).then(function(r){
+    if(r&&r.ok){ LOCKED_NAMES=LOCKED_NAMES.filter(function(n){return n!==name;}); renderContent(); }
+  }).catch(function(){});
 }
 let lastTrackIds=[], _saveT=null;
-function serializePlan(){ return {drivers:state.drivers,w:state.w,proPct:state.proPct,teams:state.teams,stint:state.stint,stintAssign:state.stintAssign,stintWin:state.stintWin,stintSig:state.stintSig,overrides:overrides,meta:IMPORT_META,winStart:WIN_START_MS,startOffsets:START_OFFSETS,startLabels:START_LABELS,matches:lastMatches,trackIds:lastTrackIds,evsel:state.evsel,evWinMin:EV_WIN_MIN}; }
+function serializePlan(){ return {drivers:state.drivers,w:state.w,proPct:state.proPct,teams:state.teams,stint:state.stint,stintAssign:state.stintAssign,stintWin:state.stintWin,stintSig:state.stintSig,overrides:overrides,meta:IMPORT_META,winStart:WIN_START_MS,startOffsets:START_OFFSETS,startLabels:START_LABELS,matches:lastMatches,trackIds:lastTrackIds,evsel:state.evsel,evWinMin:EV_WIN_MIN,evTiming:state.evTiming}; }
 function save(){
   try{ localStorage.setItem('edrTB_local', JSON.stringify({role:state.role,me:state.me,pass:state.pass})); }catch(e){}
   if(!isAdmin()) return;
@@ -134,8 +149,30 @@ function loadPlan(){ return apiGET('plan').then(function(r){ var p=r&&r.plan; if
   state.stint=Object.assign(state.stint,p.stint||{}); state.stintAssign=p.stintAssign||{}; state.stintWin=p.stintWin||{}; state.stintSig=p.stintSig||'';
   if(p.overrides)overrides=p.overrides; if(p.meta)IMPORT_META=p.meta; if(p.winStart)WIN_START_MS=p.winStart;
   if(p.startOffsets&&Object.keys(p.startOffsets).length)START_OFFSETS=p.startOffsets; if(p.startLabels&&Object.keys(p.startLabels).length)START_LABELS=p.startLabels;
-  if(p.evsel)state.evsel=p.evsel; if(p.evWinMin)EV_WIN_MIN=p.evWinMin;
+  if(p.evsel)state.evsel=p.evsel; if(p.evWinMin)EV_WIN_MIN=p.evWinMin; if(p.evTiming)state.evTiming=p.evTiming;
   lastMatches=p.matches||[]; lastTrackIds=p.trackIds||[]; return true; }).catch(function(){return false;}); }
+var IR_SEASONS=[], IR_STATUS='';
+function loadIracing(){
+  return apiGET('iracing').then(function(r){
+    if(r&&r.ok){ IR_SEASONS=r.seasons||[]; IR_STATUS=IR_SEASONS.length?'':'iRacing connected, but no active events expose session times right now.'; }
+    else if(r&&r.reason==='not_configured'){ IR_SEASONS=[]; IR_STATUS='iRacing proxy not set in plugin Settings — using calendar/derived session times.'; }
+    else { IR_SEASONS=[]; IR_STATUS=(r&&r.message)||'iRacing unavailable right now.'; }
+  }).catch(function(){ IR_SEASONS=[]; IR_STATUS='iRacing unavailable right now.'; });
+}
+function irMatchFor(ev){
+  if(!ev||!IR_SEASONS.length) return null;
+  var nk=function(s){return String(s||'').toLowerCase().replace(/[^a-z0-9]/g,'');};
+  var evk=nk(ev.n), evtk=nk(ev.track);
+  var best=null,bs=0;
+  IR_SEASONS.forEach(function(se){
+    var nn=nk(se.name), tk=nk(se.track), sc=0;
+    // token overlap on the event name
+    (ev.n.toLowerCase().match(/[a-z0-9]+/g)||[]).forEach(function(w){ if(w.length>2 && nn.indexOf(w)>=0) sc+=2; });
+    if(evtk && tk && (tk.indexOf(evtk.slice(0,8))>=0 || evtk.indexOf(tk.slice(0,8))>=0)) sc+=3;
+    if(sc>bs){ bs=sc; best=se; }
+  });
+  return bs>=3?best:null;
+}
 let SEL_SURVEY=0, SEL_TRACK=0;
 function preselectNearest(){
   if(EVENTS&&EVENTS.length){ var now=Date.now(),best=0,bd=Infinity; EVENTS.forEach(function(e){var t=Date.parse(e.start_time);if(!t)return;var d=Math.abs(t-now);if(d<bd){bd=d;best=e.id;}}); SEL_SURVEY=best; }
@@ -237,10 +274,24 @@ function renderSetup(){
   h+='<button class="btn btn-amber" data-s="import">Import / Refresh now</button>';
   h+='<span class="meta" style="align-self:center;max-width:360px">'+esc(setupMsg||'This is the shared team plan, saved for everyone. Nearest event is auto-selected. Pick a track, then Import / Refresh.')+'</span>';
   h+='</div>';
-  // availability paste (fallback)
-  h+='<div class="importbox"><div class="meta" style="margin-bottom:6px">AVAILABILITY (survey phase): run the iRacePlan bookmarklet on the logged-in survey page, then paste here.</div>';
-  h+='<textarea data-s="paste" style="width:100%;min-height:70px;padding:8px;font-size:12px" placeholder=\'[{"name":"...","cars":"Dallara P217, ...","windows_min":[[0,1980]]}]\'></textarea>';
-  h+='<button class="btn btn-green" data-s="dopaste" style="margin-top:8px">Merge availability</button></div>';
+  // official iRacing session start times + race length (via the proxy)
+  h+='<div class="importbox"><div class="meta" style="margin-bottom:6px;text-transform:uppercase;letter-spacing:.04em">Official iRacing session times</div>';
+  if(!selEv){ h+='<div class="meta">Select a target event on the Event tab to pull its official session start times and race length.</div>'; }
+  else {
+    var cur=state.evTiming&&state.evTiming[evKey(selEv)];
+    var match=irMatchFor(selEv);
+    h+='<div style="display:flex;gap:12px;flex-wrap:wrap;align-items:center">';
+    h+='<select data-s="irsel"><option value="">(pick the matching iRacing event)</option>'+IR_SEASONS.map(function(se,i){var sel=(match&&se.season_id===match.season_id)?' selected':''; return '<option value="'+i+'"'+sel+'>'+esc(se.name)+' · '+esc(se.track)+(se.race_min?' · '+Math.round(se.race_min/60)+'h':'')+'</option>';}).join('')+'</select>';
+    h+='<button class="btn btn-amber" data-s="irapply">Apply to '+esc(selEv.n)+'</button>';
+    h+='<span class="meta" data-s="irrefresh" style="cursor:pointer;text-decoration:underline">refresh</span>';
+    h+='</div>';
+    if(cur) h+='<div class="meta" style="margin-top:8px;color:var(--green)">Using official times'+(cur.src?' from "'+esc(cur.src)+'"':'')+' — '+Object.keys(cur.offsets||{}).length+' starts, '+Math.round((cur.raceMin||0)/60)+'h race. <span data-s="irclear" style="cursor:pointer;text-decoration:underline;color:var(--red)">revert to calendar</span></div>';
+    if(IR_STATUS) h+='<div class="meta" style="margin-top:8px">'+esc(IR_STATUS)+'</div>';
+    if(!IR_SEASONS.length && !IR_STATUS) h+='<div class="meta" style="margin-top:8px">Loading iRacing…</div>';
+  }
+  h+='</div>';
+  // (the old iRacePlan bookmarklet paste box is gone — availability comes from the
+  //  Availability tab; applyPaste() is kept for console-level emergencies only)
   // match review
   if(lastMatches&&lastMatches.length){
     h+='<div class="importbox edr-match"><div class="meta" style="margin-bottom:6px">NAME MATCHES (iRacePlan &rarr; Garage 61). Fix any wrong/blank ones:</div>';
@@ -272,7 +323,18 @@ document.getElementById('content').addEventListener('click',function(e){
     const ids=evIds||(tEl?[parseInt(tEl.value,10)]:[]);
     if(ids.length) doImport(ids, (eEl&&eEl.value)?parseInt(eEl.value,10):0);
   }
-  else if(s==='dopaste'){ const p=document.querySelector('[data-s=paste]'); applyPaste(p.value); }
+  else if(s==='irrefresh'){ setSetupMsg('Refreshing iRacing…'); loadIracing().then(function(){ setSetupMsg(''); renderContent(); }); }
+  else if(s==='irapply'){
+    const selEv=state.evsel?calEvent(state.evsel):null; const sel=document.querySelector('[data-s=irsel]');
+    if(!selEv||!sel||sel.value===''){ setSetupMsg('Pick the matching iRacing event first.'); return; }
+    const se=IR_SEASONS[parseInt(sel.value,10)];
+    if(se && applyIrTiming(selEv, se)){ applyEventTiming(selEv); state.stintAssign={}; state.stintWin={}; state.stintSig=''; applyAvailToDrivers(); save(); setSetupMsg('Applied official session times from "'+se.name+'".'); renderContent(); }
+    else setSetupMsg('That iRacing event has no session times.');
+  }
+  else if(s==='irclear'){
+    const selEv=state.evsel?calEvent(state.evsel):null;
+    if(selEv){ delete state.evTiming[evKey(selEv)]; applyEventTiming(selEv); state.stintAssign={}; state.stintWin={}; state.stintSig=''; applyAvailToDrivers(); save(); setSetupMsg('Reverted to calendar session times.'); renderContent(); }
+  }
 });
 
 async function bootSetup(){
@@ -281,13 +343,24 @@ async function bootSetup(){
   document.getElementById('rolebar').addEventListener('click',function(e){
     const b=e.target.closest&&e.target.closest('[data-role-action]');
     if(!b) return;
-    if(b.dataset.roleAction==='unlock') unlockAdmin(); else lockAdmin();
+    const a=b.dataset.roleAction;
+    if(a==='unlock') unlockAdmin();
+    else if(a==='go') submitUnlock();
+    else if(a==='cancel'){ _unlockOpen=false; _unlockMsg=''; renderRolebar(); }
+    else lockAdmin();
+  });
+  document.getElementById('rolebar').addEventListener('keydown',function(e){
+    if(e.key==='Enter' && e.target.id==='adminpass') submitUnlock();
   });
   renderRolebar();
   syncControls();
   state.tab = CAN ? 'setup' : 'event'; setActiveTab();
   var ok=false; try{ ok=await loadPlan(); }catch(e){}
-  try{ const av=await apiGET('avail'); if(av&&typeof av==='object'&&!Array.isArray(av)) state.availStore=av; }catch(e){}
+  try{
+    const av=await apiGET('avail');
+    if(av&&av.store){ state.availStore=av.store; LOCKED_NAMES=av.locked||[]; }
+    else if(av&&typeof av==='object'&&!Array.isArray(av)) state.availStore=av;  /* pre-2.1.4 server shape */
+  }catch(e){}
   try{ const tr=await apiGET('roster'); if(Array.isArray(tr)&&tr.length) TEAM_ROSTER=tr; }catch(e){}
   applyAvailToDrivers();
   if(ok && state.drivers.length && !Object.keys(state.teams||{}).length) generate();
@@ -297,6 +370,7 @@ async function bootSetup(){
     try{ EVENTS=await apiGET('events'); }catch(e){ EVENTS=[]; }
     preselectNearest();
     if(state.tab==='setup') renderContent();
+    loadIracing().then(function(){ if(state.tab==='setup') renderContent(); });
   }
 }
 

@@ -61,6 +61,15 @@ shortcode, and the REST API under `/wp-json/edr/v1/`:
 - `POST /auth` (public) — verifies the admin password for the builder's role unlock.
 - `GET/POST /avail` (public) — per-driver availability slots per event
   (`edr_tb_avail` option); drivers submit without an account.
+- `GET /iracing` (edit-gated, cached 12h in `edr_tb_iracing`) — official iRacing session
+  start times + race lengths via a teammate's proxy (`includes/iracing.php`, same
+  server-side pattern as `garage61.php`; proxy URL + key in Settings). Returns only the
+  currently-active seasons that expose `race_time_descriptors` (special events appear once
+  active). The builder's Setup tab matches a calendar event to a season and `applyIrTiming()`
+  converts `session_times`/`race_time_limit` into a per-event timing override
+  (`state.evTiming[evKey]`, persisted in the plan) — this reproduces the hand-typed Spa
+  values exactly. Failures (e.g. expired proxy session) are surfaced, not cached, and the
+  event falls back to its calendar/derived times.
 
 `includes/` are thin API clients returning plain arrays:
 - `garage61.php` — `edr_g61_roster()` pulls `/laps` for the team at the chosen track(s)
@@ -97,7 +106,17 @@ pastes the JSON into the Setup tab's AVAILABILITY box → "Merge availability".
   only those four classes are kept when building a driver's cars.
 - **Pace data window:** Garage 61 pulls use `age=-1` and are scoped to iRacing 2026
   Season 3 onward by project convention — keep that window when changing the pace query.
+- **Driver display names** are built from Garage 61 `firstName+lastName` (`edr_g61_roster()`);
+  the API's `name` field is empty or a digit-suffixed iRacing name ("Sam Millar2") that never
+  matches the roster. The Garage 61 key in Settings must be **team-scoped** (a personal key
+  returns only the owner's laps) and the team slug falls back to `edr-endurotech` when blank —
+  both misconfigurations produce the "import only returns one driver" symptom.
+- **Availability is strictly per event** and **the event pool rule** applies: with an event
+  selected, Drivers/Teams/Stints include only drivers with `avail.hours > 0` for that event.
+  Anyone who submits availability joins the pool (no pace until the next import). Imported
+  iRacePlan availability is folded into the same per-event store via `windowsToSlots()`.
 - **Times** are offsets in minutes from the event `window_start`; availability windows are
-  `[startMin, endMin]` pairs, merged by `edr_merge_windows()`.
+  `[startMin, endMin]` pairs, merged by `edr_merge_windows()`; the availability matrix uses
+  4-hour slots (`AV_BLOCK`), converted by `slotsToAvail()`/`windowsToSlots()`.
 - Credentials live only in the `edr_tb_settings` WP option and are never sent to the
   browser; the plugin makes outbound requests to `garage61.net` and `iraceplan.com`.

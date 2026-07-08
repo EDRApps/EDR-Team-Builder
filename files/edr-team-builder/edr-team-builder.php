@@ -2,7 +2,7 @@
 /**
  * Plugin Name: EDR Team Builder
  * Description: Endurotech Racing endurance team + stint planner. Pulls Garage 61 pace and iRacePlan availability, builds Pro/Casual teams and stint rotations. Add the [edr_team_builder] shortcode to a page.
- * Version: 2.1.2
+ * Version: 2.2.0
  * Author: Endurotech Racing
  * License: GPL-2.0-or-later
  */
@@ -11,10 +11,11 @@ if (!defined('ABSPATH')) exit; // no direct access
 
 define('EDR_TB_DIR', plugin_dir_path(__FILE__));
 define('EDR_TB_URL', plugin_dir_url(__FILE__));
-define('EDR_TB_VER', '2.1.2');
+define('EDR_TB_VER', '2.2.0');
 
 require_once EDR_TB_DIR . 'includes/garage61.php';
 require_once EDR_TB_DIR . 'includes/iraceplan.php';
+require_once EDR_TB_DIR . 'includes/iracing.php';
 require_once EDR_TB_DIR . 'includes/merge.php';
 
 /* ----------------------------------------------------------------
@@ -22,10 +23,12 @@ require_once EDR_TB_DIR . 'includes/merge.php';
  * ---------------------------------------------------------------- */
 function edr_tb_settings() {
     return wp_parse_args(get_option('edr_tb_settings', array()), array(
-        'g61_token'  => '',
-        'irp_key'    => '',
-        'team_slug'  => 'edr-endurotech',
-        'edit_pass'  => '',
+        'g61_token'   => '',
+        'irp_key'     => '',
+        'team_slug'   => 'edr-endurotech',
+        'edit_pass'   => '',
+        'iracing_url' => '',
+        'iracing_key' => '',
     ));
 }
 
@@ -48,10 +51,12 @@ add_action('admin_menu', function () {
 add_action('admin_init', function () {
     register_setting('edr_tb', 'edr_tb_settings', function ($in) {
         return array(
-            'g61_token' => sanitize_text_field($in['g61_token'] ?? ''),
-            'irp_key'   => sanitize_text_field($in['irp_key'] ?? ''),
-            'team_slug' => sanitize_text_field($in['team_slug'] ?? 'edr-endurotech'),
-            'edit_pass' => sanitize_text_field($in['edit_pass'] ?? ''),
+            'g61_token'   => sanitize_text_field($in['g61_token'] ?? ''),
+            'irp_key'     => sanitize_text_field($in['irp_key'] ?? ''),
+            'team_slug'   => sanitize_text_field($in['team_slug'] ?? 'edr-endurotech'),
+            'edit_pass'   => sanitize_text_field($in['edit_pass'] ?? ''),
+            'iracing_url' => esc_url_raw($in['iracing_url'] ?? ''),
+            'iracing_key' => sanitize_text_field($in['iracing_key'] ?? ''),
         );
     });
 });
@@ -77,6 +82,12 @@ function edr_tb_settings_page() {
           <tr><th scope="row">Builder admin password</th>
             <td><input type="text" name="edr_tb_settings[edit_pass]" value="<?php echo esc_attr($s['edit_pass']); ?>" class="regular-text" autocomplete="off">
             <p class="description">Whoever knows this password can unlock admin mode in the builder (edit Drivers / Teams / Stints and run imports) without a WordPress account. Leave empty to require WordPress login.</p></td></tr>
+          <tr><th scope="row">iRacing proxy URL</th>
+            <td><input type="text" name="edr_tb_settings[iracing_url]" value="<?php echo esc_attr($s['iracing_url']); ?>" class="regular-text" autocomplete="off" placeholder="https://iracing-bot.example.dev">
+            <p class="description">Base URL of the iRacing Data API proxy. Used server-side only to pull official session start times and race lengths. Optional &mdash; leave blank to keep hand-typed session times.</p></td></tr>
+          <tr><th scope="row">iRacing proxy key</th>
+            <td><input type="text" name="edr_tb_settings[iracing_key]" value="<?php echo esc_attr($s['iracing_key']); ?>" class="regular-text" autocomplete="off">
+            <p class="description">Bearer key for the proxy. If the builder later reports the iRacing session expired, the proxy owner needs to re-authenticate the bot.</p></td></tr>
         </table>
         <?php submit_button(); ?>
       </form>
@@ -121,7 +132,32 @@ add_action('rest_api_init', function () {
     register_rest_route('edr/v1', '/roster', array(
         'methods' => 'GET', 'permission_callback' => '__return_true', 'callback' => 'edr_tb_rest_roster',
     ));
+    // official iRacing session start times + race lengths (via the proxy) — admin only,
+    // cached; the builder matches a calendar event to a season and applies its real times
+    register_rest_route('edr/v1', '/iracing', array(
+        'methods' => 'GET', 'permission_callback' => 'edr_tb_req_can_edit', 'callback' => 'edr_tb_rest_iracing',
+    ));
 });
+
+function edr_tb_rest_iracing(WP_REST_Request $req) {
+    $s = edr_tb_settings();
+    if (empty($s['iracing_url']) || empty($s['iracing_key'])) {
+        return rest_ensure_response(array('ok' => false, 'reason' => 'not_configured', 'seasons' => array()));
+    }
+    $fresh = $req->get_param('fresh');
+    if (!$fresh) {
+        $cache = get_transient('edr_tb_iracing');
+        if ($cache) return rest_ensure_response($cache);
+    }
+    $seasons = edr_ir_seasons($s['iracing_url'], $s['iracing_key']);
+    if (is_wp_error($seasons)) {
+        // don't cache failures (e.g. an expired proxy session) — surface and retry next time
+        return rest_ensure_response(array('ok' => false, 'reason' => 'error', 'message' => $seasons->get_error_message(), 'seasons' => array()));
+    }
+    $payload = array('ok' => true, 'seasons' => $seasons);
+    set_transient('edr_tb_iracing', $payload, 12 * HOUR_IN_SECONDS);
+    return rest_ensure_response($payload);
+}
 
 function edr_tb_rest_roster(WP_REST_Request $req) {
     $s = edr_tb_settings();
@@ -146,14 +182,49 @@ function edr_tb_rest_auth(WP_REST_Request $req) {
 }
 
 function edr_tb_rest_avail_get() {
-    $all = get_option('edr_tb_avail', array());
-    return rest_ensure_response(empty($all) ? new stdClass() : $all);
+    $all    = get_option('edr_tb_avail', array());
+    $owners = (array) get_option('edr_tb_avail_owners', array());
+    return rest_ensure_response(array(
+        'store'  => empty($all) ? new stdClass() : $all,
+        'locked' => array_keys($owners),
+    ));
 }
 
+/**
+ * Per-driver locking (no accounts): the first browser to submit a name claims it with
+ * a random device token; later writes for that name must present the same token.
+ * Admins (WP login or X-EDR-Pass) bypass the lock and can release it.
+ */
 function edr_tb_rest_avail_set(WP_REST_Request $req) {
-    $ev   = substr(sanitize_text_field((string) $req->get_param('ev')), 0, 120);
     $name = substr(sanitize_text_field((string) $req->get_param('name')), 0, 80);
-    if ($ev === '' || $name === '') return new WP_Error('bad_req', 'Need ev and name.', array('status' => 400));
+    if ($name === '') return new WP_Error('bad_req', 'Need a driver name.', array('status' => 400));
+    $isAdmin = edr_tb_req_can_edit($req);
+    $owners  = (array) get_option('edr_tb_avail_owners', array());
+
+    if ($req->get_param('release')) {
+        if (!$isAdmin) return new WP_Error('forbidden', 'Only an admin can release a lock.', array('status' => 403));
+        unset($owners[$name]);
+        update_option('edr_tb_avail_owners', $owners, false);
+        return rest_ensure_response(array('ok' => true, 'released' => $name));
+    }
+
+    $ev = substr(sanitize_text_field((string) $req->get_param('ev')), 0, 120);
+    if ($ev === '') return new WP_Error('bad_req', 'Need ev.', array('status' => 400));
+    $tok  = (string) $req->get_param('token');
+    $hash = ($tok !== '') ? hash('sha256', $tok) : '';
+
+    if (!$isAdmin) {
+        if (isset($owners[$name])) {
+            if ($hash === '' || !hash_equals($owners[$name], $hash)) {
+                return new WP_Error('locked', 'This driver is locked to whoever first submitted their availability. Ask an admin to release the lock.', array('status' => 403));
+            }
+        } else {
+            if ($hash === '') return new WP_Error('no_token', 'Missing device token.', array('status' => 400));
+            $owners[$name] = $hash;
+            update_option('edr_tb_avail_owners', $owners, false);
+        }
+    }
+
     $slots = array_slice(array_values(array_unique(array_filter(
         array_map('intval', (array) $req->get_param('slots')),
         function ($v) { return $v >= 0 && $v < 1000; }
@@ -162,7 +233,7 @@ function edr_tb_rest_avail_set(WP_REST_Request $req) {
     if (!isset($all[$ev]) || !is_array($all[$ev])) $all[$ev] = array();
     $all[$ev][$name] = $slots;
     update_option('edr_tb_avail', $all, false);
-    return rest_ensure_response(array('ok' => true));
+    return rest_ensure_response(array('ok' => true, 'locked' => array_keys($owners)));
 }
 
 function edr_tb_rest_plan_get() {
@@ -199,10 +270,13 @@ function edr_tb_rest_events() {
 
 function edr_tb_rest_import(WP_REST_Request $req) {
     $s = edr_tb_settings();
-    if (!$s['g61_token'] || !$s['irp_key']) return new WP_Error('no_creds', 'Set the Garage 61 token and iRacePlan key in plugin settings.', array('status' => 400));
+    // only the Garage 61 token is required — iRacePlan is optional legacy (availability
+    // now comes from the builder's own Availability tab)
+    if (!$s['g61_token']) return new WP_Error('no_creds', 'Set the Garage 61 token in plugin settings.', array('status' => 400));
     $trackIds  = array_map('intval', (array) $req->get_param('trackIds'));
     $surveyId  = intval($req->get_param('surveyId'));
-    if ($surveyId <= 0) { $surveyId = edr_irp_nearest_survey($s['irp_key']); } // auto-pick nearest event
+    if ($surveyId <= 0 && $s['irp_key']) { $surveyId = edr_irp_nearest_survey($s['irp_key']); } // auto-pick nearest event
+    if (!$s['irp_key']) $surveyId = 0;
     // an empty team slug would silently drop the teams= filter and return only the
     // key owner's laps ("only Sam Millar") — always fall back to the team default
     $teamSlug  = sanitize_text_field($req->get_param('teamSlug') ?: ($s['team_slug'] ?: 'edr-endurotech'));
