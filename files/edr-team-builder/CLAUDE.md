@@ -5,9 +5,11 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## What this is
 
 A self-contained **WordPress plugin** (`edr-team-builder/`) that plans iRacing
-endurance line-ups for Endurotech Racing (endurotechracing.com). It pulls **pace**
-from Garage 61 and **availability** from iRacePlan, then builds Pro/Casual teams and
-stint rotations. Activated by the `[edr_team_builder]` shortcode. Workflow (tab order):
+endurance line-ups for Endurotech Racing (endurotechracing.com). It pulls **pace** from
+Garage 61, collects **availability** in-house (drivers tick 4h blocks), and pulls **official
+session times** from an iRacing proxy, then builds Pro/Casual teams and stint rotations.
+iRacePlan was fully removed in 2.3.0 — imports are pure Garage 61 pace. Activated by the
+`[edr_team_builder]` shortcode. Workflow (tab order):
 **Event (season calendar) → Availability (drivers tick 4h blocks) → Drivers → Teams →
 Stints**, with a role model on top:
 
@@ -75,12 +77,13 @@ shortcode, and the REST API under `/wp-json/edr/v1/`:
 - `garage61.php` — `edr_g61_roster()` pulls `/laps` for the team at the chosen track(s)
   and aggregates per-driver-per-car `{laps, medianLap, cleanPct}`. Mirrors
   `../../colab_pull_garage61.py`. Note `age=-1` (pace data window — see below).
-- `iraceplan.php` — events from `/surveys`; `edr_irp_event_detail()` derives the race
-  window + candidate start times from `session_times` and pulls availability from the
-  **plannings** API. Survey responses are NOT in the iRacePlan API — full multi-window
-  availability only exists once a team planning is created, or via the bookmarklet scrape.
-- `merge.php` — `edr_tb_merge()` does NOT do the name matching; it just bundles the
-  Garage 61 roster + iRacePlan event metadata for the browser to merge.
+- `iracing.php` — `edr_ir_get()`/`edr_ir_seasons()` call a teammate's iRacing Data API proxy
+  (same server-side/cached pattern as `garage61.php`) for official session start times +
+  race lengths; detects the expired-proxy-session case and surfaces it.
+
+(iRacePlan is gone as of 2.3.0: `iraceplan.php`, `merge.php`, the `/events` route, the
+`irp_key` setting, and the bookmarklet assets were all removed. `POST /import` returns the
+Garage 61 roster and nothing else; the browser folds in the in-house availability.)
 
 **Client (generated `builder.js`).** The browser owns the merge and all scoring. Key flow:
 - `applyImport(payload, scrape)` joins iRacePlan availability ↔ Garage 61 pace by

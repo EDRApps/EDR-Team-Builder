@@ -943,8 +943,7 @@ function verifyAdminPass(p,cb){
    (at boot these only load for already-admin sessions) */
 function onAdminUnlocked(){
   (async function(){
-    try{ TRACKS=await apiGET('tracks'); }catch(e){ TRACKS=[]; }
-    try{ EVENTS=await apiGET('events'); }catch(e){ EVENTS=[]; }
+    try{ TRACKS=await apiGET('tracks'); }catch(e){ TRACKS=[]; } if(!Array.isArray(TRACKS)) TRACKS=[];
     preselectNearest();
     renderContent();
     loadIracing().then(renderContent);
@@ -1005,17 +1004,16 @@ function irMatchFor(ev){
   });
   return bs>=3?best:null;
 }
-let SEL_SURVEY=0, SEL_TRACK=0;
+let SEL_TRACK=0;
 function preselectNearest(){
-  if(EVENTS&&EVENTS.length){ var now=Date.now(),best=0,bd=Infinity; EVENTS.forEach(function(e){var t=Date.parse(e.start_time);if(!t)return;var d=Math.abs(t-now);if(d<bd){bd=d;best=e.id;}}); SEL_SURVEY=best; }
-  SEL_TRACK=(lastTrackIds&&lastTrackIds[0]) || (TRACKS&&TRACKS.length?TRACKS[0].id:0);
+  SEL_TRACK=(lastTrackIds&&lastTrackIds[0]) || (Array.isArray(TRACKS)&&TRACKS.length?TRACKS[0].id:0);
 }
 const norm=s=>String(s||'').toLowerCase().replace(/[^a-z]/g,'');
 function classOfCar(c){const n=String(c).toUpperCase();if(/GTP|HYBRID|LMDH/.test(n))return'GTP';if(/LMP2|P217|LMP/.test(n))return'LMP2';if(/GT4/.test(n))return'GT4';if(/GT3/.test(n))return'GT3';return'Other';}
 const OVR_KEY='edrTB_overrides';
 let overrides=(function(){try{return JSON.parse(localStorage.getItem(OVR_KEY))||{};}catch(e){return{};}})();
 function saveOverrides(){try{localStorage.setItem(OVR_KEY,JSON.stringify(overrides));}catch(e){}}
-let TRACKS=null, EVENTS=null, lastPayload=null, lastScrape=null, setupMsg='';
+let TRACKS=null, lastPayload=null, setupMsg='';
 let IMPORT_META={window_min:1980,race_min:360,candidate_starts:[]};
 
 function setSetupMsg(t){ setupMsg=t; if(state.tab==='setup') renderContent(); }
@@ -1034,59 +1032,23 @@ function buildCars(r,prefsStr){
   return cars;
 }
 let lastMatches=[];
-function applyImport(payload, scrape){
-  IMPORT_META={window_min:payload.window_min||1980, race_min:payload.race_min||360, candidate_starts:payload.candidate_starts||[]};
-  if(!state.evsel){
-    /* no calendar event selected: take timing from the iRacePlan payload (legacy path).
-       With an event selected, the Event tab owns WIN_START_MS / START_OFFSETS. */
-    if(payload.window_start) WIN_START_MS=Date.parse(payload.window_start);
-    START_OFFSETS={}; START_LABELS={}; (payload.candidate_starts||[]).forEach(c=>{ START_OFFSETS[c.n]=c.offset; START_LABELS[c.n]=(c.iso||'').slice(11,16)+'Z'; });
-    if(!Object.keys(START_OFFSETS).length){ START_OFFSETS={1:0,2:540,3:840,4:1080,5:1560}; START_LABELS={1:'22:00Z',2:'07:00Z',3:'12:00Z',4:'16:00Z',5:'00:00Z'}; }
-  }
-  const g61={}; (payload.roster||[]).forEach(r=>{ g61[norm(r.name)]=r; });
-  let availList=[];
-  if(scrape&&scrape.length){ availList=scrape.map(d=>({name:d.name, prefs:d.cars||'', windows: d.windows_min ? d.windows_min : (d.windows_frac ? d.windows_frac.map(w=>[Math.round(w[0]*IMPORT_META.window_min), Math.round(w[1]*IMPORT_META.window_min)]) : (d.windows||[])) })); }
-  else { availList=(payload.availability||[]).map(d=>({name:d.name,windows:d.windows_min||[],prefs:''})); }
-  const drivers=[]; const matches=[]; let id=1;
-  if(availList.length){
-    availList.forEach(a=>{
-      const slug=overrides[a.name] || (g61[norm(a.name)]?g61[norm(a.name)].name:null);
-      const r=slug?(g61[norm(slug)]||findBySlug(payload.roster,slug)):null;
-      matches.push({irp:a.name, g61:r?r.name:null});
-      const bc=buildCars(r,a.prefs);
-      drivers.push({id:id++, name:a.name, cars:bc, assignedCar:fastestCar(bc), avail:computeAvail(a.windows)});
-    });
-  } else {
-    (payload.roster||[]).forEach(r=>{ drivers.push({id:id++, name:r.name, cars:r.cars, assignedCar:fastestCar(r.cars), avail:null}); });
-  }
-  lastMatches=matches; state.drivers=drivers; state.stintAssign={}; state.stintSig=''; state.stintWin={};
-  /* fold iRacePlan availability into the per-event store (as 4h slots) so it lives in the
-     same system as direct submissions; direct submissions win on conflict */
-  if(state.evsel && availList.length){
-    const st=state.availStore[state.evsel]=state.availStore[state.evsel]||{};
-    availList.forEach(function(a){
-      if((a.windows||[]).length && !(st[a.name]&&st[a.name].length)){ st[a.name]=windowsToSlots(a.windows); persistAvail(state.evsel,a.name); }
-    });
-  }
-  applyAvailToDrivers();  // per-event availability is the single source of truth
+function applyImport(payload){
+  var drivers=[], id=1;
+  (payload.roster||[]).forEach(function(r){ drivers.push({id:id++, name:r.name, cars:r.cars, assignedCar:fastestCar(r.cars), avail:null}); });
+  state.drivers=drivers; state.stintAssign={}; state.stintSig=''; state.stintWin={};
+  applyAvailToDrivers();  // in-house per-event availability is the single source of truth
   generate(); save();
 }
-
-async function doImport(trackIds, surveyId){
-  lastTrackIds=trackIds; setSetupMsg('Pulling Garage 61 + iRacePlan...');
+async function doImport(trackIds){
+  lastTrackIds=trackIds; setSetupMsg('Pulling Garage 61 pace…');
   try{
-    const payload=await apiPOST('import',{trackIds:trackIds,surveyId:surveyId});
+    const payload=await apiPOST('import',{trackIds:trackIds});
     if(payload.code){ setSetupMsg('Error: '+(payload.message||payload.code)); return; }
-    lastPayload=payload; lastScrape=null;
-    applyImport(payload,null);
-    if(payload.needs_availability){ setSetupMsg('Pace imported. No iRacePlan planning yet, so run the availability bookmarklet on the survey page and paste below to add availability.'); }
-    else { setSetupMsg('Imported '+state.drivers.length+' drivers with availability.'); }
+    lastPayload=payload;
+    applyImport(payload);
+    setSetupMsg('Imported pace for '+state.drivers.length+' drivers.');
     state.tab='setup'; setActiveTab(); renderContent();
   }catch(e){ setSetupMsg('Import failed: '+e.message); }
-}
-function applyPaste(txt){
-  try{ const scrape=JSON.parse(txt); if(!Array.isArray(scrape)||!scrape.length) throw new Error('expected a non-empty list'); if(!lastPayload){ setSetupMsg('Import pace first, then paste availability.'); return; } lastScrape=scrape; applyImport(lastPayload,scrape); setSetupMsg('Merged availability for '+scrape.length+' drivers.'); renderContent(); }
-  catch(e){ setSetupMsg('Paste failed: '+e.message); }
 }
 
 let SETUP_MANUAL=false;
@@ -1099,12 +1061,11 @@ function renderSetup(){
     const tnames=evTrackIds.map(function(id){ const t=(TRACKS||[]).find(x=>x.id===id); return t?(t.name+(t.variant?' - '+t.variant:'')):('#'+id); });
     h+='<div class="ctl"><label>TRACK — from the selected event</label><div style="font-size:13px;color:#fff;padding:6px 0">'+esc(selEv.n)+': '+esc(tnames.join(' + '))+'</div><span class="meta" data-s="manualtrack" style="cursor:pointer;text-decoration:underline">use the manual track picker instead</span></div>';
   } else {
-    h+='<div class="ctl"><label>TRACK (Garage 61)</label><select data-s="track">'+(TRACKS?TRACKS.map(t=>'<option value="'+t.id+'"'+(t.id===SEL_TRACK?' selected':'')+'>'+esc(t.name+(t.variant?' - '+t.variant:''))+'</option>').join(''):'<option>loading...</option>')+'</select>'
+    h+='<div class="ctl"><label>TRACK (Garage 61)</label><select data-s="track">'+(Array.isArray(TRACKS)?TRACKS.map(t=>'<option value="'+t.id+'"'+(t.id===SEL_TRACK?' selected':'')+'>'+esc(t.name+(t.variant?' - '+t.variant:''))+'</option>').join(''):'<option>loading...</option>')+'</select>'
       +((selEv&&selEv.g61Tracks)?'<div><span class="meta" data-s="autotrack" style="cursor:pointer;text-decoration:underline">back to the event tracks</span></div>':'')+'</div>';
   }
-  h+='<div class="ctl"><label>EVENT (iRacePlan) <span style="color:var(--green)">nearest auto-selected</span></label><select data-s="event"><option value=""'+(SEL_SURVEY?'':' selected')+'>(none, pace only)</option>'+(EVENTS?EVENTS.map(e=>'<option value="'+e.id+'"'+(e.id===SEL_SURVEY?' selected':'')+'>'+esc(e.title)+(e.responses!=null?' ('+e.responses+'/'+e.drivers+')':'')+'</option>').join(''):'')+'</select></div>';
   h+='<button class="btn btn-amber" data-s="import">Import / Refresh now</button>';
-  h+='<span class="meta" style="align-self:center;max-width:360px">'+esc(setupMsg||'This is the shared team plan, saved for everyone. Nearest event is auto-selected. Pick a track, then Import / Refresh.')+'</span>';
+  h+='<span class="meta" style="align-self:center;max-width:360px">'+esc(setupMsg||'This is the shared team plan, saved for everyone. Pick a track (or use the event\'s tracks), then Import / Refresh to pull Garage 61 pace.')+'</span>';
   h+='</div>';
   // official iRacing session start times + race length (via the proxy)
   h+='<div class="importbox"><div class="meta" style="margin-bottom:6px;text-transform:uppercase;letter-spacing:.04em">Official iRacing session times</div>';
@@ -1122,28 +1083,11 @@ function renderSetup(){
     if(!IR_SEASONS.length && !IR_STATUS) h+='<div class="meta" style="margin-top:8px">Loading iRacing…</div>';
   }
   h+='</div>';
-  // (the old iRacePlan bookmarklet paste box is gone — availability comes from the
-  //  Availability tab; applyPaste() is kept for console-level emergencies only)
-  // match review
-  if(lastMatches&&lastMatches.length){
-    h+='<div class="importbox edr-match"><div class="meta" style="margin-bottom:6px">NAME MATCHES (iRacePlan &rarr; Garage 61). Fix any wrong/blank ones:</div>';
-    const slugs=(lastPayload&&lastPayload.roster||[]).map(r=>r.name);
-    lastMatches.forEach(m=>{
-      h+='<div style="display:flex;gap:8px;align-items:center;margin-bottom:4px"><span style="min-width:170px">'+esc(m.irp)+'</span><span style="color:var(--dim)">&rarr;</span>'
-        +'<select data-s="ovr" data-irp="'+esc(m.irp)+'"><option value="">(no pace match)</option>'+slugs.map(s=>'<option value="'+esc(s)+'"'+(norm(s)===norm(m.g61||'')?' selected':'')+'>'+esc(s)+'</option>').join('')+'</select>'
-        +(m.g61?'':' <span style="color:var(--red)">unmatched</span>')+'</div>';
-    });
-    h+='</div>';
-  }
   h+='</div>';
   return h;
 }
 
 /* delegated handlers for setup controls */
-document.getElementById('content').addEventListener('change',function(e){
-  const s=e.target.dataset.s;
-  if(s==='ovr'){ const irp=e.target.dataset.irp; if(e.target.value) overrides[irp]=e.target.value; else delete overrides[irp]; saveOverrides(); if(lastPayload) applyImport(lastPayload,lastScrape); renderContent(); }
-});
 document.getElementById('content').addEventListener('click',function(e){
   const s=e.target.dataset.s;
   if(s==='manualtrack'){ SETUP_MANUAL=true; renderContent(); }
@@ -1151,9 +1095,9 @@ document.getElementById('content').addEventListener('click',function(e){
   else if(s==='import'){
     const selEv=state.evsel?calEvent(state.evsel):null;
     const evIds=(selEv&&selEv.g61Tracks&&!SETUP_MANUAL)?selEv.g61Tracks:null;
-    const tEl=document.querySelector('[data-s=track]'); const eEl=document.querySelector('[data-s=event]');
+    const tEl=document.querySelector('[data-s=track]');
     const ids=evIds||(tEl?[parseInt(tEl.value,10)]:[]);
-    if(ids.length) doImport(ids, (eEl&&eEl.value)?parseInt(eEl.value,10):0);
+    if(ids.length) doImport(ids);
   }
   else if(s==='irrefresh'){ setSetupMsg('Refreshing iRacing…'); loadIracing().then(function(){ setSetupMsg(''); renderContent(); }); }
   else if(s==='irapply'){
@@ -1198,8 +1142,7 @@ async function bootSetup(){
   if(ok && state.drivers.length && !Object.keys(state.teams||{}).length) generate();
   renderContent();
   if(isAdmin()){
-    try{ TRACKS=await apiGET('tracks'); }catch(e){ TRACKS=[]; }
-    try{ EVENTS=await apiGET('events'); }catch(e){ EVENTS=[]; }
+    try{ TRACKS=await apiGET('tracks'); }catch(e){ TRACKS=[]; } if(!Array.isArray(TRACKS)) TRACKS=[];
     preselectNearest();
     if(state.tab==='setup') renderContent();
     loadIracing().then(function(){ if(state.tab==='setup') renderContent(); });

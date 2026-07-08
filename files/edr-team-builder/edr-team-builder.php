@@ -1,8 +1,8 @@
 <?php
 /**
  * Plugin Name: EDR Team Builder
- * Description: Endurotech Racing endurance team + stint planner. Pulls Garage 61 pace and iRacePlan availability, builds Pro/Casual teams and stint rotations. Add the [edr_team_builder] shortcode to a page.
- * Version: 2.2.0
+ * Description: Endurotech Racing endurance team + stint planner. Pulls Garage 61 pace and official iRacing session times, collects driver availability in-house, and builds Pro/Casual teams and stint rotations. Add the [edr_team_builder] shortcode to a page.
+ * Version: 2.3.0
  * Author: Endurotech Racing
  * License: GPL-2.0-or-later
  */
@@ -11,12 +11,10 @@ if (!defined('ABSPATH')) exit; // no direct access
 
 define('EDR_TB_DIR', plugin_dir_path(__FILE__));
 define('EDR_TB_URL', plugin_dir_url(__FILE__));
-define('EDR_TB_VER', '2.2.0');
+define('EDR_TB_VER', '2.3.0');
 
 require_once EDR_TB_DIR . 'includes/garage61.php';
-require_once EDR_TB_DIR . 'includes/iraceplan.php';
 require_once EDR_TB_DIR . 'includes/iracing.php';
-require_once EDR_TB_DIR . 'includes/merge.php';
 
 /* ----------------------------------------------------------------
  * Settings (one shared credential set, admin-only, server-side)
@@ -24,7 +22,6 @@ require_once EDR_TB_DIR . 'includes/merge.php';
 function edr_tb_settings() {
     return wp_parse_args(get_option('edr_tb_settings', array()), array(
         'g61_token'   => '',
-        'irp_key'     => '',
         'team_slug'   => 'edr-endurotech',
         'edit_pass'   => '',
         'iracing_url' => '',
@@ -52,7 +49,6 @@ add_action('admin_init', function () {
     register_setting('edr_tb', 'edr_tb_settings', function ($in) {
         return array(
             'g61_token'   => sanitize_text_field($in['g61_token'] ?? ''),
-            'irp_key'     => sanitize_text_field($in['irp_key'] ?? ''),
             'team_slug'   => sanitize_text_field($in['team_slug'] ?? 'edr-endurotech'),
             'edit_pass'   => sanitize_text_field($in['edit_pass'] ?? ''),
             'iracing_url' => esc_url_raw($in['iracing_url'] ?? ''),
@@ -67,16 +63,13 @@ function edr_tb_settings_page() {
     ?>
     <div class="wrap">
       <h1>EDR Team Builder</h1>
-      <p>Credentials are stored on the server and used only to call Garage 61 and iRacePlan. They are never sent to visitors' browsers.</p>
+      <p>Credentials are stored on the server and used only to call Garage 61 and the iRacing proxy. They are never sent to visitors' browsers.</p>
       <form method="post" action="options.php">
         <?php settings_fields('edr_tb'); ?>
         <table class="form-table">
           <tr><th scope="row">Garage 61 API token</th>
             <td><input type="text" name="edr_tb_settings[g61_token]" value="<?php echo esc_attr($s['g61_token']); ?>" class="regular-text" autocomplete="off">
             <p class="description">Garage 61 &rarr; My applications &rarr; API key (needs <code>driving_data</code>).</p></td></tr>
-          <tr><th scope="row">iRacePlan API key</th>
-            <td><input type="text" name="edr_tb_settings[irp_key]" value="<?php echo esc_attr($s['irp_key']); ?>" class="regular-text" autocomplete="off">
-            <p class="description">iRacePlan &rarr; Settings &rarr; API Keys.</p></td></tr>
           <tr><th scope="row">Garage 61 team slug</th>
             <td><input type="text" name="edr_tb_settings[team_slug]" value="<?php echo esc_attr($s['team_slug']); ?>" class="regular-text"></td></tr>
           <tr><th scope="row">Builder admin password</th>
@@ -103,9 +96,6 @@ add_action('rest_api_init', function () {
     // editing (imports, plan writes) = logged-in user OR the builder admin password
     register_rest_route('edr/v1', '/tracks', array(
         'methods' => 'GET', 'permission_callback' => 'edr_tb_req_can_edit', 'callback' => 'edr_tb_rest_tracks',
-    ));
-    register_rest_route('edr/v1', '/events', array(
-        'methods' => 'GET', 'permission_callback' => 'edr_tb_req_can_edit', 'callback' => 'edr_tb_rest_events',
     ));
     register_rest_route('edr/v1', '/import', array(
         'methods' => 'POST', 'permission_callback' => 'edr_tb_req_can_edit', 'callback' => 'edr_tb_rest_import',
@@ -260,38 +250,22 @@ function edr_tb_rest_tracks() {
     return rest_ensure_response($tracks);
 }
 
-function edr_tb_rest_events() {
-    $s = edr_tb_settings();
-    if (!$s['irp_key']) return new WP_Error('no_key', 'iRacePlan key not set in plugin settings.', array('status' => 400));
-    $events = edr_irp_events($s['irp_key']);
-    if (is_wp_error($events)) return $events;
-    return rest_ensure_response($events);
-}
 
 function edr_tb_rest_import(WP_REST_Request $req) {
     $s = edr_tb_settings();
     // only the Garage 61 token is required — iRacePlan is optional legacy (availability
     // now comes from the builder's own Availability tab)
     if (!$s['g61_token']) return new WP_Error('no_creds', 'Set the Garage 61 token in plugin settings.', array('status' => 400));
-    $trackIds  = array_map('intval', (array) $req->get_param('trackIds'));
-    $surveyId  = intval($req->get_param('surveyId'));
-    if ($surveyId <= 0 && $s['irp_key']) { $surveyId = edr_irp_nearest_survey($s['irp_key']); } // auto-pick nearest event
-    if (!$s['irp_key']) $surveyId = 0;
+    $trackIds = array_map('intval', (array) $req->get_param('trackIds'));
+    if (!$trackIds) return new WP_Error('no_track', 'Pick a track first.', array('status' => 400));
     // an empty team slug would silently drop the teams= filter and return only the
     // key owner's laps ("only Sam Millar") — always fall back to the team default
-    $teamSlug  = sanitize_text_field($req->get_param('teamSlug') ?: ($s['team_slug'] ?: 'edr-endurotech'));
-    $overrides = (array) $req->get_param('overrides'); // {surveyName: g61Slug}
+    $teamSlug = sanitize_text_field($req->get_param('teamSlug') ?: ($s['team_slug'] ?: 'edr-endurotech'));
 
-    if (!$trackIds) return new WP_Error('no_track', 'Pick a track first.', array('status' => 400));
-
+    // pure Garage 61 pace pull; availability is collected in-house (Availability tab)
     $roster = edr_g61_roster($s['g61_token'], $trackIds, $teamSlug);   // [{name, cars}]
     if (is_wp_error($roster)) return $roster;
-
-    $event = $surveyId ? edr_irp_event_detail($s['irp_key'], $surveyId) : null;   // {window_start, candidate_starts, availability?}
-    if (is_wp_error($event)) return $event;
-
-    $merged = edr_tb_merge($roster, $event, $overrides);  // {drivers, candidate_starts, window_start, needs_availability, matches}
-    return rest_ensure_response($merged);
+    return rest_ensure_response(array('roster' => $roster, 'needs_availability' => false));
 }
 
 /* ----------------------------------------------------------------
