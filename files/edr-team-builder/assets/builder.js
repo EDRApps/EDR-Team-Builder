@@ -53,8 +53,8 @@ const SAMPLE = [];
 
 let state = { drivers:[], w:{pace:50,clean:30,prep:20}, proPct:40, tab:'event', teams:{}, stint:{window:1,len:60,race:1440}, stintAssign:{}, stintWin:{}, stintSig:'', evsel:null, role:'driver', me:'', pass:'', availStore:{}, evWinMin:0, evTiming:{}, teamsLocked:false, stintsLocked:false, teamNames:{}, fuelCfg:{pitLossSec:60,byCar:{},byClass:{}}, customEvents:[], irEvents:[], evWeather:{}, prefStore:{} };
 /* Per-user timezone (F10) is device-local, never in the shared plan. Auto-detect, override persisted in edrTB_tz. */
-let TZ = 'Australia/Brisbane';
-try{ TZ = localStorage.getItem('edrTB_tz') || (Intl.DateTimeFormat().resolvedOptions().timeZone) || 'Australia/Brisbane'; }catch(e){}
+let TZ = 'auto';   // default: auto-detect the viewer's zone; picker override persists per device
+try{ TZ = localStorage.getItem('edrTB_tz') || 'auto'; }catch(e){}
 const TZ_ZONES = [['auto','Auto (detected)'],['Australia/Brisbane','Brisbane'],['Europe/London','London'],['Europe/Berlin','Berlin / Amsterdam'],['Europe/Helsinki','Helsinki'],['America/New_York','US East'],['America/Los_Angeles','US West'],['UTC','UTC']];
 function tzZone(){ if(TZ==='auto'){ try{ return Intl.DateTimeFormat().resolvedOptions().timeZone||'UTC'; }catch(e){ return 'UTC'; } } return TZ||'Australia/Brisbane'; }
 function tzLabel(){ const m=TZ_ZONES.find(x=>x[0]===TZ); if(m&&m[0]!=='auto')return m[1]; const z=tzZone(); return (z.split('/').pop()||z).replace(/_/g,' ')+' (auto)'; }
@@ -683,7 +683,7 @@ function renderDrivers(model){
     grp.forEach((d,i)=>{
       const cars=Object.keys(d.cars||{}).sort((a,b)=>((d.cars[a].medianLap==null?1e9:d.cars[a].medianLap)-(d.cars[b].medianLap==null?1e9:d.cars[b].medianLap)));
       let opts=cars.map(c=>'<option value="'+esc(c)+'"'+(c===d.assignedCar?' selected':'')+'>'+esc(c)+'</option>').join('');
-      html+='<div class="row '+d._tier+'"><span class="meta" style="width:20px">#'+(i+1)+'</span><span style="font-size:13px;min-width:110px">'+esc(d.name)+'</span><select data-action="assign" data-id="'+d.id+'">'+opts+'</select><span class="meta">'+fmtLap(d._median)+' · '+d._laps+' laps · '+Math.round(d._clean*100)+'% clean'+(d.avail?' · '+d.avail.pct+'% avail':'')+'</span><span class="tier '+d._tier+'">'+d._tier.toUpperCase()+' · '+(d._score*100).toFixed(0)+'</span><button class="x" data-action="remove" data-id="'+d.id+'">✕</button></div>';
+      html+='<div class="row '+d._tier+'"><span class="meta" style="width:20px">#'+(i+1)+'</span><span style="font-size:13px;min-width:110px">'+esc(d.name)+'</span><select data-action="assign" data-id="'+d.id+'">'+opts+'</select>'+(isAdmin()?'<span data-action="carlock" data-id="'+d.id+'" title="'+(d.carLock?'car locked — imports keep this choice; click to unlock':'lock this car choice so imports keep it')+'" style="cursor:pointer;font-size:12px;opacity:'+(d.carLock?'1':'.4')+'">'+(d.carLock?'🔒':'🔓')+'</span>':(d.carLock?'<span title="car locked by admin" style="font-size:12px">🔒</span>':''))+'<span class="meta">'+fmtLap(d._median)+' · '+d._laps+' laps · '+Math.round(d._clean*100)+'% clean'+(d.avail?' · '+d.avail.pct+'% avail':'')+'</span><span class="tier '+d._tier+'">'+d._tier.toUpperCase()+' · '+(d._score*100).toFixed(0)+'</span><button class="x" data-action="remove" data-id="'+d.id+'">✕</button></div>';
     });
     html+='</div></div>';
   });
@@ -811,7 +811,7 @@ function renderStints(byId){
   if(isAdmin()){
     const w=(state.evWeather&&state.evWeather[state.evsel])||{};
     const tod=(w.startTod!=null&&w.startTod!=='')?((('0'+Math.floor(w.startTod/60)).slice(-2))+':'+(('0'+(w.startTod%60)).slice(-2))):'';
-    html+='<div class="importbox" style="display:flex;gap:14px;flex-wrap:wrap;align-items:flex-end;margin-bottom:14px"><div class="meta" style="width:100%;text-transform:uppercase;letter-spacing:.04em;margin-bottom:2px">Event weather '+(w.src==='iracing'?'(from iRacing)':'')+' — so drivers see day/night and wet stints</div>'
+    html+='<div class="importbox" style="display:flex;gap:14px;flex-wrap:wrap;align-items:flex-end;margin-bottom:14px"><div class="meta" style="width:100%;text-transform:uppercase;letter-spacing:.04em;margin-bottom:2px">Event weather — '+(w.src==='iracing'?'<span style="color:var(--green)">pulled from iRacing automatically</span>':(w.src==='manual'?'manual override':'auto-pulls from iRacing on the site'))+' · drivers see day/night and wet per stint</div>'
       +'<div class="ctl"><label>START (local, HH:MM)</label><input type="time" value="'+tod+'" data-action="wxstart" style="padding:6px"></div>'
       +'<div class="ctl"><label>TEMP (°C)</label><input type="number" step="1" value="'+(w.tempC!=null?w.tempC:'')+'" placeholder="—" data-action="wxtemp" style="width:74px;padding:6px"></div>'
       +'<div class="ctl"><label>SIM MULT</label><input type="number" step="0.5" min="1" value="'+(w.mult||'')+'" placeholder="1" data-action="wxmult" style="width:74px;padding:6px"></div>'
@@ -857,6 +857,8 @@ function renderStints(byId){
         if(!state.stintsLocked && (!state.stintAssign[key] || state.stintAssign[key].length!==times.length)) state.stintAssign[key]=autoPlan(team,byId,times);
         else if(!state.stintAssign[key]) state.stintAssign[key]=Array(times.length).fill(null);  // locked + new car -> empty, fill by hand
         const arr=state.stintAssign[key];
+        const carCounts={}; members.forEach(m=>{ if(m._car) carCounts[m._car]=(carCounts[m._car]||0)+1; });
+        const carName=Object.keys(carCounts).sort((a,b)=>carCounts[b]-carCounts[a])[0]||'';
         const fp=carFuelPlan(times,arr,byId);
         const colr={}; members.forEach((m,i)=>colr[m.id]=PALETTE[i%PALETTE.length]);
         const count={}; members.forEach(m=>count[m.id]=0); arr.forEach(id=>{ if(id!=null && count[id]!=null) count[id]++; });
@@ -867,7 +869,15 @@ function renderStints(byId){
         const best=carBestWindow(team,byId,len,race);
         const curCovGaps=times.filter(t=>!members.some(m=>driverFree(m,t.s,t.e))).length;
         const bestHint=(best && best.gaps<curCovGaps)? '<span class="meta" style="color:var(--green);cursor:pointer;text-decoration:underline" data-action="usebest" data-key="'+key+'" data-win="'+best.w+'">better fit: #'+best.w+' '+START_LABELS[best.w]+' ('+(best.gaps?best.gaps+' gaps':'full cover')+'), use</span>' : '';
-        html+='<div class="stintcar"><div style="display:flex;align-items:center;gap:10px;margin-bottom:12px;flex-wrap:wrap"><span class="swatch" style="background:'+col+'"></span><span class="head" style="letter-spacing:.04em;color:#fff;font-size:15px">'+esc(cls)+' · '+(carLabel(cls,tier,ti)?esc(carLabel(cls,tier,ti))+' <span class="meta" style="font-size:11px">'+label[0]+(ti+1)+'</span>':label[0]+(ti+1))+'</span>'+winSel+badge+bestHint+(fp.anyCfg?'<span class="meta" style="color:var(--dim)">⛽ '+fp.totLaps+' laps · '+fp.totFuel+'L · '+fp.pits+' stop'+(fp.pits===1?'':'s')+(fp.lostSec?' ('+fmtLost(fp.lostSec)+' lost)':'')+'</span>':'')+'</div>';
+        html+='<div class="stintcar"><div style="display:flex;align-items:center;gap:10px;margin-bottom:12px;flex-wrap:wrap"><span class="swatch" style="background:'+col+'"></span><span class="head" style="letter-spacing:.04em;color:#fff;font-size:15px">'+(_renaming===key
+          ? esc(cls)+' · <input class="avfree" data-action="renamesave" data-key="'+key+'" value="'+esc(carLabel(cls,tier,ti)||'')+'" placeholder="'+label[0]+(ti+1)+'" style="font-size:13px;padding:3px 7px;width:150px">'
+          : esc(cls)+' · '+(carLabel(cls,tier,ti)?esc(carLabel(cls,tier,ti))+' <span class="meta" style="font-size:11px">'+label[0]+(ti+1)+'</span>':label[0]+(ti+1))+(isAdmin()?' <span data-action="renamecar" data-key="'+key+'" title="rename this car" style="cursor:pointer;font-size:12px;opacity:.6">✎</span>':''))+'</span>'+winSel+badge+bestHint+(fp.anyCfg?'<span class="meta" style="color:var(--dim)">⛽ '+fp.totLaps+' laps · '+fp.totFuel+'L · '+fp.pits+' stop'+(fp.pits===1?'':'s')+(fp.lostSec?' ('+fmtLost(fp.lostSec)+' lost)':'')+'</span>':'')+'</div>';
+        if(isAdmin()&&carName){ const bc=(state.fuelCfg.byCar||{})[carName]||{}; const def=resolveFuel(carName);
+          html+='<div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin:-4px 0 10px"><span class="meta" style="font-size:10px;text-transform:uppercase;letter-spacing:.04em">'+esc(carName)+' fuel</span>'
+            +'<label class="meta" style="font-size:10px">tank <input type="number" min="0" step="1" value="'+(bc.tankL||'')+'" placeholder="'+(def.tankL||'—')+'" data-action="cartank" data-car="'+esc(carName)+'" style="width:60px;padding:4px;font-size:11px">L</label>'
+            +'<label class="meta" style="font-size:10px">per lap <input type="number" min="0" step="0.1" value="'+(bc.fuelPerLap||'')+'" placeholder="'+(def.fuelPerLap||'—')+'" data-action="carfuel" data-car="'+esc(carName)+'" style="width:60px;padding:4px;font-size:11px">L</label>'
+            +'<span class="meta" style="font-size:10px">blank = the global default above</span></div>';
+        }
         html+='<div class="stintwrap"><div class="stintgrid" style="grid-template-columns:150px repeat('+times.length+',minmax(84px,1fr))">';
         html+='<div class="sg-corner">stint →</div>';
         times.forEach((t,i)=>{ const wx=weatherAt(t.s,off); html+='<div class="sg-time"><b>'+(i+1)+'</b>'+fmtClock(t.s)+(wx?'<div style="font-size:9px;color:'+(wx.wet?'#6ea8ff':wx.night?'var(--dim)':'var(--amber)')+'">'+wx.icon+' '+wx.label+'</div>':'')+'</div>'; });
@@ -931,7 +941,10 @@ document.getElementById('load').addEventListener('click',()=>{
     const arr=JSON.parse(document.getElementById('importtext').value);
     if(!Array.isArray(arr)||!arr.length) throw new Error('expected a non-empty list');
     let id=1;
-    state.drivers=arr.map(r=>({id:id++,name:String(r.name||('Driver '+id)),cars:(r.cars&&typeof r.cars==='object')?r.cars:{},assignedCar:fastestCar(r.cars),avail:r.avail||null}));
+    const prevByKey={}; state.drivers.forEach(d=>prevByKey[nameKey(d.name)]=d);   // keep locked car choices across imports
+    state.drivers=arr.map(r=>{ const prev=prevByKey[nameKey(String(r.name||''))]; const cars=(r.cars&&typeof r.cars==='object')?r.cars:{};
+      const locked=!!(prev&&prev.carLock); const keep=(locked&&prev.assignedCar&&cars[prev.assignedCar])?prev.assignedCar:null;
+      return {id:id++,name:String(r.name||('Driver '+id)),cars:cars,assignedCar:keep||fastestCar(cars),avail:r.avail||null,irating:(typeof r.irating==='number'?r.irating:(prev?prev.irating:null)),carLock:locked}; });
     generate(); save(); document.getElementById('importbox').classList.add('hide'); renderContent();
     setStatus('Imported '+state.drivers.length+' drivers');
   }catch(e){ setStatus('Import failed: '+e.message); }
@@ -952,7 +965,7 @@ document.getElementById('content').addEventListener('change',e=>{
   if(a==='calpast'){ _calPast=e.target.checked; renderContent(); return; }
   if(!isAdmin()) return;
   if(a==='renamesave'){ const k=e.target.dataset.key, v=(e.target.value||'').trim(); if(v) state.teamNames[k]=v; else delete state.teamNames[k]; _renaming=null; save(); renderContent(); return; }
-  if(a==='assign'){ const d=state.drivers.find(x=>x.id==e.target.dataset.id); if(d){ d.assignedCar=e.target.value; save(); renderContent(); } }
+  if(a==='assign'){ const d=state.drivers.find(x=>x.id==e.target.dataset.id); if(d){ d.assignedCar=e.target.value; d.carLock=true; save(); renderContent(); } }   // manual choice locks it (imports keep it); padlock to unlock
   else if(a==='move'){
     const id=+e.target.dataset.id, p=e.target.value.split('|'), tc=p[0], tt=p[1], tj=+p[2];
     Object.keys(state.teams).forEach(c=>['pro','casual'].forEach(t=>{ if(state.teams[c][t]) state.teams[c][t]=state.teams[c][t].map(car=>car.filter(x=>x!==id)); }));
@@ -967,6 +980,11 @@ document.getElementById('content').addEventListener('change',e=>{
   else if(a==='fueltank'){ state.fuelCfg.tankL=Math.max(0,+e.target.value||0); save(); renderContent(); }
   else if(a==='fuelperlap'){ state.fuelCfg.fuelPerLap=Math.max(0,+e.target.value||0); save(); renderContent(); }
   else if(a==='fuelpit'){ state.fuelCfg.pitLossSec=Math.max(0,+e.target.value||0); save(); renderContent(); }
+  else if(a==='cartank'||a==='carfuel'){ const car=e.target.dataset.car; if(!car)return; const bc=(state.fuelCfg.byCar[car]=state.fuelCfg.byCar[car]||{});
+    const v=+e.target.value||0;
+    if(a==='cartank'){ if(v>0)bc.tankL=v; else delete bc.tankL; } else { if(v>0)bc.fuelPerLap=v; else delete bc.fuelPerLap; }
+    if(!Object.keys(bc).length) delete state.fuelCfg.byCar[car];
+    save(); renderContent(); }
   else if(a==='wxstart'||a==='wxtemp'||a==='wxmult'||a==='wxwetfrom'||a==='wxwet'){ const W=(state.evWeather[state.evsel]=state.evWeather[state.evsel]||{src:'manual'});
     if(a==='wxstart'){ const v=e.target.value; if(v){ const p=v.split(':'); W.startTod=(+p[0])*60+(+p[1]); } else delete W.startTod; }
     else if(a==='wxtemp'){ W.tempC=e.target.value===''?null:(+e.target.value); }
@@ -1033,6 +1051,7 @@ document.getElementById('content').addEventListener('click',e=>{
   if(winBtn){ if(state.stintsLocked){ setStatus('Stints are locked — unlock to change the start window.'); return; } state.stint.window=+winBtn.value; state.stintWin={}; state.stintAssign={}; save(); renderContent(); return; }
   const lane=e.target.closest&&e.target.closest('[data-lanecell]');
   if(lane){ const k=lane.dataset.key,b=+lane.dataset.block,d=+lane.dataset.driver,a=state.stintAssign[k]; if(a){ a[b]=(a[b]===d)?null:d; save(); renderContent(); } return; }
+  if(e.target.dataset.action==='carlock'){ if(!isAdmin())return; const d=state.drivers.find(x=>x.id==e.target.dataset.id); if(d){ d.carLock=!d.carLock; save(); renderContent(); } return; }
   if(e.target.dataset.action==='remove'){ state.drivers=state.drivers.filter(x=>x.id!=e.target.dataset.id); generate(); save(); renderContent(); }
   else if(e.target.dataset.action==='stintreset'){ if(state.stintsLocked){ setStatus('Stints are locked — unlock to auto-fill all.'); return; } state.stintAssign={}; state.stintSig=''; save(); renderContent(); }
   else if(e.target.dataset.action==='usebest'){ if(state.stintsLocked){ setStatus('Stints are locked — unlock to change the window.'); return; } const k=e.target.dataset.key; state.stintWin[k]=+e.target.dataset.win; delete state.stintAssign[k]; save(); renderContent(); }
@@ -1167,6 +1186,17 @@ function irMatchFor(ev){
   });
   return bs>=3?best:null;
 }
+function autoApplyWeather(){  // auto-pull: match the selected event to an iRacing season and apply its weather (manual override wins)
+  try{
+    if(!state.evsel || !IR_SEASONS.length) return;
+    var ev=calEvent(state.evsel); if(!ev) return;
+    var cur=state.evWeather[state.evsel];
+    if(cur && cur.src==='manual') return;
+    var se=irMatchFor(ev);
+    if(se && se.weather){ applyIrWeather(ev, se); save(); if(state.tab==='stints') renderContent(); }
+  }catch(e){}
+}
+var _selectEvent0=selectEvent; selectEvent=function(k){ _selectEvent0(k); autoApplyWeather(); };   // picking an event auto-applies its iRacing weather
 function syncIrEvents(){  // F1: pull whatever endurance events the proxy exposes and merge into the calendar
   _evSyncMsg='Syncing iRacing…'; renderContent();
   loadIracing().then(function(){
@@ -1180,7 +1210,7 @@ function syncIrEvents(){  // F1: pull whatever endurance events the proxy expose
       if(existing[evKey(ev)]){ have++; return; }
       fresh.push(ev); if(se.weather) applyIrWeather(ev, se); added++;
     });
-    state.irEvents=fresh; save();
+    state.irEvents=fresh; save(); autoApplyWeather();
     _evSyncMsg = IR_STATUS ? IR_STATUS : ('Synced: added '+added+' iRacing event'+(added===1?'':'s')+(have?', '+have+' already on the calendar':'')+'.');
     renderContent();
   }).catch(function(){ _evSyncMsg='iRacing unavailable right now.'; renderContent(); });
@@ -1215,7 +1245,13 @@ function buildCars(r,prefsStr){
 let lastMatches=[];
 function applyImport(payload){
   var drivers=[], id=1;
-  (payload.roster||[]).forEach(function(r){ drivers.push({id:id++, name:r.name, cars:r.cars, assignedCar:fastestCar(r.cars), avail:null, irating:(typeof r.irating==='number'?r.irating:null)}); });
+  var prevByKey={}; (state.drivers||[]).forEach(function(d){ prevByKey[nameKey(d.name)]=d; });   // keep admin-locked car choices across G61 imports
+  (payload.roster||[]).forEach(function(r){
+    var prev=prevByKey[nameKey(r.name)];
+    var locked=!!(prev&&prev.carLock);
+    var keep=(locked&&prev.assignedCar&&r.cars&&r.cars[prev.assignedCar])?prev.assignedCar:null;
+    drivers.push({id:id++, name:r.name, cars:r.cars, assignedCar:keep||fastestCar(r.cars), avail:null, irating:(typeof r.irating==='number'?r.irating:(prev?prev.irating:null)), carLock:locked});
+  });
   state.drivers=drivers; state.stintAssign={}; state.stintSig=''; state.stintWin={};
   applyAvailToDrivers();  // in-house per-event availability is the single source of truth
   generate(); save();
@@ -1327,7 +1363,7 @@ async function bootSetup(){
     try{ TRACKS=await apiGET('tracks'); }catch(e){ TRACKS=[]; } if(!Array.isArray(TRACKS)) TRACKS=[];
     preselectNearest();
     if(state.tab==='setup') renderContent();
-    loadIracing().then(function(){ if(state.tab==='setup') renderContent(); });
+    loadIracing().then(function(){ autoApplyWeather(); if(state.tab==='setup') renderContent(); });
   }
 }
 

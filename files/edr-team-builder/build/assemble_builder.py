@@ -174,6 +174,17 @@ function irMatchFor(ev){
   });
   return bs>=3?best:null;
 }
+function autoApplyWeather(){  // auto-pull: match the selected event to an iRacing season and apply its weather (manual override wins)
+  try{
+    if(!state.evsel || !IR_SEASONS.length) return;
+    var ev=calEvent(state.evsel); if(!ev) return;
+    var cur=state.evWeather[state.evsel];
+    if(cur && cur.src==='manual') return;
+    var se=irMatchFor(ev);
+    if(se && se.weather){ applyIrWeather(ev, se); save(); if(state.tab==='stints') renderContent(); }
+  }catch(e){}
+}
+var _selectEvent0=selectEvent; selectEvent=function(k){ _selectEvent0(k); autoApplyWeather(); };   // picking an event auto-applies its iRacing weather
 function syncIrEvents(){  // F1: pull whatever endurance events the proxy exposes and merge into the calendar
   _evSyncMsg='Syncing iRacing…'; renderContent();
   loadIracing().then(function(){
@@ -187,7 +198,7 @@ function syncIrEvents(){  // F1: pull whatever endurance events the proxy expose
       if(existing[evKey(ev)]){ have++; return; }
       fresh.push(ev); if(se.weather) applyIrWeather(ev, se); added++;
     });
-    state.irEvents=fresh; save();
+    state.irEvents=fresh; save(); autoApplyWeather();
     _evSyncMsg = IR_STATUS ? IR_STATUS : ('Synced: added '+added+' iRacing event'+(added===1?'':'s')+(have?', '+have+' already on the calendar':'')+'.');
     renderContent();
   }).catch(function(){ _evSyncMsg='iRacing unavailable right now.'; renderContent(); });
@@ -222,7 +233,13 @@ function buildCars(r,prefsStr){
 let lastMatches=[];
 function applyImport(payload){
   var drivers=[], id=1;
-  (payload.roster||[]).forEach(function(r){ drivers.push({id:id++, name:r.name, cars:r.cars, assignedCar:fastestCar(r.cars), avail:null, irating:(typeof r.irating==='number'?r.irating:null)}); });
+  var prevByKey={}; (state.drivers||[]).forEach(function(d){ prevByKey[nameKey(d.name)]=d; });   // keep admin-locked car choices across G61 imports
+  (payload.roster||[]).forEach(function(r){
+    var prev=prevByKey[nameKey(r.name)];
+    var locked=!!(prev&&prev.carLock);
+    var keep=(locked&&prev.assignedCar&&r.cars&&r.cars[prev.assignedCar])?prev.assignedCar:null;
+    drivers.push({id:id++, name:r.name, cars:r.cars, assignedCar:keep||fastestCar(r.cars), avail:null, irating:(typeof r.irating==='number'?r.irating:(prev?prev.irating:null)), carLock:locked});
+  });
   state.drivers=drivers; state.stintAssign={}; state.stintSig=''; state.stintWin={};
   applyAvailToDrivers();  // in-house per-event availability is the single source of truth
   generate(); save();
@@ -334,7 +351,7 @@ async function bootSetup(){
     try{ TRACKS=await apiGET('tracks'); }catch(e){ TRACKS=[]; } if(!Array.isArray(TRACKS)) TRACKS=[];
     preselectNearest();
     if(state.tab==='setup') renderContent();
-    loadIracing().then(function(){ if(state.tab==='setup') renderContent(); });
+    loadIracing().then(function(){ autoApplyWeather(); if(state.tab==='setup') renderContent(); });
   }
 }
 
