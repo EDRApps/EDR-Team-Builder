@@ -51,7 +51,7 @@ let START_LABELS = {1:'Sat 08:00 · 22:00Z', 2:'Sat 17:00 · 07:00Z', 3:'Sat 22:
 // Availability merged from iRacePlan survey 2307 timeline (green = available). Empty cars = no Spa data shared.
 const SAMPLE = [];
 
-let state = { drivers:[], w:{pace:50,clean:30,prep:20}, proPct:40, tab:'event', teams:{}, stint:{window:1,len:120,race:1440}, stintAssign:{}, stintWin:{}, stintSig:'', evsel:null, role:'driver', me:'', pass:'', availStore:{}, evWinMin:0, evTiming:{}, teamsLocked:false };
+let state = { drivers:[], w:{pace:50,clean:30,prep:20}, proPct:40, tab:'event', teams:{}, stint:{window:1,len:60,race:1440}, stintAssign:{}, stintWin:{}, stintSig:'', evsel:null, role:'driver', me:'', pass:'', availStore:{}, evWinMin:0, evTiming:{}, teamsLocked:false, stintsLocked:false };
 
 function fastestCar(cars){
   let best=null, bt=Infinity;
@@ -64,13 +64,13 @@ function seed(list){
   seedSpaAvail();
 }
 
-function save(){ try{ localStorage.setItem(KEY, JSON.stringify({drivers:state.drivers,w:state.w,proPct:state.proPct,teams:state.teams,stint:state.stint,stintAssign:state.stintAssign,stintWin:state.stintWin,stintSig:state.stintSig,evsel:state.evsel,role:state.role,me:state.me,pass:state.pass,availStore:state.availStore,evTiming:state.evTiming,teamsLocked:state.teamsLocked,evWinMin:EV_WIN_MIN,winStart:WIN_START_MS,startOffsets:START_OFFSETS,startLabels:START_LABELS})); }catch(e){} }
+function save(){ try{ localStorage.setItem(KEY, JSON.stringify({drivers:state.drivers,w:state.w,proPct:state.proPct,teams:state.teams,stint:state.stint,stintAssign:state.stintAssign,stintWin:state.stintWin,stintSig:state.stintSig,evsel:state.evsel,role:state.role,me:state.me,pass:state.pass,availStore:state.availStore,evTiming:state.evTiming,teamsLocked:state.teamsLocked,stintsLocked:state.stintsLocked,evWinMin:EV_WIN_MIN,winStart:WIN_START_MS,startOffsets:START_OFFSETS,startLabels:START_LABELS})); }catch(e){} }
 function load(){
   try{
     const s = JSON.parse(localStorage.getItem(KEY));
     if(s && s.drivers && s.drivers.length){
       state.drivers=s.drivers; state.w=s.w||state.w; state.proPct=(typeof s.proPct==='number')?s.proPct:state.proPct; state.teams=s.teams||{}; state.stint=Object.assign(state.stint, s.stint||{}); state.stintAssign=s.stintAssign||{}; state.stintWin=s.stintWin||{}; state.stintSig=s.stintSig||'';
-      state.evsel=s.evsel||null; state.role=s.role||'driver'; state.me=s.me||''; state.pass=s.pass||''; state.availStore=s.availStore||{}; state.evTiming=s.evTiming||{}; state.teamsLocked=!!s.teamsLocked;
+      state.evsel=s.evsel||null; state.role=s.role||'driver'; state.me=s.me||''; state.pass=s.pass||''; state.availStore=s.availStore||{}; state.evTiming=s.evTiming||{}; state.teamsLocked=!!s.teamsLocked; state.stintsLocked=!!s.stintsLocked;
       if(s.evWinMin) EV_WIN_MIN=s.evWinMin;
       if(s.winStart) WIN_START_MS=s.winStart;
       if(s.startOffsets&&Object.keys(s.startOffsets).length){ START_OFFSETS=s.startOffsets; START_LABELS=s.startLabels||START_LABELS; }
@@ -695,13 +695,14 @@ function windowSummary(byId, len, race){
 function renderStints(byId){
   const len=Math.max(10,state.stint.len), race=Math.max(30,state.stint.race);
   const sig=[len,race,JSON.stringify(state.teams)].join('|');
-  if(state.stintSig!==sig){ state.stintAssign={}; state.stintSig=sig; }  // block length / teams changed -> fresh auto-plan
+  if(!state.stintsLocked && state.stintSig!==sig){ state.stintAssign={}; state.stintSig=sig; }  // block length / teams changed -> fresh auto-plan (skipped while stints are locked)
   let html='<div class="importbox" style="display:flex;gap:18px;flex-wrap:wrap;align-items:flex-end">';
   html+='<div class="ctl"><label>DEFAULT START (LOCAL · UTC)</label><select data-action="stintwin">'+
     Object.keys(START_OFFSETS).map(Number).map(w=>'<option value="'+w+'"'+(w===state.stint.window?' selected':'')+'>#'+w+' · '+START_LABELS[w]+'</option>').join('')+'</select></div>';
   html+='<div class="ctl"><label>BLOCK LENGTH (min)</label><input type="number" min="10" max="240" step="5" value="'+state.stint.len+'" data-action="stintlen" style="width:90px;padding:6px"></div>';
   html+='<div class="ctl"><label>RACE LENGTH (min)</label><input type="number" min="30" max="1440" step="10" value="'+state.stint.race+'" data-action="stintrace" style="width:90px;padding:6px"></div>';
   html+='<button class="btn btn-ghost" data-action="stintreset" style="align-self:center">Auto-fill all</button>';
+  if(isAdmin()) html+='<button class="btn '+(state.stintsLocked?'btn-amber':'btn-ghost')+'" data-action="stintlock" style="align-self:center">'+(state.stintsLocked?'🔒 Stints locked':'🔓 Lock stints')+'</button>';
   html+='<div class="meta" style="align-self:center;max-width:360px"><b style="color:#fff">Each car can run a different session.</b> Pick its start below (or set a default for all). Clock = Brisbane. Drag blocks or bank names, or click a driver\'s lane to hand them that stint.</div>';
   html+='</div>';
   const classes=Object.keys(state.teams);
@@ -738,7 +739,8 @@ function renderStints(byId){
         const win=state.stintWin[key]||state.stint.window;
         const off=START_OFFSETS[win]||0;
         const times=blockTimes(off,len,race);
-        if(!state.stintAssign[key] || state.stintAssign[key].length!==times.length) state.stintAssign[key]=autoPlan(team,byId,times);
+        if(!state.stintsLocked && (!state.stintAssign[key] || state.stintAssign[key].length!==times.length)) state.stintAssign[key]=autoPlan(team,byId,times);
+        else if(!state.stintAssign[key]) state.stintAssign[key]=Array(times.length).fill(null);  // locked + new car -> empty, fill by hand
         const arr=state.stintAssign[key];
         const colr={}; members.forEach((m,i)=>colr[m.id]=PALETTE[i%PALETTE.length]);
         const count={}; members.forEach(m=>count[m.id]=0); arr.forEach(id=>{ if(id!=null && count[id]!=null) count[id]++; });
@@ -836,6 +838,7 @@ document.getElementById('content').addEventListener('change',e=>{
     if(state.teams[tc] && state.teams[tc][tt] && state.teams[tc][tt][tj]) state.teams[tc][tt][tj].push(id);
     save(); renderContent();
   }
+  else if(state.stintsLocked && (a==='stintwin'||a==='carwin'||a==='stintlen'||a==='stintrace')){ setStatus('Stints are locked — unlock on the Stints tab to change block length, race or start windows.'); renderContent(); }
   else if(a==='stintwin'){ state.stint.window=+e.target.value; state.stintWin={}; state.stintAssign={}; save(); renderContent(); }
   else if(a==='carwin'){ const k=e.target.dataset.key; state.stintWin[k]=+e.target.value; delete state.stintAssign[k]; save(); renderContent(); }
   else if(a==='stintlen'){ state.stint.len=Math.max(10,+e.target.value||60); save(); renderContent(); }
@@ -885,12 +888,13 @@ document.getElementById('content').addEventListener('click',e=>{
   }
   if(!isAdmin()) return;
   const winBtn=e.target.closest&&e.target.closest('button[data-action="stintwin"]');
-  if(winBtn){ state.stint.window=+winBtn.value; state.stintWin={}; state.stintAssign={}; save(); renderContent(); return; }
+  if(winBtn){ if(state.stintsLocked){ setStatus('Stints are locked — unlock to change the start window.'); return; } state.stint.window=+winBtn.value; state.stintWin={}; state.stintAssign={}; save(); renderContent(); return; }
   const lane=e.target.closest&&e.target.closest('[data-lanecell]');
   if(lane){ const k=lane.dataset.key,b=+lane.dataset.block,d=+lane.dataset.driver,a=state.stintAssign[k]; if(a){ a[b]=(a[b]===d)?null:d; save(); renderContent(); } return; }
   if(e.target.dataset.action==='remove'){ state.drivers=state.drivers.filter(x=>x.id!=e.target.dataset.id); generate(); save(); renderContent(); }
-  else if(e.target.dataset.action==='stintreset'){ state.stintAssign={}; state.stintSig=''; save(); renderContent(); }
-  else if(e.target.dataset.action==='usebest'){ const k=e.target.dataset.key; state.stintWin[k]=+e.target.dataset.win; delete state.stintAssign[k]; save(); renderContent(); }
+  else if(e.target.dataset.action==='stintreset'){ if(state.stintsLocked){ setStatus('Stints are locked — unlock to auto-fill all.'); return; } state.stintAssign={}; state.stintSig=''; save(); renderContent(); }
+  else if(e.target.dataset.action==='usebest'){ if(state.stintsLocked){ setStatus('Stints are locked — unlock to change the window.'); return; } const k=e.target.dataset.key; state.stintWin[k]=+e.target.dataset.win; delete state.stintAssign[k]; save(); renderContent(); }
+  else if(e.target.dataset.action==='stintlock'){ if(!isAdmin())return; state.stintsLocked=!state.stintsLocked; save(); renderContent(); setStatus(state.stintsLocked?'Stints locked — auto-fill and window changes will leave them alone.':'Stints unlocked.'); }
   else if(e.target.dataset.action==='teamlock'){ if(!isAdmin())return; state.teamsLocked=!state.teamsLocked; save(); renderContent(); setStatus(state.teamsLocked?'Line-up locked — Generate/Import will leave it alone.':'Line-up unlocked.'); }
   else if(e.target.dataset.action==='addcar'){ const c=e.target.dataset.class, t=e.target.dataset.tier||'pro'; if(!state.teams[c])state.teams[c]={pro:[],casual:[]}; state.teams[c][t].push([]); save(); renderContent(); }
   else if(e.target.dataset.action==='delcar'){ const c=e.target.dataset.class,t=e.target.dataset.tier,j=+e.target.dataset.idx; if(state.teams[c]&&state.teams[c][t]&&state.teams[c][t][j]&&!state.teams[c][t][j].length){ state.teams[c][t].splice(j,1);
@@ -982,7 +986,7 @@ function releaseLock(name){
   }).catch(function(){});
 }
 let lastTrackIds=[], _saveT=null;
-function serializePlan(){ return {drivers:state.drivers,w:state.w,proPct:state.proPct,teams:state.teams,stint:state.stint,stintAssign:state.stintAssign,stintWin:state.stintWin,stintSig:state.stintSig,overrides:overrides,meta:IMPORT_META,winStart:WIN_START_MS,startOffsets:START_OFFSETS,startLabels:START_LABELS,matches:lastMatches,trackIds:lastTrackIds,evsel:state.evsel,evWinMin:EV_WIN_MIN,evTiming:state.evTiming,teamsLocked:state.teamsLocked}; }
+function serializePlan(){ return {drivers:state.drivers,w:state.w,proPct:state.proPct,teams:state.teams,stint:state.stint,stintAssign:state.stintAssign,stintWin:state.stintWin,stintSig:state.stintSig,overrides:overrides,meta:IMPORT_META,winStart:WIN_START_MS,startOffsets:START_OFFSETS,startLabels:START_LABELS,matches:lastMatches,trackIds:lastTrackIds,evsel:state.evsel,evWinMin:EV_WIN_MIN,evTiming:state.evTiming,teamsLocked:state.teamsLocked,stintsLocked:state.stintsLocked}; }
 function save(){
   try{ localStorage.setItem('edrTB_local', JSON.stringify({role:state.role,me:state.me,pass:state.pass})); }catch(e){}
   if(!isAdmin()) return;
@@ -993,7 +997,7 @@ function loadPlan(){ return apiGET('plan').then(function(r){ var p=r&&r.plan; if
   state.stint=Object.assign(state.stint,p.stint||{}); state.stintAssign=p.stintAssign||{}; state.stintWin=p.stintWin||{}; state.stintSig=p.stintSig||'';
   if(p.overrides)overrides=p.overrides; if(p.meta)IMPORT_META=p.meta; if(p.winStart)WIN_START_MS=p.winStart;
   if(p.startOffsets&&Object.keys(p.startOffsets).length)START_OFFSETS=p.startOffsets; if(p.startLabels&&Object.keys(p.startLabels).length)START_LABELS=p.startLabels;
-  if(p.evsel)state.evsel=p.evsel; if(p.evWinMin)EV_WIN_MIN=p.evWinMin; if(p.evTiming)state.evTiming=p.evTiming; state.teamsLocked=!!p.teamsLocked;
+  if(p.evsel)state.evsel=p.evsel; if(p.evWinMin)EV_WIN_MIN=p.evWinMin; if(p.evTiming)state.evTiming=p.evTiming; state.teamsLocked=!!p.teamsLocked; state.stintsLocked=!!p.stintsLocked;
   lastMatches=p.matches||[]; lastTrackIds=p.trackIds||[]; return true; }).catch(function(){return false;}); }
 var IR_SEASONS=[], IR_STATUS='';
 function loadIracing(){
