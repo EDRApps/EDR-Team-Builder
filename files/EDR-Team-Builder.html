@@ -270,15 +270,16 @@ function computeModel(){
   const sum=state.w.pace+state.w.clean+state.w.prep||1;
   const wp=state.w.pace/sum, wc=state.w.clean/sum, wr=state.w.prep/sum;
   Object.values(groups).forEach(grp=>{
-    const med=grp.map(d=>d._median).filter(x=>x!=null);
-    const laps=grp.map(d=>d._laps), cl=grp.map(d=>d._clean);
+    const med=grp.map(d=>d._median).filter(x=>x!=null&&isFinite(x));
+    const laps=grp.map(d=>d._laps).filter(x=>isFinite(x)), cl=grp.map(d=>d._clean).filter(x=>isFinite(x));
     const minM=Math.min.apply(null,med), maxM=Math.max.apply(null,med);
     const minL=Math.min.apply(null,laps), maxL=Math.max.apply(null,laps);
     const minC=Math.min.apply(null,cl), maxC=Math.max.apply(null,cl);
     grp.forEach(d=>{
-      const pace=d._median==null?0:(maxM===minM?0.5:(maxM-d._median)/(maxM-minM));
-      const prep=maxL===minL?0.5:(d._laps-minL)/(maxL-minL);
-      const clean=maxC===minC?0.5:(d._clean-minC)/(maxC-minC);
+      const md=isFinite(d._median)?d._median:null, lp=isFinite(d._laps)?d._laps:minL, cn=isFinite(d._clean)?d._clean:minC;
+      const pace=md==null?0:(maxM===minM?0.5:(maxM-md)/(maxM-minM));
+      const prep=(!isFinite(minL)||maxL===minL)?0.5:(lp-minL)/(maxL-minL);
+      const clean=(!isFinite(minC)||maxC===minC)?0.5:(cn-minC)/(maxC-minC);
       d._score=wp*pace+wc*clean+wr*prep;
     });
     grp.sort((a,b)=>b._score-a._score);
@@ -475,9 +476,11 @@ function applyEventTiming(ev0){
 }
 function selectEvent(key){
   const ev=calEvent(key); if(!ev||!isTarget(ev)) return;
+  const changed = state.evsel!==key;
   state.evsel=key;
   applyEventTiming(ev);
   state.stintAssign={}; state.stintWin={}; state.stintSig='';
+  if(changed) state.teams={};   // don't carry the previous event's rosters into a new event; user re-runs Generate
   applyAvailToDrivers();
   save(); state.tab='availability'; setActiveTab(); renderContent();
 }
@@ -506,6 +509,7 @@ function applyAvailToDrivers(){
   state.drivers.forEach(d=>{ d.avail=null; });
   const byKey={}; state.drivers.forEach(d=>{ byKey[nameKey(d.name)]=d; });
   Object.keys(a).forEach(n=>{
+    if(!(a[n]&&a[n].length)) return;   // no blocks ticked -> not a pool member (avoids hours:0 phantom drivers)
     let d=byKey[nameKey(n)];
     if(!d){
       /* anyone who submits availability joins the driver pool; pace fills in on the next import */
@@ -521,7 +525,7 @@ function windowsToSlots(windows, winMin){
   const out=[]; const n=Math.max(1, Math.ceil(W/AV_BLOCK));
   for(let i=0;i<n;i++){
     const s=i*AV_BLOCK, e=Math.min((i+1)*AV_BLOCK, W);
-    if((windows||[]).some(w=>Math.min(w[1],e)-Math.max(w[0],s) >= (e-s)/2)) out.push(i);
+    if((windows||[]).some(w=>{ const ov=Math.min(w[1],e)-Math.max(w[0],s); return ov>0 && ov >= Math.min(e-s, w[1]-w[0])/2; })) out.push(i);
   }
   return out;
 }
@@ -540,8 +544,8 @@ function releaseLock(name){}       /* WP build overrides: admin clears a driver'
 let DEV_TOKEN=(function(){ try{ let t=localStorage.getItem('edrTB_devtok'); if(!t){ t=Array.from((window.crypto&&crypto.getRandomValues)?crypto.getRandomValues(new Uint8Array(16)):[...Array(16)].map(()=>Math.floor(Math.random()*256))).map(b=>b.toString(16).padStart(2,'0')).join(''); localStorage.setItem('edrTB_devtok',t); } return t; }catch(e){ return 'mem-'+Math.random().toString(36).slice(2); } })();
 let LOCKED_NAMES=[];               /* names locked server-side (WP build fills this from GET /avail) */
 function ownedNames(){ try{ return JSON.parse(localStorage.getItem('edrTB_owned'))||[]; }catch(e){ return []; } }
-function markOwned(name){ try{ const o=ownedNames(); if(o.indexOf(name)<0){ o.push(name); localStorage.setItem('edrTB_owned',JSON.stringify(o)); } }catch(e){} }
-function lockedForMe(name){ return LOCKED_NAMES.indexOf(name)>=0 && ownedNames().indexOf(name)<0; }
+function markOwned(name){ try{ const k=nameKey(name),o=ownedNames(); if(!o.some(x=>nameKey(x)===k)){ o.push(name); localStorage.setItem('edrTB_owned',JSON.stringify(o)); } }catch(e){} }
+function lockedForMe(name){ const k=nameKey(name); return LOCKED_NAMES.some(x=>nameKey(x)===k) && !ownedNames().some(x=>nameKey(x)===k); }
 /* EDR membership pulled live from Garage 61 on 2026-07-05 (teams edr-endurotech +
    edr-endurotech-casual).
    Baked-in fallback; the WP build replaces it with the live list from GET /roster. */
@@ -702,7 +706,7 @@ function renderAvail(){
     html+='<td class="cov '+(cov===0?'c0':cov===1?'c1':'c2')+'">'+cov+'</td></tr>';
   }
   html+='<tr class="totals"><td class="slot">Hours</td>';
-  roster.forEach(nm=>{ html+='<td>'+((a[nm]||[]).length*(AV_BLOCK/60))+'h</td>'; });
+  roster.forEach(nm=>{ html+='<td>'+slotsToAvail(a[nm]||[]).hours+'h</td>'; });
   html+='<td></td></tr></tbody></table>';
   if(isAdmin()){
     html+='<div style="display:flex;gap:8px;margin-top:10px;align-items:center"><input type="text" id="avnewdrv" placeholder="Add a driver by name" style="padding:7px 10px;font-size:12px">'
@@ -717,7 +721,7 @@ function renderAvail(){
   // coverage summary
   let covered=0, totalHrs=0, avail=0;
   for(let i=0;i<n;i++){ if(roster.some(nm=>(a[nm]||[]).indexOf(i)>=0)) covered++; }
-  roster.forEach(nm=>{ const h4=(a[nm]||[]).length*(AV_BLOCK/60); totalHrs+=h4; if(h4>0) avail++; });
+  roster.forEach(nm=>{ const h4=slotsToAvail(a[nm]||[]).hours; totalHrs+=h4; if(h4>0) avail++; });
   html+='<div class="sumgrid">'
     +'<div class="sumcard"><div class="v">'+avail+'</div><div class="k">drivers available</div></div>'
     +'<div class="sumcard"><div class="v">'+totalHrs+'h</div><div class="k">total driver-hours</div></div>'
@@ -884,6 +888,7 @@ function renderStints(byId){
       list.forEach((team,ti)=>{
         const members=team.map(id=>byId[id]).filter(Boolean);
         if(!members.length) return;
+        const mem=new Set(members.map(m=>m.id));
         const key=cls+'|'+tier+'|'+ti;
         const win=state.stintWin[key]||state.stint.window;
         const off=START_OFFSETS[win]||0;
@@ -893,7 +898,7 @@ function renderStints(byId){
         const colr={}; members.forEach((m,i)=>colr[m.id]=PALETTE[i%PALETTE.length]);
         const count={}; members.forEach(m=>count[m.id]=0); arr.forEach(id=>{ if(id!=null && count[id]!=null) count[id]++; });
         let gaps=0, conflicts=0;
-        arr.forEach((id,i)=>{ const t=times[i], m=id!=null?byId[id]:null; if(id==null) gaps++; else if(!m||!driverFree(m,t.s,t.e)) conflicts++; });
+        arr.forEach((id,i)=>{ const t=times[i]; if(id==null||!byId[id]||!mem.has(id)){ gaps++; return; } if(!driverFree(byId[id],t.s,t.e)) conflicts++; });
         const badge = gaps? '<span class="meta" style="color:var(--red)">'+gaps+' empty</span>' : conflicts? '<span class="meta" style="color:var(--red)">'+conflicts+' conflict'+(conflicts>1?'s':'')+'</span>' : '<span class="meta" style="color:var(--green)">all covered</span>';
         const winSel='<select data-action="carwin" data-key="'+key+'">'+Object.keys(START_OFFSETS).map(Number).map(w=>'<option value="'+w+'"'+(w===win?' selected':'')+'>start #'+w+' · '+START_LABELS[w]+'</option>').join('')+'</select>';
         const best=carBestWindow(team,byId,len,race);
@@ -905,9 +910,9 @@ function renderStints(byId){
         times.forEach((t,i)=>{ html+='<div class="sg-time"><b>'+(i+1)+'</b>'+fmtClock(t.s)+'</div>'; });
         html+='<div class="sg-label" style="font-family:Prompt;font-weight:600;color:#fff;text-transform:uppercase;font-size:11px;letter-spacing:.05em">Driving</div>';
         arr.forEach((id,i)=>{
-          const t=times[i], m=id!=null?byId[id]:null;
+          const t=times[i], m=(id!=null&&mem.has(id))?byId[id]:null;
           const free=m?driverFree(m,t.s,t.e):false;
-          html+='<div class="sg-block'+(m?(free?'':' conflict'):' empty')+'" data-stintcell data-key="'+key+'" data-block="'+i+'" data-driver="'+(id==null?'':id)+'" style="--dc:'+(m?colr[id]:'transparent')+'" title="'+(m?(free?'available · drag to move or swap':'NOT available this block'):'empty · drag a driver here')+'">'+(m?esc(m.name.split(' ')[0])+(free?'':' <span class="warn">!</span>'):'+')+'</div>';
+          html+='<div class="sg-block'+(m?(free?'':' conflict'):' empty')+'" data-stintcell data-key="'+key+'" data-block="'+i+'" data-driver="'+(m?id:'')+'" style="--dc:'+(m?colr[id]:'transparent')+'" title="'+(m?(free?'available · drag to move or swap':'NOT available this block'):'empty · drag a driver here')+'">'+(m?esc(m.name.split(' ')[0])+(free?'':' <span class="warn">!</span>'):'+')+'</div>';
         });
         members.forEach(m=>{
           html+='<div class="sg-label"><span class="sg-dot" style="background:'+colr[m.id]+'"></span><span style="overflow:hidden;text-overflow:ellipsis">'+esc(m.name.split(' ')[0])+'</span><span class="meta">'+(count[m.id]||0)+'× · '+availBadge(m)+'</span></div>';
@@ -1042,7 +1047,9 @@ document.getElementById('content').addEventListener('click',e=>{
   else if(e.target.dataset.action==='stintreset'){ state.stintAssign={}; state.stintSig=''; save(); renderContent(); }
   else if(e.target.dataset.action==='usebest'){ const k=e.target.dataset.key; state.stintWin[k]=+e.target.dataset.win; delete state.stintAssign[k]; save(); renderContent(); }
   else if(e.target.dataset.action==='addcar'){ const c=e.target.dataset.class, t=e.target.dataset.tier||'pro'; if(!state.teams[c])state.teams[c]={pro:[],casual:[]}; state.teams[c][t].push([]); save(); renderContent(); }
-  else if(e.target.dataset.action==='delcar'){ const c=e.target.dataset.class,t=e.target.dataset.tier,j=+e.target.dataset.idx; if(state.teams[c]&&state.teams[c][t]&&state.teams[c][t][j]&&!state.teams[c][t][j].length){ state.teams[c][t].splice(j,1); save(); renderContent(); } }
+  else if(e.target.dataset.action==='delcar'){ const c=e.target.dataset.class,t=e.target.dataset.tier,j=+e.target.dataset.idx; if(state.teams[c]&&state.teams[c][t]&&state.teams[c][t][j]&&!state.teams[c][t][j].length){ state.teams[c][t].splice(j,1);
+      const pre=c+'|'+t+'|', nw={}; Object.keys(state.stintWin).forEach(kk=>{ if(kk.indexOf(pre)!==0){ nw[kk]=state.stintWin[kk]; return; } const idx=+kk.slice(pre.length); if(idx<j) nw[kk]=state.stintWin[kk]; else if(idx>j) nw[pre+(idx-1)]=state.stintWin[kk]; }); state.stintWin=nw;   // keep per-car window overrides aligned after the splice
+      save(); renderContent(); } }
 });
 
 // ---- custom pointer drag (works in embedded previews where native drag-and-drop does not) ----
@@ -1073,7 +1080,10 @@ document.addEventListener('pointerup',e=>{
       if(a){
         if(_pd.kind==='bank'){ a[b]=_pd.driver===''?null:(+_pd.driver); save(); renderContent(); }
         else if(k===_pd.key){ const tmp=a[b]; a[b]=a[_pd.block]; a[_pd.block]=tmp; save(); renderContent(); }
-        else { a[b]=+_pd.driver; save(); renderContent(); }
+        else { /* cross-car move: only if the driver is on the target car's roster, and clear the source block (no double-booking) */
+          const kp=k.split('|'); const roster=state.teams[kp[0]]&&state.teams[kp[0]][kp[1]]&&state.teams[kp[0]][kp[1]][+kp[2]]; const drv=+_pd.driver;
+          if(roster && roster.indexOf(drv)>=0){ a[b]=drv; const src=state.stintAssign[_pd.key]; if(src) src[_pd.block]=null; save(); renderContent(); }
+        }
       }
     }
   }
@@ -1088,6 +1098,7 @@ function refreshFromSample(){
   state.drivers.forEach(d=>{ const s=byName[d.name]; if(s){ d.cars=s.cars; if('avail' in s) d.avail=s.avail; if(!d.cars || !d.cars[d.assignedCar]) d.assignedCar=fastestCar(d.cars); } });
 }
 if(!load()){ seed(SAMPLE); } else { refreshFromSample(); seedSpaAvail(); }
+if(state.evsel){ const _ev=calEvent(state.evsel); if(_ev){ const _r=state.stint.race; applyEventTiming(_ev); if(_r>0) state.stint.race=_r; } }  // rebuild timing globals from the restored event (don't trust persisted globals)
 applyAvailToDrivers();
 syncControls();
 if(!Object.keys(state.teams||{}).length){ generate(); }

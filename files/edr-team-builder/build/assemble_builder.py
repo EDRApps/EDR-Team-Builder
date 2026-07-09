@@ -300,6 +300,7 @@ async function bootSetup(){
   syncControls();
   state.tab = CAN ? 'setup' : 'event'; setActiveTab();
   var ok=false; try{ ok=await loadPlan(); }catch(e){}
+  if(state.evsel){ var _bev=calEvent(state.evsel); if(_bev){ var _br=state.stint.race; applyEventTiming(_bev); if(_br>0) state.stint.race=_br; } }  // rebuild timing globals from the restored event (don't trust persisted globals)
   try{
     const av=await apiGET('avail');
     if(av&&av.store){ state.availStore=av.store; LOCKED_NAMES=av.locked||[]; }
