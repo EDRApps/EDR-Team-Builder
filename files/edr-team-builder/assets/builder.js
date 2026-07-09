@@ -489,7 +489,7 @@ function renderMyBlocks(a){
   const groups=[]; let cur=null;
   for(let i=0;i<n;i++){ const d=fmtDay(i*AV_BLOCK); if(!cur||cur.day!==d){ cur={day:d,slots:[]}; groups.push(cur);} cur.slots.push(i); }
   let h='<div class="importbox">';
-  h+='<div class="myblocks-head"><span class="head" style="color:#fff;font-size:15px">Your blocks · '+esc(nm.split(' ')[0])+(lockedForMe(nm)?' 🔒':'')+'</span>'
+  h+='<div class="myblocks-head"><span class="head" style="color:#fff;font-size:15px">'+(isAdmin()?'Editing · ':'Your blocks · ')+esc(nm.split(' ')[0])+(lockedForMe(nm)?' 🔒':'')+'</span>'
     +(canEdit?'<span class="myblocks-btns"><button class="btn btn-amber avfree" data-action="avtickall">Tick all</button><button class="btn btn-ghost avfree" data-action="avclear">Clear</button></span>':'')+'</div>';
   h+='<div class="meta" style="margin:2px 0 4px">Tap every 2-hour block you can race (Brisbane time), or use Tick all. Then Submit below.</div>';
   groups.forEach(function(g){
@@ -513,14 +513,10 @@ function renderAvail(){
   let html='<div class="importbox">';
   html+='<div style="display:flex;gap:14px;flex-wrap:wrap;align-items:baseline"><span class="head" style="font-size:17px;color:#fff;text-transform:uppercase">'+esc(ev.n)+'</span>'
     +'<span class="meta">'+esc(ev.track)+' · '+fmtDates(ev.s,ev.e)+(ev.dur?' · '+ev.dur+'h race':'')+'</span></div>';
-  if(isAdmin()){
-    html+='<div class="meta" style="margin-top:8px">Admin: tick any driver\'s blocks. Add drivers below. Times are Brisbane.</div>';
-  } else {
-    html+='<div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-top:10px"><label class="meta">I am</label>'
-      +'<select class="avfree" data-action="meselect"><option value="">— pick your name —</option>'
-      +roster.map(nm=>'<option value="'+esc(nm)+'"'+(nm===state.me?' selected':'')+(lockedForMe(nm)?' disabled':'')+'>'+esc(nm)+(lockedForMe(nm)?' 🔒':'')+'</option>').join('')+'</select>'
-      +(state.me?'':'<span class="meta">Pick your name to enter availability.</span>')+'</div>';
-  }
+  html+='<div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-top:10px"><label class="meta">'+(isAdmin()?'Editing availability for':'I am')+'</label>'
+    +'<select class="avfree" data-action="meselect"><option value="">— '+(isAdmin()?'pick a driver':'pick your name')+' —</option>'
+    +roster.map(nm=>'<option value="'+esc(nm)+'"'+(nm===state.me?' selected':'')+((!isAdmin()&&lockedForMe(nm))?' disabled':'')+'>'+esc(nm)+(lockedForMe(nm)?' 🔒':'')+'</option>').join('')+'</select>'
+    +(state.me?'':'<span class="meta">'+(isAdmin()?'Pick a driver to set their blocks, or just review coverage below.':'Pick your name to enter availability.')+'</span>')+'</div>';
   const dirtyN=Object.keys(_availDirty[state.evsel]||{}).length;
   html+='<div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap;margin-top:12px">'
     +'<button class="btn btn-amber avfree" data-action="avsubmit">Submit availability</button>'
@@ -529,39 +525,37 @@ function renderAvail(){
         :'<span class="meta">Tick your blocks, then Submit — everyone sees it from then on.</span>'))
     +'</div>';
   html+='</div>';
-  // driver: mobile-friendly personal block picker (primary editor)
-  if(!isAdmin() && state.me) html+=renderMyBlocks(a);
-  // team coverage matrix (driver: read-only overview; admin: editable)
-  html+='<div class="importbox" style="overflow-x:auto"><div class="meta" style="margin-bottom:6px;text-transform:uppercase;letter-spacing:.04em">Team coverage'+(isAdmin()?' — tick any driver, or use all/clr':(state.me?' — tick your column here, or use Tick all above':''))+'</div><table class="avmatrix"><thead><tr><th class="slot">Block (Brisbane)</th>';
-  roster.forEach(nm=>{ const me=!isAdmin()&&nm===state.me; html+='<th'+(me?' class="me"':'')+'>'+esc(nm.split(' ')[0])+(me?' <span style="color:var(--yellow)">(you)</span>':'')+(isAdmin()?'<br><span class="meta" style="font-weight:400" data-action="avcol" data-name="'+esc(nm)+'" data-op="all">all</span> <span class="meta" style="font-weight:400" data-action="avcol" data-name="'+esc(nm)+'" data-op="clr">clr</span>':'')+'</th>'; });
-  html+='<th>Covered</th></tr></thead><tbody>';
-  let lastDay='';
-  for(let i=0;i<n;i++){
-    const day=fmtDay(i*AV_BLOCK);
-    if(day!==lastDay){ lastDay=day; html+='<tr class="dayhead"><td colspan="'+(roster.length+2)+'">'+day+'</td></tr>'; }
-    let cov=0;
-    html+='<tr><td class="slot">'+fmtClock(i*AV_BLOCK).split(' ').slice(1).join(' ')+' – '+fmtClock(Math.min((i+1)*AV_BLOCK,EV_WIN_MIN)).split(' ').slice(1).join(' ')+'</td>';
-    roster.forEach(nm=>{
-      const on=(a[nm]||[]).indexOf(i)>=0; if(on) cov++;
-      const can=canEditAvail(nm);  // driver can tick their own column here; block picker above edits the same data
-      const me=!isAdmin()&&nm===state.me;
-      html+='<td'+(me?' class="me"':'')+'><input type="checkbox" class="avfree" data-avtoggle data-name="'+esc(nm)+'" data-slot="'+i+'"'+(on?' checked':'')+(can?'':' disabled')+'></td>';
-    });
-    html+='<td class="cov '+(cov===0?'c0':cov===1?'c1':'c2')+'">'+cov+'</td></tr>';
-  }
-  html+='<tr class="totals"><td class="slot">Hours</td>';
-  roster.forEach(nm=>{ html+='<td>'+slotsToAvail(a[nm]||[]).hours+'h</td>'; });
-  html+='<td></td></tr></tbody></table>';
-  if(isAdmin()){
-    html+='<div style="display:flex;gap:8px;margin-top:10px;align-items:center"><input type="text" id="avnewdrv" placeholder="Add a driver by name" style="padding:7px 10px;font-size:12px">'
-      +'<button class="btn btn-ghost" data-action="avadddrv" style="font-size:10px;padding:5px 12px">+ Add driver</button></div>';
-    if(LOCKED_NAMES.length){
-      html+='<div class="meta" style="margin-top:10px">Locked (submitted from their own device): '
-        +LOCKED_NAMES.map(nm=>'<span data-action="avrelease" data-name="'+esc(nm)+'" title="release this lock" style="cursor:pointer;text-decoration:underline;margin-right:8px">'+esc(nm)+' 🔓</span>').join('')
-        +'— click a name to release its lock (e.g. new device).</div>';
+  // tile picker for the selected person (driver = themself; admin = the driver they chose)
+  if(state.me) html+=renderMyBlocks(a);
+  else if(isAdmin()) html+='<div class="importbox"><div class="meta">Pick a driver above to set their 2-hour blocks — the coverage below updates as you go.</div></div>';
+  // ---- compact team-coverage strip (same availStore data as before; replaces the checkbox grid) ----
+  { const cov=[]; let cvd=0;
+    for(let i=0;i<n;i++){ let c=0; roster.forEach(nm=>{ if((a[nm]||[]).indexOf(i)>=0)c++; }); cov.push(c); if(c>0)cvd++; }
+    const maxc=Math.max(1,Math.max.apply(null,cov));
+    html+='<div class="importbox"><div class="meta" style="margin-bottom:8px;text-transform:uppercase;letter-spacing:.04em">Team coverage · '+cvd+'/'+n+' blocks covered</div>';
+    let lastDay='', open=false;
+    for(let i=0;i<n;i++){ const day=fmtDay(i*AV_BLOCK);
+      if(day!==lastDay){ if(open)html+='</div>'; lastDay=day; html+='<div class="blockday">'+day+'</div><div style="display:flex;gap:5px;align-items:flex-end;margin-bottom:8px">'; open=true; }
+      const c=cov[i], col=c===0?'var(--red)':c===1?'var(--amber)':'var(--green)', ht=8+Math.round((c/maxc)*40);
+      const lbl=fmtClock(i*AV_BLOCK).split(' ').slice(1).join(' ');
+      html+='<div style="flex:1;min-width:0;text-align:center" title="'+lbl+' · '+c+' driver'+(c===1?'':'s')+' free">'
+        +'<div style="height:'+ht+'px;background:'+col+';border-radius:3px"></div>'
+        +'<div class="meta" style="font-size:10px;margin-top:3px;color:#fff">'+c+'</div>'
+        +'<div class="meta" style="font-size:8px">'+lbl.replace(':00','')+'</div></div>';
     }
+    if(open)html+='</div>';
+    html+='<div class="meta" style="font-size:11px;margin-top:2px">Bar = drivers free that 2-hour block · <span style="color:var(--green)">green</span> good, <span style="color:var(--amber)">amber</span> thin, <span style="color:var(--red)">red</span> gap.</div>';
+    if(isAdmin()){
+      html+='<div style="display:flex;gap:8px;margin-top:12px;align-items:center;flex-wrap:wrap"><input type="text" id="avnewdrv" placeholder="Add a driver by name" style="padding:7px 10px;font-size:12px">'
+        +'<button class="btn btn-ghost" data-action="avadddrv" style="font-size:10px;padding:5px 12px">+ Add driver</button></div>';
+      if(LOCKED_NAMES.length){
+        html+='<div class="meta" style="margin-top:10px">Locked (submitted from their own device): '
+          +LOCKED_NAMES.map(nm=>'<span data-action="avrelease" data-name="'+esc(nm)+'" title="release this lock" style="cursor:pointer;text-decoration:underline;margin-right:8px">'+esc(nm)+' 🔓</span>').join('')
+          +'— click a name to release its lock (e.g. new device).</div>';
+      }
+    }
+    html+='</div>';
   }
-  html+='</div>';
   // coverage summary
   let covered=0, totalHrs=0, avail=0;
   for(let i=0;i<n;i++){ if(roster.some(nm=>(a[nm]||[]).indexOf(i)>=0)) covered++; }
