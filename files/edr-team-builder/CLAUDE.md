@@ -6,11 +6,11 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 A self-contained **WordPress plugin** (`edr-team-builder/`) that plans iRacing
 endurance line-ups for Endurotech Racing (endurotechracing.com). It pulls **pace** from
-Garage 61, collects **availability** in-house (drivers tick 4h blocks), and pulls **official
+Garage 61, collects **availability** in-house (drivers tick 2h blocks), and pulls **official
 session times** from an iRacing proxy, then builds Pro/Casual teams and stint rotations.
 iRacePlan was fully removed in 2.3.0 — imports are pure Garage 61 pace. Activated by the
 `[edr_team_builder]` shortcode. Workflow (tab order):
-**Event (season calendar) → Availability (drivers tick 4h blocks) → Drivers → Teams →
+**Event (season calendar) → Availability (drivers tick 2h blocks) → Drivers → Teams →
 Stints**, with a role model on top:
 
 - **Driver (default, no account):** browses the calendar, picks an event, submits their
@@ -55,9 +55,9 @@ dir (see `edr-team-builder-V2.zip` one level up); install/usage steps are in
 ## Architecture
 
 **Server (PHP).** `edr-team-builder.php` is the plugin entry: settings page (stores
-`g61_token`, `irp_key`, `team_slug` server-side only), the `[edr_team_builder]`
-shortcode, and the REST API under `/wp-json/edr/v1/`:
-- `GET /tracks`, `GET /events`, `POST /import`, `POST /plan` — logged-in user OR the
+`g61_token`, `team_slug`, `edit_pass`, `iracing_url`/`iracing_key` server-side only), the
+`[edr_team_builder]` shortcode, and the REST API under `/wp-json/edr/v1/`:
+- `GET /tracks`, `POST /import`, `POST /plan`, `GET /iracing` — logged-in user OR the
   builder admin password (`X-EDR-Pass` header, `edr_tb_req_can_edit()`).
 - `GET /plan` (public) — the single shared plan, stored in the `edr_tb_plan` option.
 - `POST /auth` (public) — verifies the admin password for the builder's role unlock.
@@ -85,23 +85,15 @@ shortcode, and the REST API under `/wp-json/edr/v1/`:
 `irp_key` setting, and the bookmarklet assets were all removed. `POST /import` returns the
 Garage 61 roster and nothing else; the browser folds in the in-house availability.)
 
-**Client (generated `builder.js`).** The browser owns the merge and all scoring. Key flow:
-- `applyImport(payload, scrape)` joins iRacePlan availability ↔ Garage 61 pace by
-  normalized name (`norm()`), honoring manual `overrides` (`{irpName: g61Slug}`,
-  persisted in `localStorage`). Unmatched names are surfaced in the Setup tab's
-  "NAME MATCHES" review for correction.
-- `computeAvail()` turns availability windows into hours / coverage % / which candidate
-  race starts a driver can cover.
+**Client (generated `builder.js`).** The browser owns all scoring. Key flow:
+- `applyImport(payload)` rebuilds `state.drivers` from the Garage 61 roster (pace only),
+  then `applyAvailToDrivers()` folds in the per-event in-house availability. No name-match
+  step — the roster IS the source of names.
 - Teams/stints scoring (PACE/CLEAN/PREP weights, Pro = top N% of each class) lives in the
   inherited `EDR-Team-Builder.html` logic. `serializePlan()`/`loadPlan()` sync the whole
-  state to the shared WordPress plan (auto-saves debounced; only when `can_edit`).
-- `WIN_START_MS`, `START_OFFSETS`, `START_LABELS` are mutated on import (the assembler
-  rewrites them from `const` to `let` for exactly this reason).
-
-**Availability bookmarklet** (`assets/bookmarklet.js` / `.html` / `-url.txt`). For the
-survey phase (before any team planning exists, when iRacePlan's API has no availability),
-the admin runs this in their own logged-in iRacePlan tab to scrape survey windows, then
-pastes the JSON into the Setup tab's AVAILABILITY box → "Merge availability".
+  state to the shared WordPress plan (auto-saves debounced; only when editing).
+- `WIN_START_MS`, `START_OFFSETS`, `START_LABELS` are mutated when an event is selected or
+  iRacing timing is applied (the assembler rewrites them from `const` to `let`).
 
 ## Data conventions
 
@@ -116,10 +108,8 @@ pastes the JSON into the Setup tab's AVAILABILITY box → "Merge availability".
   both misconfigurations produce the "import only returns one driver" symptom.
 - **Availability is strictly per event** and **the event pool rule** applies: with an event
   selected, Drivers/Teams/Stints include only drivers with `avail.hours > 0` for that event.
-  Anyone who submits availability joins the pool (no pace until the next import). Imported
-  iRacePlan availability is folded into the same per-event store via `windowsToSlots()`.
-- **Times** are offsets in minutes from the event `window_start`; availability windows are
-  `[startMin, endMin]` pairs, merged by `edr_merge_windows()`; the availability matrix uses
-  4-hour slots (`AV_BLOCK`), converted by `slotsToAvail()`/`windowsToSlots()`.
+  Anyone who submits availability joins the pool (no pace until the next import).
+- **Times** are offsets in minutes from the event `window_start`; the availability matrix uses
+  2-hour slots (`AV_BLOCK`, 120 min), converted by `slotsToAvail()`/`windowsToSlots()`.
 - Credentials live only in the `edr_tb_settings` WP option and are never sent to the
-  browser; the plugin makes outbound requests to `garage61.net` and `iraceplan.com`.
+  browser; the plugin makes outbound requests to `garage61.net` and the iRacing proxy.
