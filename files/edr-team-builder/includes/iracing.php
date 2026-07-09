@@ -56,6 +56,7 @@ function edr_ir_seasons($base, $key) {
                 'start_date' => isset($wk['start_date']) ? $wk['start_date'] : '',
                 'race_min'   => isset($wk['race_time_limit']) ? intval($wk['race_time_limit']) : 0,
                 'sessions'   => array_values($times),
+                'weather'    => isset($wk['weather']) ? $wk['weather'] : null,
             );
             break; // one schedule per season is enough
         }

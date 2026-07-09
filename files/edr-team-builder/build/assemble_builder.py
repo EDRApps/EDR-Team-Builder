@@ -122,7 +122,8 @@ function onAdminUnlocked(){
    Returns the fetch promise so the Submit button can await it and confirm. */
 function persistAvail(evk,name){
   const slots=((state.availStore[evk]||{})[name])||[];
-  return fetch(API+'avail',{method:'POST',headers:_hdrs(true),body:JSON.stringify({ev:evk,name:name,slots:slots,token:DEV_TOKEN})})
+  const prefs=((state.prefStore[evk]||{})[name])||null;
+  return fetch(API+'avail',{method:'POST',headers:_hdrs(true),body:JSON.stringify({ev:evk,name:name,slots:slots,prefs:prefs,token:DEV_TOKEN})})
     .then(function(r){
       return r.json().catch(function(){ return {}; }).then(function(j){
         if(!r.ok) throw new Error((j&&j.message)||'avail save failed');
@@ -137,7 +138,7 @@ function releaseLock(name){
   }).catch(function(){});
 }
 let lastTrackIds=[], _saveT=null;
-function serializePlan(){ return {drivers:state.drivers,w:state.w,proPct:state.proPct,teams:state.teams,stint:state.stint,stintAssign:state.stintAssign,stintWin:state.stintWin,stintSig:state.stintSig,overrides:overrides,meta:IMPORT_META,winStart:WIN_START_MS,startOffsets:START_OFFSETS,startLabels:START_LABELS,matches:lastMatches,trackIds:lastTrackIds,evsel:state.evsel,evWinMin:EV_WIN_MIN,evTiming:state.evTiming,teamsLocked:state.teamsLocked,stintsLocked:state.stintsLocked}; }
+function serializePlan(){ return {drivers:state.drivers,w:state.w,proPct:state.proPct,teams:state.teams,stint:state.stint,stintAssign:state.stintAssign,stintWin:state.stintWin,stintSig:state.stintSig,overrides:overrides,meta:IMPORT_META,winStart:WIN_START_MS,startOffsets:START_OFFSETS,startLabels:START_LABELS,matches:lastMatches,trackIds:lastTrackIds,evsel:state.evsel,evWinMin:EV_WIN_MIN,evTiming:state.evTiming,teamsLocked:state.teamsLocked,stintsLocked:state.stintsLocked,teamNames:state.teamNames,fuelCfg:state.fuelCfg,customEvents:state.customEvents,irEvents:state.irEvents,evWeather:state.evWeather,prefStore:state.prefStore}; }
 function save(){
   try{ localStorage.setItem('edrTB_local', JSON.stringify({role:state.role,me:state.me,pass:state.pass})); }catch(e){}
   if(!isAdmin()) return;
@@ -149,6 +150,7 @@ function loadPlan(){ return apiGET('plan').then(function(r){ var p=r&&r.plan; if
   if(p.overrides)overrides=p.overrides; if(p.meta)IMPORT_META=p.meta; if(p.winStart)WIN_START_MS=p.winStart;
   if(p.startOffsets&&Object.keys(p.startOffsets).length)START_OFFSETS=p.startOffsets; if(p.startLabels&&Object.keys(p.startLabels).length)START_LABELS=p.startLabels;
   if(p.evsel)state.evsel=p.evsel; if(p.evWinMin)EV_WIN_MIN=p.evWinMin; if(p.evTiming)state.evTiming=p.evTiming; state.teamsLocked=!!p.teamsLocked; state.stintsLocked=!!p.stintsLocked;
+  state.teamNames=p.teamNames||{}; if(p.fuelCfg)state.fuelCfg=p.fuelCfg; state.customEvents=p.customEvents||[]; state.irEvents=p.irEvents||[]; state.evWeather=p.evWeather||{}; state.prefStore=p.prefStore||{};
   lastMatches=p.matches||[]; lastTrackIds=p.trackIds||[]; return true; }).catch(function(){return false;}); }
 var IR_SEASONS=[], IR_STATUS='';
 function loadIracing(){
@@ -171,6 +173,24 @@ function irMatchFor(ev){
     if(sc>bs){ bs=sc; best=se; }
   });
   return bs>=3?best:null;
+}
+function syncIrEvents(){  // F1: pull whatever endurance events the proxy exposes and merge into the calendar
+  _evSyncMsg='Syncing iRacing…'; renderContent();
+  loadIracing().then(function(){
+    var existing={}; CAL_EVENTS.concat(state.customEvents||[]).forEach(function(e){ existing[evKey(e)]=1; });
+    var fresh=[], added=0, have=0;
+    (IR_SEASONS||[]).forEach(function(se){
+      if(!se.name||!se.start_date) return;
+      var dur=se.race_min?Math.max(1,Math.round(se.race_min/60)):6;
+      var isEnd=/endur|24|12\s*h|le mans|petit|creventic|global endurance|imsa|nurburg|bathurst|sebring|spa|daytona|suzuka|road america/i.test(se.name);
+      var ev={n:se.name, track:se.track||'', s:se.start_date, e:se.start_date, cars:'GT3', cat:isEnd?'endurance':'other', dur:dur, special:isEnd, src:'iracing', raceMin:se.race_min||0};
+      if(existing[evKey(ev)]){ have++; return; }
+      fresh.push(ev); if(se.weather) applyIrWeather(ev, se); added++;
+    });
+    state.irEvents=fresh; save();
+    _evSyncMsg = IR_STATUS ? IR_STATUS : ('Synced: added '+added+' iRacing event'+(added===1?'':'s')+(have?', '+have+' already on the calendar':'')+'.');
+    renderContent();
+  }).catch(function(){ _evSyncMsg='iRacing unavailable right now.'; renderContent(); });
 }
 let SEL_TRACK=0;
 function preselectNearest(){
@@ -202,7 +222,7 @@ function buildCars(r,prefsStr){
 let lastMatches=[];
 function applyImport(payload){
   var drivers=[], id=1;
-  (payload.roster||[]).forEach(function(r){ drivers.push({id:id++, name:r.name, cars:r.cars, assignedCar:fastestCar(r.cars), avail:null}); });
+  (payload.roster||[]).forEach(function(r){ drivers.push({id:id++, name:r.name, cars:r.cars, assignedCar:fastestCar(r.cars), avail:null, irating:(typeof r.irating==='number'?r.irating:null)}); });
   state.drivers=drivers; state.stintAssign={}; state.stintSig=''; state.stintWin={};
   applyAvailToDrivers();  // in-house per-event availability is the single source of truth
   generate(); save();
@@ -303,7 +323,7 @@ async function bootSetup(){
   if(state.evsel){ var _bev=calEvent(state.evsel); if(_bev){ var _br=state.stint.race; applyEventTiming(_bev); if(_br>0) state.stint.race=_br; } }  // rebuild timing globals from the restored event (don't trust persisted globals)
   try{
     const av=await apiGET('avail');
-    if(av&&av.store){ state.availStore=av.store; LOCKED_NAMES=av.locked||[]; }
+    if(av&&av.store){ state.availStore=av.store; LOCKED_NAMES=av.locked||[]; if(av.prefs)state.prefStore=av.prefs; }
     else if(av&&typeof av==='object'&&!Array.isArray(av)) state.availStore=av;  /* pre-2.1.4 server shape */
   }catch(e){}
   try{ const tr=await apiGET('roster'); if(Array.isArray(tr)&&tr.length) TEAM_ROSTER=tr; }catch(e){}

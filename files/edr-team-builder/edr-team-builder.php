@@ -2,7 +2,7 @@
 /**
  * Plugin Name: EDR Team Builder
  * Description: Endurotech Racing endurance team + stint planner. Pulls Garage 61 pace and official iRacing session times, collects driver availability in-house, and builds Pro/Casual teams and stint rotations. Add the [edr_team_builder] shortcode to a page.
- * Version: 2.3.6
+ * Version: 2.4.0
  * Author: Endurotech Racing
  * License: GPL-2.0-or-later
  */
@@ -11,7 +11,7 @@ if (!defined('ABSPATH')) exit; // no direct access
 
 define('EDR_TB_DIR', plugin_dir_path(__FILE__));
 define('EDR_TB_URL', plugin_dir_url(__FILE__));
-define('EDR_TB_VER', '2.3.6');
+define('EDR_TB_VER', '2.4.0');
 
 require_once EDR_TB_DIR . 'includes/garage61.php';
 require_once EDR_TB_DIR . 'includes/iracing.php';
@@ -174,9 +174,11 @@ function edr_tb_rest_auth(WP_REST_Request $req) {
 function edr_tb_rest_avail_get() {
     $all    = get_option('edr_tb_avail', array());
     $owners = (array) get_option('edr_tb_avail_owners', array());
+    $prefs = get_option('edr_tb_prefs', array());
     return rest_ensure_response(array(
         'store'  => empty($all) ? new stdClass() : $all,
         'locked' => array_keys($owners),
+        'prefs'  => empty($prefs) ? new stdClass() : $prefs,
     ));
 }
 
@@ -223,6 +225,17 @@ function edr_tb_rest_avail_set(WP_REST_Request $req) {
     if (!isset($all[$ev]) || !is_array($all[$ev])) $all[$ev] = array();
     $all[$ev][$name] = $slots;
     update_option('edr_tb_avail', $all, false);
+
+    // race preferences (F9): {time in start|finish|any, cond in wet|dry|any}
+    $prefsParam = $req->get_param('prefs');
+    if (is_array($prefsParam)) {
+        $time = in_array(($prefsParam['time'] ?? 'any'), array('start','finish','any'), true) ? $prefsParam['time'] : 'any';
+        $cond = in_array(($prefsParam['cond'] ?? 'any'), array('wet','dry','any'), true) ? $prefsParam['cond'] : 'any';
+        $pAll = (array) get_option('edr_tb_prefs', array());
+        if (!isset($pAll[$ev]) || !is_array($pAll[$ev])) $pAll[$ev] = array();
+        $pAll[$ev][$name] = array('time' => $time, 'cond' => $cond);
+        update_option('edr_tb_prefs', $pAll, false);
+    }
     return rest_ensure_response(array('ok' => true, 'locked' => array_keys($owners)));
 }
 

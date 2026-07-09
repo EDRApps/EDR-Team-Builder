@@ -208,7 +208,15 @@ let START_LABELS = {1:'Sat 08:00 · 22:00Z', 2:'Sat 17:00 · 07:00Z', 3:'Sat 22:
 // Availability merged from iRacePlan survey 2307 timeline (green = available). Empty cars = no Spa data shared.
 const SAMPLE = [{"name":"Aaron Werth","cars":{"Ferrari 296 GT3":{"laps":95,"medianLap":138.018,"cleanPct":0.495},"Ford Mustang GT3":{"laps":41,"medianLap":139.654,"cleanPct":0.293},"McLaren 720S GT3 EVO":{"laps":20,"medianLap":139.674,"cleanPct":0.25}},"avail":{"hours":42.8,"pct":100,"starts":[1,2,3,4],"windows":[[0,2568]]}},{"name":"Bernardo Hickmann","cars":{"Ferrari 296 GT3":{"laps":32,"medianLap":137.498,"cleanPct":0.562}},"avail":{"hours":42.8,"pct":100,"starts":[1,2,3,4],"windows":[[0,2568]]}},{"name":"Erik van der Bijl","cars":{"McLaren 720S GT3 EVO":{"laps":10,"medianLap":138.072,"cleanPct":0.5},"Ferrari 296 GT3":{"laps":316,"medianLap":138.113,"cleanPct":0.668},"Ford Mustang GT3":{"laps":10,"medianLap":137.893,"cleanPct":0.4},"Porsche 911 GT3 R (992)":{"laps":14,"medianLap":138.227,"cleanPct":0.429}},"avail":{"hours":42.8,"pct":100,"starts":[1,2,3,4],"windows":[[0,2568]]}},{"name":"Joey Tavora","cars":{"Porsche 911 GT3 R (992)":{"laps":55,"medianLap":139.418,"cleanPct":0.545},"Ferrari 296 GT3":{"laps":49,"medianLap":137.949,"cleanPct":0.694}},"avail":{"hours":42.8,"pct":100,"starts":[1,2,3,4],"windows":[[0,2568]]}},{"name":"John Nyhouse","cars":{"BMW M4 GT3 EVO":{"laps":15,"medianLap":141.213,"cleanPct":0.533},"McLaren 720S GT3 EVO":{"laps":81,"medianLap":139.572,"cleanPct":0.543},"Ferrari 296 GT3":{"laps":117,"medianLap":139.546,"cleanPct":0.402},"Acura NSX GT3 EVO 22":{"laps":37,"medianLap":141.031,"cleanPct":0.351},"Mercedes-AMG GT3 2020":{"laps":5,"medianLap":141.084,"cleanPct":0.6}},"avail":{"hours":42.8,"pct":100,"starts":[1,2,3,4],"windows":[[0,2568]]}},{"name":"Luke Hay","cars":{"Ferrari 296 GT3":{"laps":32,"medianLap":138.193,"cleanPct":0.281},"Porsche 911 GT3 R (992)":{"laps":32,"medianLap":139.237,"cleanPct":0.312},"Ford Mustang GT3":{"laps":11,"medianLap":137.831,"cleanPct":0.273}},"avail":{"hours":42.8,"pct":100,"starts":[1,2,3,4],"windows":[[0,2568]]}},{"name":"Stipe Ljubic","cars":{"BMW M4 GT3 EVO":{"laps":65,"medianLap":137.917,"cleanPct":0.446},"Ferrari 296 GT3":{"laps":128,"medianLap":136.251,"cleanPct":0.453}},"avail":{"hours":42.8,"pct":100,"starts":[1,2,3,4],"windows":[[0,2568]]}},{"name":"Thomaz Hernandes","cars":{"Ferrari 296 GT3":{"laps":243,"medianLap":138.202,"cleanPct":0.597},"Lamborghini Huracán GT3 EVO":{"laps":21,"medianLap":138.581,"cleanPct":0.571},"Ford Mustang GT3":{"laps":67,"medianLap":138.406,"cleanPct":0.448},"McLaren 720S GT3 EVO":{"laps":85,"medianLap":139.774,"cleanPct":0.576},"BMW M4 GT3 EVO":{"laps":36,"medianLap":139.116,"cleanPct":0.667},"Mercedes-AMG GT3 2020":{"laps":11,"medianLap":138.788,"cleanPct":0.455},"Porsche 911 GT3 R (992)":{"laps":25,"medianLap":138.826,"cleanPct":0.28}},"avail":{"hours":42.8,"pct":100,"starts":[1,2,3,4],"windows":[[0,2568]]}},{"name":"Sam Millar","cars":{"Porsche 911 GT3 R (992)":{"laps":94,"medianLap":139.149,"cleanPct":0.574},"Ferrari 296 GT3":{"laps":350,"medianLap":138.881,"cleanPct":0.603}},"avail":{"hours":39.3,"pct":92,"starts":[1,3,4],"windows":[[0,390],[600,2568]]}},{"name":"Matt Halden","cars":{"Ferrari 296 GT3":{"laps":39,"medianLap":137.796,"cleanPct":0.641}},"avail":{"hours":39,"pct":91,"starts":[1,2,3,4],"windows":[[0,2340]]}},{"name":"Sam Mackenzie","cars":{"Ferrari 296 GT3":{"laps":41,"medianLap":137.648,"cleanPct":0.366},"McLaren 720S GT3 EVO":{"laps":80,"medianLap":137.824,"cleanPct":0.662}},"avail":{"hours":34,"pct":79,"starts":[1,2,3,4],"windows":[[0,2040]]}},{"name":"Zach Martin","cars":{"Ferrari 296 GT3":{"laps":3,"medianLap":null,"cleanPct":0}},"avail":{"hours":33.8,"pct":79,"starts":[2,3,4],"windows":[[540,2568]]}},{"name":"Jake Lennox-Bradley","cars":{"BMW M4 GT3 EVO":{"laps":55,"medianLap":137.365,"cleanPct":0.691},"Ferrari 296 GT3":{"laps":56,"medianLap":138.339,"cleanPct":0.571},"Porsche 911 GT3 R (992)":{"laps":14,"medianLap":138.281,"cleanPct":0.429},"Ford Mustang GT3":{"laps":27,"medianLap":139.16,"cleanPct":0.407}},"avail":{"hours":32.5,"pct":76,"starts":[2,3,4],"windows":[[300,2250]]}},{"name":"Brock Hellmech","cars":{"McLaren 720S GT3 EVO":{"laps":239,"medianLap":138.084,"cleanPct":0.439},"Ferrari 296 GT3":{"laps":147,"medianLap":139.086,"cleanPct":0.286},"Ford Mustang GT3":{"laps":49,"medianLap":137.744,"cleanPct":0.265}},"avail":{"hours":19,"pct":44,"starts":[3],"windows":[[210,420],[660,960],[1200,1410],[1650,1860],[2100,2310]]}},{"name":"Michael Cullen","cars":{"Lamborghini Huracán GT3 EVO":{"laps":32,"medianLap":137.639,"cleanPct":0.812}},"avail":{"hours":8,"pct":19,"starts":[1,3],"windows":[[0,270],[690,900]]}},{"name":"Valentin Ozhiganov","cars":{"Ferrari 296 GT3":{"laps":35,"medianLap":137.467,"cleanPct":0.6}},"avail":{"hours":5,"pct":12,"starts":[],"windows":[[1230,1530]]}}];
 
-let state = { drivers:[], w:{pace:50,clean:30,prep:20}, proPct:40, tab:'event', teams:{}, stint:{window:1,len:60,race:1440}, stintAssign:{}, stintWin:{}, stintSig:'', evsel:null, role:'driver', me:'', pass:'', availStore:{}, evWinMin:0, evTiming:{}, teamsLocked:false, stintsLocked:false };
+let state = { drivers:[], w:{pace:50,clean:30,prep:20}, proPct:40, tab:'event', teams:{}, stint:{window:1,len:60,race:1440}, stintAssign:{}, stintWin:{}, stintSig:'', evsel:null, role:'driver', me:'', pass:'', availStore:{}, evWinMin:0, evTiming:{}, teamsLocked:false, stintsLocked:false, teamNames:{}, fuelCfg:{pitLossSec:60,byCar:{},byClass:{}}, customEvents:[], irEvents:[], evWeather:{}, prefStore:{} };
+/* Per-user timezone (F10) is device-local, never in the shared plan. Auto-detect, override persisted in edrTB_tz. */
+let TZ = 'Australia/Brisbane';
+try{ TZ = localStorage.getItem('edrTB_tz') || (Intl.DateTimeFormat().resolvedOptions().timeZone) || 'Australia/Brisbane'; }catch(e){}
+const TZ_ZONES = [['auto','Auto (detected)'],['Australia/Brisbane','Brisbane'],['Europe/London','London'],['Europe/Berlin','Berlin / Amsterdam'],['Europe/Helsinki','Helsinki'],['America/New_York','US East'],['America/Los_Angeles','US West'],['UTC','UTC']];
+function tzZone(){ if(TZ==='auto'){ try{ return Intl.DateTimeFormat().resolvedOptions().timeZone||'UTC'; }catch(e){ return 'UTC'; } } return TZ||'Australia/Brisbane'; }
+function tzLabel(){ const m=TZ_ZONES.find(x=>x[0]===TZ); if(m&&m[0]!=='auto')return m[1]; const z=tzZone(); return (z.split('/').pop()||z).replace(/_/g,' ')+' (auto)'; }
+function setTZ(z){ TZ=z; try{ localStorage.setItem('edrTB_tz', z); }catch(e){} if(typeof START_OFFSETS!=='undefined') relabelStarts(); }
+function relabelStarts(){ try{ if(typeof START_OFFSETS==='undefined') return; Object.keys(START_OFFSETS).forEach(w=>{ START_LABELS[w]=fmtClock(START_OFFSETS[w]); }); }catch(e){} }
 
 function fastestCar(cars){
   let best=null, bt=Infinity;
@@ -221,13 +229,14 @@ function seed(list){
   seedSpaAvail();
 }
 
-function save(){ try{ localStorage.setItem(KEY, JSON.stringify({drivers:state.drivers,w:state.w,proPct:state.proPct,teams:state.teams,stint:state.stint,stintAssign:state.stintAssign,stintWin:state.stintWin,stintSig:state.stintSig,evsel:state.evsel,role:state.role,me:state.me,pass:state.pass,availStore:state.availStore,evTiming:state.evTiming,teamsLocked:state.teamsLocked,stintsLocked:state.stintsLocked,evWinMin:EV_WIN_MIN,winStart:WIN_START_MS,startOffsets:START_OFFSETS,startLabels:START_LABELS})); }catch(e){} }
+function save(){ try{ localStorage.setItem(KEY, JSON.stringify({drivers:state.drivers,w:state.w,proPct:state.proPct,teams:state.teams,stint:state.stint,stintAssign:state.stintAssign,stintWin:state.stintWin,stintSig:state.stintSig,evsel:state.evsel,role:state.role,me:state.me,pass:state.pass,availStore:state.availStore,evTiming:state.evTiming,teamsLocked:state.teamsLocked,stintsLocked:state.stintsLocked,teamNames:state.teamNames,fuelCfg:state.fuelCfg,customEvents:state.customEvents,irEvents:state.irEvents,evWeather:state.evWeather,prefStore:state.prefStore,evWinMin:EV_WIN_MIN,winStart:WIN_START_MS,startOffsets:START_OFFSETS,startLabels:START_LABELS})); }catch(e){} }
 function load(){
   try{
     const s = JSON.parse(localStorage.getItem(KEY));
     if(s && s.drivers && s.drivers.length){
       state.drivers=s.drivers; state.w=s.w||state.w; state.proPct=(typeof s.proPct==='number')?s.proPct:state.proPct; state.teams=s.teams||{}; state.stint=Object.assign(state.stint, s.stint||{}); state.stintAssign=s.stintAssign||{}; state.stintWin=s.stintWin||{}; state.stintSig=s.stintSig||'';
       state.evsel=s.evsel||null; state.role=s.role||'driver'; state.me=s.me||''; state.pass=s.pass||''; state.availStore=s.availStore||{}; state.evTiming=s.evTiming||{}; state.teamsLocked=!!s.teamsLocked; state.stintsLocked=!!s.stintsLocked;
+      state.teamNames=s.teamNames||{}; state.fuelCfg=s.fuelCfg||state.fuelCfg; state.customEvents=s.customEvents||[]; state.irEvents=s.irEvents||[]; state.evWeather=s.evWeather||{}; state.prefStore=s.prefStore||{};
       if(s.evWinMin) EV_WIN_MIN=s.evWinMin;
       if(s.winStart) WIN_START_MS=s.winStart;
       if(s.startOffsets&&Object.keys(s.startOffsets).length){ START_OFFSETS=s.startOffsets; START_LABELS=s.startLabels||START_LABELS; }
@@ -383,7 +392,10 @@ const CAL_EVENTS=[
 const CAT_COLOR={endurance:'var(--yellow)', nascar:'var(--red)', other:'var(--steel)'};
 function isTarget(ev){ return !!ev.special || (ev.cat==='endurance' && (ev.dur||0)>=3); }
 function evKey(ev){ return ev.n+'|'+ev.s; }
-function calEvent(key){ return CAL_EVENTS.find(e=>evKey(e)===key)||null; }
+function calendar(){ const at={}, out=[]; CAL_EVENTS.concat(state.customEvents||[], state.irEvents||[]).forEach(e=>{ const k=evKey(e); if(at[k]!==undefined) out[at[k]]=e; else { at[k]=out.length; out.push(e); } }); return out; }  // seed + custom + imported, deduped by key (later wins)
+function calEvent(key){ return calendar().find(e=>evKey(e)===key)||null; }
+function addCustomEvent(o){ o.src='custom'; state.customEvents.push(o); save(); }
+function deleteCustomEvent(key){ state.customEvents=(state.customEvents||[]).filter(e=>evKey(e)!==key); state.irEvents=(state.irEvents||[]).filter(e=>evKey(e)!==key); save(); }
 const _today=new Date(); _today.setHours(0,0,0,0);
 function statusFor(ev){
   const s=new Date(ev.s+'T00:00:00'), e=new Date(ev.e+'T23:59:59');
@@ -420,15 +432,16 @@ function submitUnlock(){
 function lockAdmin(){ state.role='driver'; state.pass=''; _unlockOpen=false; save(); renderRolebar(); renderContent(); }
 function renderRolebar(){
   const el=document.getElementById('rolebar'); if(!el) return;
+  const tzSel='<select data-tzpick title="show all times in your timezone" style="font-size:10px;padding:3px 6px;margin-left:8px;background:var(--panel2);color:var(--body);border:1px solid var(--line);border-radius:6px">'+TZ_ZONES.map(z=>'<option value="'+z[0]+'"'+(z[0]===TZ?' selected':'')+'>'+z[1]+'</option>').join('')+'</select>';
   if(isAdmin()){
-    el.innerHTML='<span class="rolechip admin">ADMIN</span><button class="btn btn-ghost" data-role-action="lock" style="font-size:10px;padding:4px 12px">Lock</button>';
+    el.innerHTML='<span class="rolechip admin">ADMIN</span><button class="btn btn-ghost" data-role-action="lock" style="font-size:10px;padding:4px 12px">Lock</button>'+tzSel;
   } else if(_unlockOpen){
     el.innerHTML='<input type="password" id="adminpass" placeholder="admin password" autocomplete="off" style="padding:7px 12px;font-size:12px;width:150px">'
       +'<button class="btn btn-amber" data-role-action="go" style="font-size:10px;padding:5px 13px">Unlock</button>'
       +'<button class="btn btn-ghost" data-role-action="cancel" style="font-size:10px;padding:5px 11px">✕</button>'
       +(_unlockMsg?'<span class="meta" style="color:var(--red)">'+_unlockMsg+'</span>':'');
   } else {
-    el.innerHTML='<span class="rolechip">DRIVER</span><button class="btn btn-ghost" data-role-action="unlock" style="font-size:10px;padding:4px 12px">Admin</button>';
+    el.innerHTML='<span class="rolechip">DRIVER</span><button class="btn btn-ghost" data-role-action="unlock" style="font-size:10px;padding:4px 12px">Admin</button>'+tzSel;
   }
 }
 
@@ -437,7 +450,7 @@ let EV_WIN_MIN=2568;  // availability-window length (min) for the selected event
 /* Format an absolute timestamp as "Sat 08:00 · 22:00Z" (Brisbane clock + UTC) — used for
    candidate-start labels so they read the same whichever event's window is loaded. */
 function fmtStartLabel(ms){
-  const bris=new Date(ms).toLocaleString('en-AU',{timeZone:'Australia/Brisbane',weekday:'short',hour:'2-digit',minute:'2-digit',hour12:false});
+  const bris=new Date(ms).toLocaleString('en-AU',{timeZone:tzZone(),weekday:'short',hour:'2-digit',minute:'2-digit',hour12:false});
   const d=new Date(ms); const utc=String(d.getUTCHours()).padStart(2,'0')+':'+String(d.getUTCMinutes()).padStart(2,'0');
   return bris+' · '+utc+'Z';
 }
@@ -566,15 +579,15 @@ function availRoster(){
   return out.sort((x,y)=>x.localeCompare(y));
 }
 function fmtDay(absMin){
-  return new Date(WIN_START_MS+absMin*60000).toLocaleDateString('en-AU',{timeZone:'Australia/Brisbane',weekday:'short',day:'numeric',month:'short'});
+  return new Date(WIN_START_MS+absMin*60000).toLocaleDateString('en-AU',{timeZone:tzZone(),weekday:'short',day:'numeric',month:'short'});
 }
 
 /* ===== Event tab (season calendar) ===== */
-let _calFilter='all', _calTargets=true, _calPast=false;
+let _calFilter='all', _calTargets=true, _calPast=false, _evFormOpen=false, _evSyncMsg='';
 function weekStartOf(s){ const dt=new Date(s+'T00:00:00'); const day=dt.getDay(); dt.setDate(dt.getDate()+((day===0?-6:1)-day)); return dt; }
 function renderEventTab(){
   let html='';
-  const upcoming=CAL_EVENTS.filter(ev=>statusFor(ev).state!=='past').sort((a,b)=>a.s.localeCompare(b.s))[0];
+  const upcoming=calendar().filter(ev=>statusFor(ev).state!=='past').sort((a,b)=>a.s.localeCompare(b.s))[0];
   if(upcoming){
     const st=statusFor(upcoming);
     html+='<div class="pitboard"><div><div class="meta" style="text-transform:uppercase;letter-spacing:.1em;color:var(--yellow)">'+(st.state==='live'?'live now':'next up')+'</div>'
@@ -589,7 +602,23 @@ function renderEventTab(){
   html+='<label class="meta" style="margin-left:8px;cursor:pointer"><input type="checkbox" data-action="caltargets"'+(_calTargets?' checked':'')+'> EDR targets only</label>';
   html+='<label class="meta" style="cursor:pointer"><input type="checkbox" data-action="calpast"'+(_calPast?' checked':'')+'> show past</label>';
   html+='</div>';
-  const list=CAL_EVENTS.filter(ev=>(_calFilter==='all'||ev.cat===_calFilter)&&(!_calTargets||isTarget(ev))&&(_calPast||statusFor(ev).state!=='past'))
+  if(isAdmin()){
+    html+='<div class="importbox" style="margin-bottom:14px"><button class="btn btn-ghost" data-action="addcustomev" style="font-size:11px">+ Add custom event</button> <button class="btn btn-ghost" data-action="syncir" style="font-size:11px">⟳ Sync iRacing events</button>'+(_evSyncMsg?'<span class="meta" style="margin-left:8px">'+esc(_evSyncMsg)+'</span>':'');
+    if(_evFormOpen){
+      html+='<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px;align-items:flex-end">'
+        +'<div class="ctl"><label>NAME</label><input id="cev_n" placeholder="Le Mans 24" style="padding:6px;width:150px"></div>'
+        +'<div class="ctl"><label>TRACK</label><input id="cev_track" placeholder="Circuit de la Sarthe" style="padding:6px;width:160px"></div>'
+        +'<div class="ctl"><label>START</label><input id="cev_s" type="date" style="padding:6px"></div>'
+        +'<div class="ctl"><label>END</label><input id="cev_e" type="date" style="padding:6px"></div>'
+        +'<div class="ctl"><label>RACE (h)</label><input id="cev_dur" type="number" min="1" step="1" value="24" style="padding:6px;width:70px"></div>'
+        +'<div class="ctl"><label>CLASS</label><select id="cev_cat"><option value="endurance">Endurance</option><option value="other">Other</option><option value="nascar">NASCAR</option></select></div>'
+        +'<label class="meta" style="align-self:center"><input type="checkbox" id="cev_tgt" checked> EDR target</label>'
+        +'<button class="btn btn-amber" data-action="savecustomev" style="font-size:11px">Save event</button>'
+        +'<button class="btn btn-ghost" data-action="cancelcustomev" style="font-size:11px">Cancel</button></div>';
+    }
+    html+='</div>';
+  }
+  const list=calendar().filter(ev=>(_calFilter==='all'||ev.cat===_calFilter)&&(!_calTargets||isTarget(ev))&&(_calPast||statusFor(ev).state!=='past'))
     .slice().sort((a,b)=>a.s.localeCompare(b.s));
   if(!list.length){ return html+'<div class="meta">Nothing matches this filter.</div>'; }
   const byWeek=new Map();
@@ -608,7 +637,8 @@ function renderEventTab(){
         +'<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap"><span style="color:#fff;font-family:Prompt,sans-serif;font-weight:600">'+esc(ev.n)+'</span>'
         +(sel?'<span class="calbadge selb">selected</span>':'')
         +(isNext?'<span class="calbadge next">up next</span>':'')
-        +(tgt?'<span class="calbadge tgt">target</span>':'<span class="calbadge ctx">context</span>')+'</div>'
+        +(tgt?'<span class="calbadge tgt">target</span>':'<span class="calbadge ctx">context</span>')
+        +(ev.src==='custom'?'<span class="calbadge" style="background:var(--panel2)">custom</span>'+(isAdmin()?' <span data-action="delcustomev" data-ev="'+esc(evKey(ev))+'" title="remove this event" style="cursor:pointer;color:var(--red);font-size:13px">✕</span>':''):(ev.src==='iracing'?'<span class="calbadge" style="background:var(--panel2)">iRacing</span>':''))+'</div>'
         +(ev.series?'<div class="meta">'+esc(ev.series)+' · round '+esc(ev.round)+'</div>':'')
         +'<div class="meta">'+esc(ev.track)+(ev.dur?' · '+ev.dur+'h':'')+'</div></div>'
         +'<div style="text-align:right;flex:0 0 auto"><div class="meta" style="color:#fff">'+(ev.tbd?'TBD':fmtDates(ev.s,ev.e))+'</div>'
@@ -641,14 +671,21 @@ function setAllAvail(name,on){
   (_availDirty[state.evsel]=_availDirty[state.evsel]||{})[name]=1; _avMsg='';
   applyAvailToDrivers(); save(); return true;
 }
+function prefsFor(name){ const p=((state.prefStore||{})[state.evsel]||{})[name]; return {time:(p&&p.time)||'any', cond:(p&&p.cond)||'any'}; }
 function renderMyBlocks(a){
   const nm=state.me; const arr=a[nm]||[]; const n=evSlots(); const canEdit=canEditAvail(nm);
+  const pr=prefsFor(nm);
+  const seg=(axis,opts)=>Object.keys(opts).map(k=>'<button class="btn '+(pr[axis]===k?'btn-amber':'btn-ghost')+' avfree"'+(canEdit?' data-prefset="'+axis+'" data-name="'+esc(nm)+'" data-val="'+k+'"':' disabled')+' style="font-size:10px;padding:5px 11px">'+opts[k]+'</button>').join('');
   const groups=[]; let cur=null;
   for(let i=0;i<n;i++){ const d=fmtDay(i*AV_BLOCK); if(!cur||cur.day!==d){ cur={day:d,slots:[]}; groups.push(cur);} cur.slots.push(i); }
   let h='<div class="importbox">';
   h+='<div class="myblocks-head"><span class="head" style="color:#fff;font-size:15px">'+(isAdmin()?'Editing · ':'Your blocks · ')+esc(nm.split(' ')[0])+(lockedForMe(nm)?' 🔒':'')+'</span>'
     +(canEdit?'<span class="myblocks-btns"><button class="btn btn-amber avfree" data-action="avtickall">Tick all</button><button class="btn btn-ghost avfree" data-action="avclear">Clear</button></span>':'')+'</div>';
-  h+='<div class="meta" style="margin:2px 0 4px">Tap every 2-hour block you can race (Brisbane time), or use Tick all. Then Submit below.</div>';
+  h+='<div class="meta" style="margin:2px 0 4px">Tap every 2-hour block you can race ('+tzLabel()+' time), or use Tick all. Then Submit below.</div>';
+  const hasWx=!!(state.evWeather&&state.evWeather[state.evsel]);
+  h+='<div class="meta" style="margin:8px 0 3px;text-transform:uppercase;letter-spacing:.04em">Race preference</div>';
+  h+='<div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-bottom:4px"><span class="meta" style="width:56px">Time</span>'+seg('time',{start:'Start',finish:'Finish',any:'No pref'})+'</div>';
+  h+='<div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-bottom:8px"><span class="meta" style="width:56px">Weather</span>'+seg('cond',{wet:'Wet',dry:'Dry',any:'Both'})+(hasWx?'':'<span class="meta" style="font-size:10px">· applies once weather is set for this event</span>')+'</div>';
   groups.forEach(function(g){
     h+='<div class="blockday">'+g.day+'</div><div class="blockrow">';
     g.slots.forEach(function(i){
@@ -740,6 +777,8 @@ function renderSummary(model){
     classes.map(c=>'<span style="color:var(--dim)">'+esc(c)+'</span>').join('');
 }
 
+function carLabel(cls,tier,ti){ const k=cls+'|'+tier+'|'+ti, n=(state.teamNames||{})[k]; return (n&&(''+n).trim())?(''+n).trim():null; }  // custom car name or null
+let _renaming=null;  // cls|tier|idx currently being renamed inline
 function renderTeams(byId){
   const classes=Object.keys(state.teams);
   if(!classes.length) return '<div class="meta">Hit Generate or load teams.</div>';
@@ -766,9 +805,16 @@ function renderTeams(byId){
         const members=team.map(id=>byId[id]).filter(Boolean);
         const meds=members.map(m=>m._median).filter(x=>x!=null);
         const avg=meds.length?meds.reduce((a,b)=>a+b,0)/meds.length:null;
-        html+='<div class="card"><div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:8px"><span class="head" style="color:'+col+';letter-spacing:1px">'+label[0]+(ti+1)+'</span><span class="meta">avg '+fmtLap(avg)+(members.length?'':' <span data-action="delcar" data-class="'+esc(cls)+'" data-tier="'+tier+'" data-idx="'+ti+'" title="remove empty car" style="color:var(--red);cursor:pointer;font-size:13px">✕</span>')+'</span></div>';
+        const irs=members.map(m=>m.irating).filter(x=>x!=null&&isFinite(x));
+        const avgIR=irs.length?Math.round(irs.reduce((a,b)=>a+b,0)/irs.length):null;
+        const cname=carLabel(cls,tier,ti), tag=label[0]+(ti+1), rkey=cls+'|'+tier+'|'+ti;
+        const hd=(_renaming===rkey)
+          ? '<input class="avfree" data-action="renamesave" data-key="'+rkey+'" value="'+esc(cname||'')+'" placeholder="'+tag+'" style="font-size:14px;padding:3px 7px;width:150px" autofocus>'
+          : ((cname?esc(cname)+' <span class="meta" style="font-weight:400;font-size:11px">'+tag+'</span>':tag)+(isAdmin()?' <span data-action="renamecar" data-key="'+rkey+'" title="rename this car" style="cursor:pointer;font-size:12px;opacity:.6">✎</span>':''));
+        const irTxt=avgIR!=null?' · iR '+avgIR+(irs.length<members.length?' ('+irs.length+'/'+members.length+')':''):(members.length?' · iR —':'');
+        html+='<div class="card"><div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:8px"><span class="head" style="color:'+col+';letter-spacing:1px">'+hd+'</span><span class="meta">avg '+fmtLap(avg)+irTxt+(members.length?'':' <span data-action="delcar" data-class="'+esc(cls)+'" data-tier="'+tier+'" data-idx="'+ti+'" title="remove empty car" style="color:var(--red);cursor:pointer;font-size:13px">✕</span>')+'</span></div>';
         members.forEach(d=>{
-          html+='<div class="mem"><div style="min-width:0"><div style="font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'+esc(d.name)+'</div><div style="font-size:10px;color:var(--dim)">'+fmtLap(d._median)+' · '+d._laps+' laps · '+Math.round(d._clean*100)+'% clean'+(d.avail?' · <span style="color:'+(d.avail.pct>=80?'var(--green)':d.avail.pct>=40?'var(--amber)':'var(--red)')+'">'+d.avail.pct+'% avail</span>':'')+'</div></div><select data-action="move" data-id="'+d.id+'">'+moveOpts(cls,tier,ti)+'</select></div>';
+          html+='<div class="mem"><div style="min-width:0"><div style="font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'+esc(d.name)+'</div><div style="font-size:10px;color:var(--dim)">'+fmtLap(d._median)+' · '+d._laps+' laps · '+Math.round(d._clean*100)+'% clean'+(d.irating?' · iR '+d.irating:'')+(d.avail?' · <span style="color:'+(d.avail.pct>=80?'var(--green)':d.avail.pct>=40?'var(--amber)':'var(--red)')+'">'+d.avail.pct+'% avail</span>':'')+'</div></div><select data-action="move" data-id="'+d.id+'">'+moveOpts(cls,tier,ti)+'</select></div>';
         });
         if(!members.length) html+='<div class="meta">empty</div>';
         html+='</div>';
@@ -804,11 +850,34 @@ function renderDrivers(model){
 // ---- stint planning ----
 function fmtClock(absMin){
   const d=new Date(WIN_START_MS + absMin*60000);
-  return d.toLocaleString('en-AU',{timeZone:'Australia/Brisbane',weekday:'short',hour:'2-digit',minute:'2-digit',hour12:false});
+  return d.toLocaleString('en-AU',{timeZone:tzZone(),weekday:'short',hour:'2-digit',minute:'2-digit',hour12:false});
 }
 function availBadge(d){ return d.avail ? d.avail.pct+'%' : 'no avail'; }
 function driverFree(d,s,e){ return !!(d.avail && d.avail.windows && d.avail.windows.some(w=>w[0]<=s && w[1]>=e)); }
+function isWetStint(s,e){ if(!(state.evWeather&&state.evWeather[state.evsel])) return false; if(typeof weatherAt!=='function') return false; const wx=weatherAt(s); return !!(wx&&wx.wet); }
+function applyIrWeather(ev, se){  // map an iRacing schedule weather{} onto state.evWeather (F7 auto-pull)
+  const w=se&&se.weather; if(!w) return;
+  let startTod=null; if(w.simulated_start_time){ const m=(''+w.simulated_start_time).match(/T(\d\d):(\d\d)/); if(m) startTod=(+m[1])*60+(+m[2]); }
+  let temp=(w.temp_value!=null)?+w.temp_value:null; if(temp!=null && (+w.temp_units)===0) temp=Math.round((temp-32)*5/9);  // iRacing 0 = Fahrenheit
+  const wetBase=((+w.precip_option)>0)||(w.forecast_options&&(+w.forecast_options.precipitation)>0);
+  state.evWeather[evKey(ev)]={ src:'iracing', startTod:(startTod!=null?startTod:720), mult:(+w.simulated_time_multiplier)||1, tempC:temp, wet:!!wetBase };
+}
 function blockTimes(off,len,race){ const n=Math.ceil(race/len),t=[]; for(let i=0;i<n;i++)t.push({s:off+i*len,e:off+Math.min((i+1)*len,race)}); return t; }
+/* ---- weather (F7): maps a stint's clock offset to sim conditions for the event ---- */
+function weatherAt(absMin, raceStartOff){
+  const w=state.evWeather&&state.evWeather[state.evsel]; if(!w) return null;
+  const off=(raceStartOff!=null)?raceStartOff:(START_OFFSETS[state.stint.window]||0);
+  const elapsed=Math.max(0, absMin-off);                     // real minutes since this car's green flag
+  const mult=(+w.mult)||1;                                   // sim minutes per real minute (day/night rollover)
+  const todMin=((((+w.startTod||0) + elapsed*mult)%1440)+1440)%1440;
+  const night = todMin<6*60 || todMin>=19*60;
+  const wet = !!w.wet || (w.wetFrom!=null && w.wetFrom!=='' && elapsed>=(+w.wetFrom));
+  const hh=Math.floor(todMin/60), mm=Math.round(todMin%60);
+  const clk=(hh<10?'0':'')+hh+':'+(mm<10?'0':'')+mm;
+  const icon = wet?'🌧':(night?'🌙':'☀');
+  const label = wet?(clk+' wet'):(night?(clk+' night'):(clk+(w.tempC!=null&&w.tempC!==''?' '+w.tempC+'°':'')));
+  return { todMin, night, wet, tempC:w.tempC, clk, icon, label };
+}
 function carBestWindow(memberIds, byId, len, race){   // window with fewest uncovered blocks for this car
   let best=null;
   Object.keys(START_OFFSETS).forEach(w=>{
@@ -821,12 +890,19 @@ function carBestWindow(memberIds, byId, len, race){   // window with fewest unco
 function autoPlan(memberIds, byId, times){
   const members=memberIds.map(id=>byId[id]).filter(Boolean);
   const count={}; members.forEach(m=>count[m.id]=0);
+  const B=0.08, n=times.length;                       // soft preference bias (F9): breaks ties, never outranks a clearly better driver
+  const pref={}; members.forEach(m=>pref[m.id]=prefsFor(m.name));
   const arr=[]; let prev=null;
-  times.forEach(({s,e})=>{
+  times.forEach(({s,e},i)=>{
+    const wet=isWetStint(s,e);
+    const bias=m=>{ const p=pref[m.id]||{time:'any',cond:'any'}; let b=0;
+      if(n>1){ if(p.time==='start') b+=B*(1-i/(n-1)); else if(p.time==='finish') b+=B*(i/(n-1)); }
+      if(wet){ if(p.cond==='wet') b+=B; else if(p.cond==='dry') b-=B; }
+      return b; };
     const elig=members.filter(m=>driverFree(m,s,e));
     let pool=elig.filter(m=>m.id!==prev); if(!pool.length) pool=elig;  // avoid back-to-back unless forced
     let pick=null;
-    if(pool.length){ pool.sort((a,b)=>(count[a.id]-count[b.id])||(b._score-a._score)); pick=pool[0]; count[pick.id]++; }
+    if(pool.length){ pool.sort((a,b)=>(count[a.id]-count[b.id])||((b._score+bias(b))-(a._score+bias(a)))); pick=pool[0]; count[pick.id]++; }  // count-balance stays primary
     prev=pick?pick.id:null; arr.push(pick?pick.id:null);
   });
   return arr;
@@ -849,6 +925,27 @@ function windowSummary(byId, len, race){
     return {w:+w, off, free, covered, cars:teamsList.length, total:allIds.length};
   });
 }
+/* ---- fuel / laps / pit model (F4/5/6): laps from pace, fuel + pit from config ---- */
+function resolveFuel(car){ const f=state.fuelCfg||{}; const bc=(f.byCar||{})[car]||{}, cl=(f.byClass||{})[classOf(car||'')]||{}; return { tankL:+bc.tankL||+cl.tankL||+f.tankL||0, fuelPerLap:+bc.fuelPerLap||+cl.fuelPerLap||+f.fuelPerLap||0 }; }
+function stintLaps(blockSec, median){ return (median>0)?Math.floor(blockSec/median):0; }
+function carFuelPlan(times, arr, byId){
+  const perBlock=[]; let cum=0, pits=0, totLaps=0, totFuel=0, anyCfg=false;
+  times.forEach((t,i)=>{
+    const id=arr[i], m=(id!=null)?byId[id]:null;
+    const med=(m&&isFinite(m._median))?m._median:null;
+    const fu=m?resolveFuel(m._car):{tankL:0,fuelPerLap:0};
+    if(fu.tankL>0&&fu.fuelPerLap>0) anyCfg=true;
+    const laps=med?stintLaps((t.e-t.s)*60, med):0;
+    const fuel=laps*(fu.fuelPerLap||0);
+    totLaps+=laps; totFuel+=fuel;
+    let pit=false;
+    if(fu.tankL>0 && fu.fuelPerLap>0){ cum+=fuel; if(cum>fu.tankL){ pit=true; pits++; cum=cum-fu.tankL; } }
+    perBlock.push({laps, fuel:Math.round(fuel*10)/10, pit});
+  });
+  const pitLoss=(state.fuelCfg&&+state.fuelCfg.pitLossSec)||0;
+  return { perBlock, totLaps, totFuel:Math.round(totFuel), pits, lostSec:pits*pitLoss, anyCfg };
+}
+function fmtLost(sec){ if(!sec) return '0s'; const m=Math.floor(sec/60), s=sec%60; return m ? (m+'m'+(s?(' '+s+'s'):'')) : (s+'s'); }
 function renderStints(byId){
   const len=Math.max(10,state.stint.len), race=Math.max(30,state.stint.race);
   const sig=[len,race,JSON.stringify(state.teams)].join('|');
@@ -858,10 +955,28 @@ function renderStints(byId){
     Object.keys(START_OFFSETS).map(Number).map(w=>'<option value="'+w+'"'+(w===state.stint.window?' selected':'')+'>#'+w+' · '+START_LABELS[w]+'</option>').join('')+'</select></div>';
   html+='<div class="ctl"><label>BLOCK LENGTH (min)</label><input type="number" min="10" max="240" step="5" value="'+state.stint.len+'" data-action="stintlen" style="width:90px;padding:6px"></div>';
   html+='<div class="ctl"><label>RACE LENGTH (min)</label><input type="number" min="30" max="1440" step="10" value="'+state.stint.race+'" data-action="stintrace" style="width:90px;padding:6px"></div>';
+  if(isAdmin()){
+    const fc=state.fuelCfg||{};
+    html+='<div class="ctl"><label>TANK (L)</label><input type="number" min="0" step="1" value="'+(fc.tankL||'')+'" placeholder="—" data-action="fueltank" style="width:74px;padding:6px"></div>';
+    html+='<div class="ctl"><label>FUEL / LAP (L)</label><input type="number" min="0" step="0.1" value="'+(fc.fuelPerLap||'')+'" placeholder="—" data-action="fuelperlap" style="width:74px;padding:6px"></div>';
+    html+='<div class="ctl"><label>PIT LOSS (s)</label><input type="number" min="0" step="1" value="'+(fc.pitLossSec||'')+'" data-action="fuelpit" style="width:74px;padding:6px"></div>';
+  }
   html+='<button class="btn btn-ghost" data-action="stintreset" style="align-self:center">Auto-fill all</button>';
   if(isAdmin()) html+='<button class="btn '+(state.stintsLocked?'btn-amber':'btn-ghost')+'" data-action="stintlock" style="align-self:center">'+(state.stintsLocked?'🔒 Stints locked':'🔓 Lock stints')+'</button>';
-  html+='<div class="meta" style="align-self:center;max-width:360px"><b style="color:#fff">Each car can run a different session.</b> Pick its start below (or set a default for all). Clock = Brisbane. Drag blocks or bank names, or click a driver\'s lane to hand them that stint.</div>';
+  html+='<div class="meta" style="align-self:center;max-width:360px"><b style="color:#fff">Each car can run a different session.</b> Pick its start below (or set a default for all). Clock = '+tzLabel()+'. Drag blocks or bank names, or click a driver\'s lane to hand them that stint.</div>';
   html+='</div>';
+  if(isAdmin()){
+    const w=(state.evWeather&&state.evWeather[state.evsel])||{};
+    const tod=(w.startTod!=null&&w.startTod!=='')?((('0'+Math.floor(w.startTod/60)).slice(-2))+':'+(('0'+(w.startTod%60)).slice(-2))):'';
+    html+='<div class="importbox" style="display:flex;gap:14px;flex-wrap:wrap;align-items:flex-end;margin-bottom:14px"><div class="meta" style="width:100%;text-transform:uppercase;letter-spacing:.04em;margin-bottom:2px">Event weather '+(w.src==='iracing'?'(from iRacing)':'')+' — so drivers see day/night and wet stints</div>'
+      +'<div class="ctl"><label>START (local, HH:MM)</label><input type="time" value="'+tod+'" data-action="wxstart" style="padding:6px"></div>'
+      +'<div class="ctl"><label>TEMP (°C)</label><input type="number" step="1" value="'+(w.tempC!=null?w.tempC:'')+'" placeholder="—" data-action="wxtemp" style="width:74px;padding:6px"></div>'
+      +'<div class="ctl"><label>SIM MULT</label><input type="number" step="0.5" min="1" value="'+(w.mult||'')+'" placeholder="1" data-action="wxmult" style="width:74px;padding:6px"></div>'
+      +'<div class="ctl"><label>TURNS WET AT (min)</label><input type="number" step="10" value="'+(w.wetFrom!=null?w.wetFrom:'')+'" placeholder="dry" data-action="wxwetfrom" style="width:90px;padding:6px"></div>'
+      +'<label class="meta" style="align-self:center"><input type="checkbox" data-action="wxwet"'+(w.wet?' checked':'')+'> wet from start</label>'
+      +(Object.keys(w).length?'<span class="meta" style="cursor:pointer;text-decoration:underline;align-self:center" data-action="wxclear">clear</span>':'')
+      +'</div>';
+  }
   const classes=Object.keys(state.teams);
   if(!classes.length) return html+'<div class="meta">Hit Generate to build teams first.</div>';
   const summ=windowSummary(byId,len,race);
@@ -899,6 +1014,7 @@ function renderStints(byId){
         if(!state.stintsLocked && (!state.stintAssign[key] || state.stintAssign[key].length!==times.length)) state.stintAssign[key]=autoPlan(team,byId,times);
         else if(!state.stintAssign[key]) state.stintAssign[key]=Array(times.length).fill(null);  // locked + new car -> empty, fill by hand
         const arr=state.stintAssign[key];
+        const fp=carFuelPlan(times,arr,byId);
         const colr={}; members.forEach((m,i)=>colr[m.id]=PALETTE[i%PALETTE.length]);
         const count={}; members.forEach(m=>count[m.id]=0); arr.forEach(id=>{ if(id!=null && count[id]!=null) count[id]++; });
         let gaps=0, conflicts=0;
@@ -908,10 +1024,10 @@ function renderStints(byId){
         const best=carBestWindow(team,byId,len,race);
         const curCovGaps=times.filter(t=>!members.some(m=>driverFree(m,t.s,t.e))).length;
         const bestHint=(best && best.gaps<curCovGaps)? '<span class="meta" style="color:var(--green);cursor:pointer;text-decoration:underline" data-action="usebest" data-key="'+key+'" data-win="'+best.w+'">better fit: #'+best.w+' '+START_LABELS[best.w]+' ('+(best.gaps?best.gaps+' gaps':'full cover')+'), use</span>' : '';
-        html+='<div class="stintcar"><div style="display:flex;align-items:center;gap:10px;margin-bottom:12px;flex-wrap:wrap"><span class="swatch" style="background:'+col+'"></span><span class="head" style="letter-spacing:.04em;color:#fff;font-size:15px">'+esc(cls)+' · '+label[0]+(ti+1)+'</span>'+winSel+badge+bestHint+'</div>';
+        html+='<div class="stintcar"><div style="display:flex;align-items:center;gap:10px;margin-bottom:12px;flex-wrap:wrap"><span class="swatch" style="background:'+col+'"></span><span class="head" style="letter-spacing:.04em;color:#fff;font-size:15px">'+esc(cls)+' · '+(carLabel(cls,tier,ti)?esc(carLabel(cls,tier,ti))+' <span class="meta" style="font-size:11px">'+label[0]+(ti+1)+'</span>':label[0]+(ti+1))+'</span>'+winSel+badge+bestHint+(fp.anyCfg?'<span class="meta" style="color:var(--dim)">⛽ '+fp.totLaps+' laps · '+fp.totFuel+'L · '+fp.pits+' stop'+(fp.pits===1?'':'s')+(fp.lostSec?' ('+fmtLost(fp.lostSec)+' lost)':'')+'</span>':'')+'</div>';
         html+='<div class="stintwrap"><div class="stintgrid" style="grid-template-columns:150px repeat('+times.length+',minmax(84px,1fr))">';
         html+='<div class="sg-corner">stint →</div>';
-        times.forEach((t,i)=>{ html+='<div class="sg-time"><b>'+(i+1)+'</b>'+fmtClock(t.s)+'</div>'; });
+        times.forEach((t,i)=>{ const wx=weatherAt(t.s,off); html+='<div class="sg-time"><b>'+(i+1)+'</b>'+fmtClock(t.s)+(wx?'<div style="font-size:9px;color:'+(wx.wet?'#6ea8ff':wx.night?'var(--dim)':'var(--amber)')+'">'+wx.icon+' '+wx.label+'</div>':'')+'</div>'; });
         html+='<div class="sg-label" style="font-family:Prompt;font-weight:600;color:#fff;text-transform:uppercase;font-size:11px;letter-spacing:.05em">Driving</div>';
         arr.forEach((id,i)=>{
           const t=times[i], m=(id!=null&&mem.has(id))?byId[id]:null;
@@ -925,6 +1041,10 @@ function renderStints(byId){
             html+='<div class="sg-lane '+(driving?'driving':free?'free':'busy')+'" data-lanecell data-key="'+key+'" data-block="'+i+'" data-driver="'+m.id+'" style="--dc:'+colr[m.id]+'" title="'+esc(m.name.split(' ')[0])+' · stint '+(i+1)+' · '+(free?'available':'not available')+(driving?' · driving, click to clear':' · click to assign')+'"></div>';
           });
         });
+        if(fp.anyCfg){
+          html+='<div class="sg-label" style="color:var(--dim);font-size:10px;text-transform:uppercase;letter-spacing:.04em">Fuel / laps</div>';
+          fp.perBlock.forEach(b=>{ html+='<div style="font-size:9px;color:var(--dim);text-align:center;padding:3px 2px;border-top:1px solid #1a1a1a" title="'+b.laps+' laps · '+b.fuel+'L this stint'+(b.pit?' · pit stop':'')+'">'+(b.laps?b.laps+' · '+b.fuel+'L':'—')+(b.pit?'<br><span style="color:var(--amber)">⛽ pit</span>':'')+'</div>'; });
+        }
         html+='</div></div>';
         html+='<div class="meta" style="margin-top:10px">Lanes: <span style="color:var(--green)">green = available</span> · striped = not free · solid = driving that stint. Click a lane cell to assign, drag blocks to swap, or drag names from the bank.</div></div>';
       });
@@ -988,6 +1108,7 @@ document.getElementById('content').addEventListener('change',e=>{
   if(a==='caltargets'){ _calTargets=e.target.checked; renderContent(); return; }
   if(a==='calpast'){ _calPast=e.target.checked; renderContent(); return; }
   if(!isAdmin()) return;
+  if(a==='renamesave'){ const k=e.target.dataset.key, v=(e.target.value||'').trim(); if(v) state.teamNames[k]=v; else delete state.teamNames[k]; _renaming=null; save(); renderContent(); return; }
   if(a==='assign'){ const d=state.drivers.find(x=>x.id==e.target.dataset.id); if(d){ d.assignedCar=e.target.value; save(); renderContent(); } }
   else if(a==='move'){
     const id=+e.target.dataset.id, p=e.target.value.split('|'), tc=p[0], tt=p[1], tj=+p[2];
@@ -1000,8 +1121,25 @@ document.getElementById('content').addEventListener('change',e=>{
   else if(a==='carwin'){ const k=e.target.dataset.key; state.stintWin[k]=+e.target.value; delete state.stintAssign[k]; save(); renderContent(); }
   else if(a==='stintlen'){ state.stint.len=Math.max(10,+e.target.value||60); save(); renderContent(); }
   else if(a==='stintrace'){ state.stint.race=Math.max(30,+e.target.value||360); save(); renderContent(); }
+  else if(a==='fueltank'){ state.fuelCfg.tankL=Math.max(0,+e.target.value||0); save(); renderContent(); }
+  else if(a==='fuelperlap'){ state.fuelCfg.fuelPerLap=Math.max(0,+e.target.value||0); save(); renderContent(); }
+  else if(a==='fuelpit'){ state.fuelCfg.pitLossSec=Math.max(0,+e.target.value||0); save(); renderContent(); }
+  else if(a==='wxstart'||a==='wxtemp'||a==='wxmult'||a==='wxwetfrom'||a==='wxwet'){ const W=(state.evWeather[state.evsel]=state.evWeather[state.evsel]||{src:'manual'});
+    if(a==='wxstart'){ const v=e.target.value; if(v){ const p=v.split(':'); W.startTod=(+p[0])*60+(+p[1]); } else delete W.startTod; }
+    else if(a==='wxtemp'){ W.tempC=e.target.value===''?null:(+e.target.value); }
+    else if(a==='wxmult'){ W.mult=+e.target.value||1; }
+    else if(a==='wxwetfrom'){ W.wetFrom=e.target.value===''?null:(+e.target.value); }
+    else if(a==='wxwet'){ W.wet=e.target.checked; }
+    save(); renderContent(); }
 });
 document.getElementById('content').addEventListener('click',e=>{
+  const delcev=e.target.closest&&e.target.closest('[data-action="delcustomev"]');
+  if(delcev){ if(isAdmin()){ deleteCustomEvent(delcev.dataset.ev); renderContent(); } return; }
+  if(e.target.dataset.action==='addcustomev'){ _evFormOpen=true; _evSyncMsg=''; renderContent(); return; }
+  if(e.target.dataset.action==='cancelcustomev'){ _evFormOpen=false; renderContent(); return; }
+  if(e.target.dataset.action==='savecustomev'){ const v=id=>{const el=document.getElementById(id);return el?el.value:'';}; const n=(v('cev_n')||'').trim(); if(!n){ setStatus('Event needs a name.'); return; } const s=v('cev_s')||new Date().toISOString().slice(0,10); const ev={n, track:(v('cev_track')||'').trim(), s, e:v('cev_e')||s, cars:'GT3', cat:v('cev_cat')||'endurance', dur:+v('cev_dur')||24, special:!!(document.getElementById('cev_tgt')&&document.getElementById('cev_tgt').checked)}; addCustomEvent(ev); _evFormOpen=false; renderContent(); setStatus('Added "'+n+'" to the calendar.'); return; }
+  if(e.target.dataset.action==='syncir'){ if(typeof syncIrEvents==='function'){ syncIrEvents(); } else { _evSyncMsg='iRacing sync runs on the live site (WordPress).'; renderContent(); } return; }
+  if(e.target.dataset.action==='wxclear'){ delete state.evWeather[state.evsel]; save(); renderContent(); return; }
   const calRow=e.target.closest&&e.target.closest('[data-action="selev"]');
   if(calRow){ selectEvent(calRow.dataset.ev); return; }
   const filt=e.target.closest&&e.target.closest('[data-action="calfilter"]');
@@ -1009,6 +1147,10 @@ document.getElementById('content').addEventListener('click',e=>{
   if(e.target.dataset.action==='gotoevent'){ state.tab='event'; setActiveTab(); renderContent(); return; }
   const bcell=e.target.closest&&e.target.closest('button[data-avtoggle]');
   if(bcell){ if(toggleAvail(bcell.dataset.name,+bcell.dataset.slot)) renderContent(); return; }
+  const pb=e.target.closest&&e.target.closest('[data-prefset]');
+  if(pb){ const nm=pb.dataset.name; if(!canEditAvail(nm)) return; const axis=pb.dataset.prefset, val=pb.dataset.val;
+    const st=(state.prefStore[state.evsel]=state.prefStore[state.evsel]||{}); const p=(st[nm]=st[nm]||{time:'any',cond:'any'}); p[axis]=val;
+    (_availDirty[state.evsel]=_availDirty[state.evsel]||{})[nm]=1; _avMsg=''; save(); renderContent(); return; }
   if(e.target.dataset.action==='avtickall'){ if(state.me&&setAllAvail(state.me,true)) renderContent(); return; }
   if(e.target.dataset.action==='avclear'){ if(state.me&&setAllAvail(state.me,false)) renderContent(); return; }
   const avcol=e.target.closest&&e.target.closest('[data-action="avcol"]');
@@ -1053,9 +1195,11 @@ document.getElementById('content').addEventListener('click',e=>{
   else if(e.target.dataset.action==='usebest'){ if(state.stintsLocked){ setStatus('Stints are locked — unlock to change the window.'); return; } const k=e.target.dataset.key; state.stintWin[k]=+e.target.dataset.win; delete state.stintAssign[k]; save(); renderContent(); }
   else if(e.target.dataset.action==='stintlock'){ if(!isAdmin())return; state.stintsLocked=!state.stintsLocked; save(); renderContent(); setStatus(state.stintsLocked?'Stints locked — auto-fill and window changes will leave them alone.':'Stints unlocked.'); }
   else if(e.target.dataset.action==='teamlock'){ if(!isAdmin())return; state.teamsLocked=!state.teamsLocked; save(); renderContent(); setStatus(state.teamsLocked?'Line-up locked — Generate/Import will leave it alone.':'Line-up unlocked.'); }
+  else if(e.target.closest&&e.target.closest('[data-action="renamecar"]')){ if(!isAdmin())return; _renaming=e.target.closest('[data-action="renamecar"]').dataset.key; renderContent(); const inp=document.querySelector('#content input[data-action="renamesave"]'); if(inp){ inp.focus(); inp.select(); } }
   else if(e.target.dataset.action==='addcar'){ const c=e.target.dataset.class, t=e.target.dataset.tier||'pro'; if(!state.teams[c])state.teams[c]={pro:[],casual:[]}; state.teams[c][t].push([]); save(); renderContent(); }
   else if(e.target.dataset.action==='delcar'){ const c=e.target.dataset.class,t=e.target.dataset.tier,j=+e.target.dataset.idx; if(state.teams[c]&&state.teams[c][t]&&state.teams[c][t][j]&&!state.teams[c][t][j].length){ state.teams[c][t].splice(j,1);
       const pre=c+'|'+t+'|', nw={}; Object.keys(state.stintWin).forEach(kk=>{ if(kk.indexOf(pre)!==0){ nw[kk]=state.stintWin[kk]; return; } const idx=+kk.slice(pre.length); if(idx<j) nw[kk]=state.stintWin[kk]; else if(idx>j) nw[pre+(idx-1)]=state.stintWin[kk]; }); state.stintWin=nw;   // keep per-car window overrides aligned after the splice
+      const nn={}; Object.keys(state.teamNames||{}).forEach(kk=>{ if(kk.indexOf(pre)!==0){ nn[kk]=state.teamNames[kk]; return; } const idx=+kk.slice(pre.length); if(idx<j) nn[kk]=state.teamNames[kk]; else if(idx>j) nn[pre+(idx-1)]=state.teamNames[kk]; }); state.teamNames=nn;   // keep custom names aligned too
       save(); renderContent(); } }
 });
 
@@ -1106,6 +1250,7 @@ function refreshFromSample(){
 }
 if(!load()){ seed(SAMPLE); } else { refreshFromSample(); seedSpaAvail(); }
 if(state.evsel){ const _ev=calEvent(state.evsel); if(_ev){ const _r=state.stint.race; applyEventTiming(_ev); if(_r>0) state.stint.race=_r; } }  // rebuild timing globals from the restored event (don't trust persisted globals)
+relabelStarts();  // start labels in the viewer's timezone
 applyAvailToDrivers();
 syncControls();
 if(!Object.keys(state.teams||{}).length){ generate(); }
@@ -1120,6 +1265,9 @@ document.getElementById('rolebar').addEventListener('click',e=>{
 });
 document.getElementById('rolebar').addEventListener('keydown',e=>{
   if(e.key==='Enter' && e.target.id==='adminpass') submitUnlock();
+});
+document.getElementById('rolebar').addEventListener('change',e=>{
+  if(e.target.dataset.tzpick!==undefined){ setTZ(e.target.value); renderContent(); renderRolebar(); }
 });
 renderRolebar();
 setActiveTab();

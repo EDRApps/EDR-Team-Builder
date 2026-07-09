@@ -96,8 +96,59 @@ function edr_g61_median($arr) {
     return round($m, 3);
 }
 
-/* Returns [{name: <g61 slug or name>, cars: {carName: {laps, medianLap, cleanPct}}}] */
+/* Mirror the JS nameKey(): fold diacritics to ASCII, lowercase, collapse spaces, apply aliases.
+   Must match EDR-Team-Builder.html nameKey/NAME_ALIASES so the iRating join hits accented/alias drivers. */
+function edr_tb_namekey($n) {
+    $n = (string) $n;
+    if (function_exists('transliterator_transliterate')) {
+        $t = transliterator_transliterate('Any-Latin; Latin-ASCII', $n);
+        if ($t !== false) $n = $t;
+    } elseif (function_exists('iconv')) {
+        $t = @iconv('UTF-8', 'ASCII//TRANSLIT//IGNORE', $n);
+        if ($t !== false) $n = $t;
+    }
+    $n = strtolower(trim(preg_replace('/\s+/', ' ', $n)));
+    $aliases = array('joey tavora'=>'joseph tavora','matt halden'=>'matthew halden','zach martin'=>'zachary martin','chris wilson'=>'chris w','michael s cullen'=>'michael cullen');
+    return isset($aliases[$n]) ? $aliases[$n] : $n;
+}
+
+/* Build a namekey => sports_car iRating map from every EDR team's membership (F8). */
+function edr_g61_member_ratings($token) {
+    $teams = edr_g61_get_json('/teams', $token);
+    if (is_wp_error($teams)) return array();
+    $list = isset($teams['items']) && is_array($teams['items']) ? $teams['items'] : (is_array($teams) ? $teams : array());
+    $map = array();
+    foreach ($list as $t) {
+        if (!is_array($t) || empty($t['slug'])) continue;
+        $detail = edr_g61_get_json('/teams/' . rawurlencode($t['slug']), $token);
+        if (is_wp_error($detail) || !is_array($detail)) continue;
+        $members = array();
+        foreach (array('members','drivers','users') as $k) { if (!empty($detail[$k]) && is_array($detail[$k])) { $members = $detail[$k]; break; } }
+        foreach ($members as $m) {
+            if (!is_array($m)) continue;
+            $n = trim((isset($m['firstName'])?$m['firstName']:'') . ' ' . (isset($m['lastName'])?$m['lastName']:''));
+            if ($n === '' && !empty($m['name'])) $n = $m['name'];
+            if ($n === '') continue;
+            $ir = 0;
+            $accts = isset($m['accounts']) && is_array($m['accounts']) ? $m['accounts'] : array();
+            foreach ($accts as $ac) {
+                if (!is_array($ac) || empty($ac['ratings']) || !is_array($ac['ratings'])) continue;
+                foreach ($ac['ratings'] as $r) {
+                    if (is_array($r) && isset($r['type']) && $r['type'] === 'irating'
+                        && isset($r['category']) && $r['category'] === 'sports_car' && isset($r['rating'])) {
+                        $ir = max($ir, intval($r['rating']));
+                    }
+                }
+            }
+            if ($ir > 0) { $k2 = edr_tb_namekey($n); if (empty($map[$k2]) || $ir > $map[$k2]) $map[$k2] = $ir; }
+        }
+    }
+    return $map;
+}
+
+/* Returns [{name: <g61 slug or name>, cars: {carName: {laps, medianLap, cleanPct}}, irating}] */
 function edr_g61_roster($token, $trackIds, $teamSlug) {
+    $ratings = edr_g61_member_ratings($token);
     $laps = edr_g61_get_paged('/laps', array(
         'tracks'       => implode(',', array_map('intval', $trackIds)),
         'teams'        => $teamSlug,
@@ -133,7 +184,8 @@ function edr_g61_roster($token, $trackIds, $teamSlug) {
                 'cleanPct'  => $v['total'] ? round(count($v['clean']) / $v['total'], 3) : 0,
             );
         }
-        $roster[] = array('name' => $name, 'cars' => $cs);
+        $ir = isset($ratings[edr_tb_namekey($name)]) ? $ratings[edr_tb_namekey($name)] : null;
+        $roster[] = array('name' => $name, 'cars' => $cs, 'irating' => $ir);
     }
     return $roster;
 }
