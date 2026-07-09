@@ -492,7 +492,7 @@ function renderMyBlocks(a){
     g.slots.forEach(function(i){
       const on=arr.indexOf(i)>=0;
       const lbl=fmtClock(i*AV_BLOCK).split(' ').slice(1).join(' ')+'–'+fmtClock(Math.min((i+1)*AV_BLOCK,EV_WIN_MIN)).split(' ').slice(1).join(' ');
-      h+='<button class="blockcell'+(on?' on':'')+'"'+(canEdit?' data-avtoggle data-name="'+esc(nm)+'" data-slot="'+i+'"':' disabled')+'>'+lbl+'</button>';
+      h+='<button class="blockcell avfree'+(on?' on':'')+'"'+(canEdit?' data-avtoggle data-name="'+esc(nm)+'" data-slot="'+i+'"':' disabled')+'>'+lbl+'</button>';
     });
     h+='</div>';
   });
