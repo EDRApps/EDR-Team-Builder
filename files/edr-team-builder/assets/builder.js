@@ -51,7 +51,7 @@ let START_LABELS = {1:'Sat 08:00 · 22:00Z', 2:'Sat 17:00 · 07:00Z', 3:'Sat 22:
 // Availability merged from iRacePlan survey 2307 timeline (green = available). Empty cars = no Spa data shared.
 const SAMPLE = [];
 
-let state = { drivers:[], w:{pace:50,clean:30,prep:20}, proPct:40, tab:'event', teams:{}, stint:{window:1,len:120,race:1440}, stintAssign:{}, stintWin:{}, stintSig:'', evsel:null, role:'driver', me:'', pass:'', availStore:{}, evWinMin:0, evTiming:{} };
+let state = { drivers:[], w:{pace:50,clean:30,prep:20}, proPct:40, tab:'event', teams:{}, stint:{window:1,len:120,race:1440}, stintAssign:{}, stintWin:{}, stintSig:'', evsel:null, role:'driver', me:'', pass:'', availStore:{}, evWinMin:0, evTiming:{}, teamsLocked:false };
 
 function fastestCar(cars){
   let best=null, bt=Infinity;
@@ -64,13 +64,13 @@ function seed(list){
   seedSpaAvail();
 }
 
-function save(){ try{ localStorage.setItem(KEY, JSON.stringify({drivers:state.drivers,w:state.w,proPct:state.proPct,teams:state.teams,stint:state.stint,stintAssign:state.stintAssign,stintWin:state.stintWin,stintSig:state.stintSig,evsel:state.evsel,role:state.role,me:state.me,pass:state.pass,availStore:state.availStore,evTiming:state.evTiming,evWinMin:EV_WIN_MIN,winStart:WIN_START_MS,startOffsets:START_OFFSETS,startLabels:START_LABELS})); }catch(e){} }
+function save(){ try{ localStorage.setItem(KEY, JSON.stringify({drivers:state.drivers,w:state.w,proPct:state.proPct,teams:state.teams,stint:state.stint,stintAssign:state.stintAssign,stintWin:state.stintWin,stintSig:state.stintSig,evsel:state.evsel,role:state.role,me:state.me,pass:state.pass,availStore:state.availStore,evTiming:state.evTiming,teamsLocked:state.teamsLocked,evWinMin:EV_WIN_MIN,winStart:WIN_START_MS,startOffsets:START_OFFSETS,startLabels:START_LABELS})); }catch(e){} }
 function load(){
   try{
     const s = JSON.parse(localStorage.getItem(KEY));
     if(s && s.drivers && s.drivers.length){
       state.drivers=s.drivers; state.w=s.w||state.w; state.proPct=(typeof s.proPct==='number')?s.proPct:state.proPct; state.teams=s.teams||{}; state.stint=Object.assign(state.stint, s.stint||{}); state.stintAssign=s.stintAssign||{}; state.stintWin=s.stintWin||{}; state.stintSig=s.stintSig||'';
-      state.evsel=s.evsel||null; state.role=s.role||'driver'; state.me=s.me||''; state.pass=s.pass||''; state.availStore=s.availStore||{}; state.evTiming=s.evTiming||{};
+      state.evsel=s.evsel||null; state.role=s.role||'driver'; state.me=s.me||''; state.pass=s.pass||''; state.availStore=s.availStore||{}; state.evTiming=s.evTiming||{}; state.teamsLocked=!!s.teamsLocked;
       if(s.evWinMin) EV_WIN_MIN=s.evWinMin;
       if(s.winStart) WIN_START_MS=s.winStart;
       if(s.startOffsets&&Object.keys(s.startOffsets).length){ START_OFFSETS=s.startOffsets; START_LABELS=s.startLabels||START_LABELS; }
@@ -154,6 +154,7 @@ function applyPreset(){
   state.teams=next; state.stintAssign={}; state.stintSig=''; save();
 }
 function generate(){
+  if(state.teamsLocked && Object.keys(state.teams||{}).length) return;   // locked line-up: never overwrite the manual teams
   const model=computeModel(); const next={};
   Object.keys(model).forEach(cls=>{
     const grp=model[cls];
@@ -598,6 +599,13 @@ function renderTeams(byId){
     return o;
   }
   let html='';
+  if(isAdmin()){
+    html+='<div class="importbox" style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:16px;border-left:4px solid '+(state.teamsLocked?'var(--green)':'var(--line)')+'">'
+      +'<button class="btn '+(state.teamsLocked?'btn-amber':'btn-ghost')+'" data-action="teamlock">'+(state.teamsLocked?'🔒 Line-up locked':'🔓 Lock line-up')+'</button>'
+      +'<span class="meta" style="max-width:520px">'+(state.teamsLocked
+        ?'<b style="color:var(--green)">Locked.</b> Generate and Import will not touch these teams. You can still move drivers by hand, and it stays saved.'
+        :'Arrange the cars how you want, then <b style="color:#fff">Lock</b> — after that, Generate and Import leave your line-up alone.')+'</span></div>';
+  }
   classes.forEach(cls=>{
     html+='<div style="margin-bottom:26px"><h2 class="classhdr" style="font-size:17px">'+esc(cls)+'</h2>';
     [['pro','PRO','var(--gold)'],['casual','CASUAL','var(--steel)']].forEach(([tier,label,col])=>{
@@ -799,7 +807,7 @@ function syncControls(){
 document.getElementById('propct').addEventListener('input',e=>{
   state.proPct=+e.target.value; document.getElementById('lpro').textContent=state.proPct; save(); renderContent();
 });
-document.getElementById('gen').addEventListener('click',()=>{ generate(); state.tab='teams'; setActiveTab(); save(); renderContent(); });
+document.getElementById('gen').addEventListener('click',()=>{ if(state.teamsLocked && Object.keys(state.teams||{}).length){ state.tab='teams'; setActiveTab(); renderContent(); setStatus('Line-up is locked — unlock it on the Teams tab to regenerate.'); return; } generate(); state.tab='teams'; setActiveTab(); save(); renderContent(); });
 document.getElementById('reset').addEventListener('click',()=>{ seed(SAMPLE); state.w={pace:50,clean:30,prep:20}; state.proPct=40; syncControls(); generate(); save(); renderContent(); setStatus('Reset to sample'); });
 document.getElementById('imp').addEventListener('click',()=>{ document.getElementById('importbox').classList.toggle('hide'); });
 document.getElementById('load').addEventListener('click',()=>{
@@ -889,6 +897,7 @@ document.getElementById('content').addEventListener('click',e=>{
   if(e.target.dataset.action==='remove'){ state.drivers=state.drivers.filter(x=>x.id!=e.target.dataset.id); generate(); save(); renderContent(); }
   else if(e.target.dataset.action==='stintreset'){ state.stintAssign={}; state.stintSig=''; save(); renderContent(); }
   else if(e.target.dataset.action==='usebest'){ const k=e.target.dataset.key; state.stintWin[k]=+e.target.dataset.win; delete state.stintAssign[k]; save(); renderContent(); }
+  else if(e.target.dataset.action==='teamlock'){ if(!isAdmin())return; state.teamsLocked=!state.teamsLocked; save(); renderContent(); setStatus(state.teamsLocked?'Line-up locked — Generate/Import will leave it alone.':'Line-up unlocked.'); }
   else if(e.target.dataset.action==='addcar'){ const c=e.target.dataset.class, t=e.target.dataset.tier||'pro'; if(!state.teams[c])state.teams[c]={pro:[],casual:[]}; state.teams[c][t].push([]); save(); renderContent(); }
   else if(e.target.dataset.action==='delcar'){ const c=e.target.dataset.class,t=e.target.dataset.tier,j=+e.target.dataset.idx; if(state.teams[c]&&state.teams[c][t]&&state.teams[c][t][j]&&!state.teams[c][t][j].length){ state.teams[c][t].splice(j,1);
       const pre=c+'|'+t+'|', nw={}; Object.keys(state.stintWin).forEach(kk=>{ if(kk.indexOf(pre)!==0){ nw[kk]=state.stintWin[kk]; return; } const idx=+kk.slice(pre.length); if(idx<j) nw[kk]=state.stintWin[kk]; else if(idx>j) nw[pre+(idx-1)]=state.stintWin[kk]; }); state.stintWin=nw;   // keep per-car window overrides aligned after the splice
@@ -979,7 +988,7 @@ function releaseLock(name){
   }).catch(function(){});
 }
 let lastTrackIds=[], _saveT=null;
-function serializePlan(){ return {drivers:state.drivers,w:state.w,proPct:state.proPct,teams:state.teams,stint:state.stint,stintAssign:state.stintAssign,stintWin:state.stintWin,stintSig:state.stintSig,overrides:overrides,meta:IMPORT_META,winStart:WIN_START_MS,startOffsets:START_OFFSETS,startLabels:START_LABELS,matches:lastMatches,trackIds:lastTrackIds,evsel:state.evsel,evWinMin:EV_WIN_MIN,evTiming:state.evTiming}; }
+function serializePlan(){ return {drivers:state.drivers,w:state.w,proPct:state.proPct,teams:state.teams,stint:state.stint,stintAssign:state.stintAssign,stintWin:state.stintWin,stintSig:state.stintSig,overrides:overrides,meta:IMPORT_META,winStart:WIN_START_MS,startOffsets:START_OFFSETS,startLabels:START_LABELS,matches:lastMatches,trackIds:lastTrackIds,evsel:state.evsel,evWinMin:EV_WIN_MIN,evTiming:state.evTiming,teamsLocked:state.teamsLocked}; }
 function save(){
   try{ localStorage.setItem('edrTB_local', JSON.stringify({role:state.role,me:state.me,pass:state.pass})); }catch(e){}
   if(!isAdmin()) return;
@@ -990,7 +999,7 @@ function loadPlan(){ return apiGET('plan').then(function(r){ var p=r&&r.plan; if
   state.stint=Object.assign(state.stint,p.stint||{}); state.stintAssign=p.stintAssign||{}; state.stintWin=p.stintWin||{}; state.stintSig=p.stintSig||'';
   if(p.overrides)overrides=p.overrides; if(p.meta)IMPORT_META=p.meta; if(p.winStart)WIN_START_MS=p.winStart;
   if(p.startOffsets&&Object.keys(p.startOffsets).length)START_OFFSETS=p.startOffsets; if(p.startLabels&&Object.keys(p.startLabels).length)START_LABELS=p.startLabels;
-  if(p.evsel)state.evsel=p.evsel; if(p.evWinMin)EV_WIN_MIN=p.evWinMin; if(p.evTiming)state.evTiming=p.evTiming;
+  if(p.evsel)state.evsel=p.evsel; if(p.evWinMin)EV_WIN_MIN=p.evWinMin; if(p.evTiming)state.evTiming=p.evTiming; state.teamsLocked=!!p.teamsLocked;
   lastMatches=p.matches||[]; lastTrackIds=p.trackIds||[]; return true; }).catch(function(){return false;}); }
 var IR_SEASONS=[], IR_STATUS='';
 function loadIracing(){

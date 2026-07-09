@@ -208,7 +208,7 @@ let START_LABELS = {1:'Sat 08:00 · 22:00Z', 2:'Sat 17:00 · 07:00Z', 3:'Sat 22:
 // Availability merged from iRacePlan survey 2307 timeline (green = available). Empty cars = no Spa data shared.
 const SAMPLE = [{"name":"Aaron Werth","cars":{"Ferrari 296 GT3":{"laps":95,"medianLap":138.018,"cleanPct":0.495},"Ford Mustang GT3":{"laps":41,"medianLap":139.654,"cleanPct":0.293},"McLaren 720S GT3 EVO":{"laps":20,"medianLap":139.674,"cleanPct":0.25}},"avail":{"hours":42.8,"pct":100,"starts":[1,2,3,4],"windows":[[0,2568]]}},{"name":"Bernardo Hickmann","cars":{"Ferrari 296 GT3":{"laps":32,"medianLap":137.498,"cleanPct":0.562}},"avail":{"hours":42.8,"pct":100,"starts":[1,2,3,4],"windows":[[0,2568]]}},{"name":"Erik van der Bijl","cars":{"McLaren 720S GT3 EVO":{"laps":10,"medianLap":138.072,"cleanPct":0.5},"Ferrari 296 GT3":{"laps":316,"medianLap":138.113,"cleanPct":0.668},"Ford Mustang GT3":{"laps":10,"medianLap":137.893,"cleanPct":0.4},"Porsche 911 GT3 R (992)":{"laps":14,"medianLap":138.227,"cleanPct":0.429}},"avail":{"hours":42.8,"pct":100,"starts":[1,2,3,4],"windows":[[0,2568]]}},{"name":"Joey Tavora","cars":{"Porsche 911 GT3 R (992)":{"laps":55,"medianLap":139.418,"cleanPct":0.545},"Ferrari 296 GT3":{"laps":49,"medianLap":137.949,"cleanPct":0.694}},"avail":{"hours":42.8,"pct":100,"starts":[1,2,3,4],"windows":[[0,2568]]}},{"name":"John Nyhouse","cars":{"BMW M4 GT3 EVO":{"laps":15,"medianLap":141.213,"cleanPct":0.533},"McLaren 720S GT3 EVO":{"laps":81,"medianLap":139.572,"cleanPct":0.543},"Ferrari 296 GT3":{"laps":117,"medianLap":139.546,"cleanPct":0.402},"Acura NSX GT3 EVO 22":{"laps":37,"medianLap":141.031,"cleanPct":0.351},"Mercedes-AMG GT3 2020":{"laps":5,"medianLap":141.084,"cleanPct":0.6}},"avail":{"hours":42.8,"pct":100,"starts":[1,2,3,4],"windows":[[0,2568]]}},{"name":"Luke Hay","cars":{"Ferrari 296 GT3":{"laps":32,"medianLap":138.193,"cleanPct":0.281},"Porsche 911 GT3 R (992)":{"laps":32,"medianLap":139.237,"cleanPct":0.312},"Ford Mustang GT3":{"laps":11,"medianLap":137.831,"cleanPct":0.273}},"avail":{"hours":42.8,"pct":100,"starts":[1,2,3,4],"windows":[[0,2568]]}},{"name":"Stipe Ljubic","cars":{"BMW M4 GT3 EVO":{"laps":65,"medianLap":137.917,"cleanPct":0.446},"Ferrari 296 GT3":{"laps":128,"medianLap":136.251,"cleanPct":0.453}},"avail":{"hours":42.8,"pct":100,"starts":[1,2,3,4],"windows":[[0,2568]]}},{"name":"Thomaz Hernandes","cars":{"Ferrari 296 GT3":{"laps":243,"medianLap":138.202,"cleanPct":0.597},"Lamborghini Huracán GT3 EVO":{"laps":21,"medianLap":138.581,"cleanPct":0.571},"Ford Mustang GT3":{"laps":67,"medianLap":138.406,"cleanPct":0.448},"McLaren 720S GT3 EVO":{"laps":85,"medianLap":139.774,"cleanPct":0.576},"BMW M4 GT3 EVO":{"laps":36,"medianLap":139.116,"cleanPct":0.667},"Mercedes-AMG GT3 2020":{"laps":11,"medianLap":138.788,"cleanPct":0.455},"Porsche 911 GT3 R (992)":{"laps":25,"medianLap":138.826,"cleanPct":0.28}},"avail":{"hours":42.8,"pct":100,"starts":[1,2,3,4],"windows":[[0,2568]]}},{"name":"Sam Millar","cars":{"Porsche 911 GT3 R (992)":{"laps":94,"medianLap":139.149,"cleanPct":0.574},"Ferrari 296 GT3":{"laps":350,"medianLap":138.881,"cleanPct":0.603}},"avail":{"hours":39.3,"pct":92,"starts":[1,3,4],"windows":[[0,390],[600,2568]]}},{"name":"Matt Halden","cars":{"Ferrari 296 GT3":{"laps":39,"medianLap":137.796,"cleanPct":0.641}},"avail":{"hours":39,"pct":91,"starts":[1,2,3,4],"windows":[[0,2340]]}},{"name":"Sam Mackenzie","cars":{"Ferrari 296 GT3":{"laps":41,"medianLap":137.648,"cleanPct":0.366},"McLaren 720S GT3 EVO":{"laps":80,"medianLap":137.824,"cleanPct":0.662}},"avail":{"hours":34,"pct":79,"starts":[1,2,3,4],"windows":[[0,2040]]}},{"name":"Zach Martin","cars":{"Ferrari 296 GT3":{"laps":3,"medianLap":null,"cleanPct":0}},"avail":{"hours":33.8,"pct":79,"starts":[2,3,4],"windows":[[540,2568]]}},{"name":"Jake Lennox-Bradley","cars":{"BMW M4 GT3 EVO":{"laps":55,"medianLap":137.365,"cleanPct":0.691},"Ferrari 296 GT3":{"laps":56,"medianLap":138.339,"cleanPct":0.571},"Porsche 911 GT3 R (992)":{"laps":14,"medianLap":138.281,"cleanPct":0.429},"Ford Mustang GT3":{"laps":27,"medianLap":139.16,"cleanPct":0.407}},"avail":{"hours":32.5,"pct":76,"starts":[2,3,4],"windows":[[300,2250]]}},{"name":"Brock Hellmech","cars":{"McLaren 720S GT3 EVO":{"laps":239,"medianLap":138.084,"cleanPct":0.439},"Ferrari 296 GT3":{"laps":147,"medianLap":139.086,"cleanPct":0.286},"Ford Mustang GT3":{"laps":49,"medianLap":137.744,"cleanPct":0.265}},"avail":{"hours":19,"pct":44,"starts":[3],"windows":[[210,420],[660,960],[1200,1410],[1650,1860],[2100,2310]]}},{"name":"Michael Cullen","cars":{"Lamborghini Huracán GT3 EVO":{"laps":32,"medianLap":137.639,"cleanPct":0.812}},"avail":{"hours":8,"pct":19,"starts":[1,3],"windows":[[0,270],[690,900]]}},{"name":"Valentin Ozhiganov","cars":{"Ferrari 296 GT3":{"laps":35,"medianLap":137.467,"cleanPct":0.6}},"avail":{"hours":5,"pct":12,"starts":[],"windows":[[1230,1530]]}}];
 
-let state = { drivers:[], w:{pace:50,clean:30,prep:20}, proPct:40, tab:'event', teams:{}, stint:{window:1,len:120,race:1440}, stintAssign:{}, stintWin:{}, stintSig:'', evsel:null, role:'driver', me:'', pass:'', availStore:{}, evWinMin:0, evTiming:{} };
+let state = { drivers:[], w:{pace:50,clean:30,prep:20}, proPct:40, tab:'event', teams:{}, stint:{window:1,len:120,race:1440}, stintAssign:{}, stintWin:{}, stintSig:'', evsel:null, role:'driver', me:'', pass:'', availStore:{}, evWinMin:0, evTiming:{}, teamsLocked:false };
 
 function fastestCar(cars){
   let best=null, bt=Infinity;
@@ -221,13 +221,13 @@ function seed(list){
   seedSpaAvail();
 }
 
-function save(){ try{ localStorage.setItem(KEY, JSON.stringify({drivers:state.drivers,w:state.w,proPct:state.proPct,teams:state.teams,stint:state.stint,stintAssign:state.stintAssign,stintWin:state.stintWin,stintSig:state.stintSig,evsel:state.evsel,role:state.role,me:state.me,pass:state.pass,availStore:state.availStore,evTiming:state.evTiming,evWinMin:EV_WIN_MIN,winStart:WIN_START_MS,startOffsets:START_OFFSETS,startLabels:START_LABELS})); }catch(e){} }
+function save(){ try{ localStorage.setItem(KEY, JSON.stringify({drivers:state.drivers,w:state.w,proPct:state.proPct,teams:state.teams,stint:state.stint,stintAssign:state.stintAssign,stintWin:state.stintWin,stintSig:state.stintSig,evsel:state.evsel,role:state.role,me:state.me,pass:state.pass,availStore:state.availStore,evTiming:state.evTiming,teamsLocked:state.teamsLocked,evWinMin:EV_WIN_MIN,winStart:WIN_START_MS,startOffsets:START_OFFSETS,startLabels:START_LABELS})); }catch(e){} }
 function load(){
   try{
     const s = JSON.parse(localStorage.getItem(KEY));
     if(s && s.drivers && s.drivers.length){
       state.drivers=s.drivers; state.w=s.w||state.w; state.proPct=(typeof s.proPct==='number')?s.proPct:state.proPct; state.teams=s.teams||{}; state.stint=Object.assign(state.stint, s.stint||{}); state.stintAssign=s.stintAssign||{}; state.stintWin=s.stintWin||{}; state.stintSig=s.stintSig||'';
-      state.evsel=s.evsel||null; state.role=s.role||'driver'; state.me=s.me||''; state.pass=s.pass||''; state.availStore=s.availStore||{}; state.evTiming=s.evTiming||{};
+      state.evsel=s.evsel||null; state.role=s.role||'driver'; state.me=s.me||''; state.pass=s.pass||''; state.availStore=s.availStore||{}; state.evTiming=s.evTiming||{}; state.teamsLocked=!!s.teamsLocked;
       if(s.evWinMin) EV_WIN_MIN=s.evWinMin;
       if(s.winStart) WIN_START_MS=s.winStart;
       if(s.startOffsets&&Object.keys(s.startOffsets).length){ START_OFFSETS=s.startOffsets; START_LABELS=s.startLabels||START_LABELS; }
@@ -311,6 +311,7 @@ function applyPreset(){
   state.teams=next; state.stintAssign={}; state.stintSig=''; save();
 }
 function generate(){
+  if(state.teamsLocked && Object.keys(state.teams||{}).length) return;   // locked line-up: never overwrite the manual teams
   const model=computeModel(); const next={};
   Object.keys(model).forEach(cls=>{
     const grp=model[cls];
@@ -755,6 +756,13 @@ function renderTeams(byId){
     return o;
   }
   let html='';
+  if(isAdmin()){
+    html+='<div class="importbox" style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:16px;border-left:4px solid '+(state.teamsLocked?'var(--green)':'var(--line)')+'">'
+      +'<button class="btn '+(state.teamsLocked?'btn-amber':'btn-ghost')+'" data-action="teamlock">'+(state.teamsLocked?'🔒 Line-up locked':'🔓 Lock line-up')+'</button>'
+      +'<span class="meta" style="max-width:520px">'+(state.teamsLocked
+        ?'<b style="color:var(--green)">Locked.</b> Generate and Import will not touch these teams. You can still move drivers by hand, and it stays saved.'
+        :'Arrange the cars how you want, then <b style="color:#fff">Lock</b> — after that, Generate and Import leave your line-up alone.')+'</span></div>';
+  }
   classes.forEach(cls=>{
     html+='<div style="margin-bottom:26px"><h2 class="classhdr" style="font-size:17px">'+esc(cls)+'</h2>';
     [['pro','PRO','var(--gold)'],['casual','CASUAL','var(--steel)']].forEach(([tier,label,col])=>{
@@ -956,7 +964,7 @@ function syncControls(){
 document.getElementById('propct').addEventListener('input',e=>{
   state.proPct=+e.target.value; document.getElementById('lpro').textContent=state.proPct; save(); renderContent();
 });
-document.getElementById('gen').addEventListener('click',()=>{ generate(); state.tab='teams'; setActiveTab(); save(); renderContent(); });
+document.getElementById('gen').addEventListener('click',()=>{ if(state.teamsLocked && Object.keys(state.teams||{}).length){ state.tab='teams'; setActiveTab(); renderContent(); setStatus('Line-up is locked — unlock it on the Teams tab to regenerate.'); return; } generate(); state.tab='teams'; setActiveTab(); save(); renderContent(); });
 document.getElementById('reset').addEventListener('click',()=>{ seed(SAMPLE); state.w={pace:50,clean:30,prep:20}; state.proPct=40; syncControls(); generate(); save(); renderContent(); setStatus('Reset to sample'); });
 document.getElementById('imp').addEventListener('click',()=>{ document.getElementById('importbox').classList.toggle('hide'); });
 document.getElementById('load').addEventListener('click',()=>{
@@ -1046,6 +1054,7 @@ document.getElementById('content').addEventListener('click',e=>{
   if(e.target.dataset.action==='remove'){ state.drivers=state.drivers.filter(x=>x.id!=e.target.dataset.id); generate(); save(); renderContent(); }
   else if(e.target.dataset.action==='stintreset'){ state.stintAssign={}; state.stintSig=''; save(); renderContent(); }
   else if(e.target.dataset.action==='usebest'){ const k=e.target.dataset.key; state.stintWin[k]=+e.target.dataset.win; delete state.stintAssign[k]; save(); renderContent(); }
+  else if(e.target.dataset.action==='teamlock'){ if(!isAdmin())return; state.teamsLocked=!state.teamsLocked; save(); renderContent(); setStatus(state.teamsLocked?'Line-up locked — Generate/Import will leave it alone.':'Line-up unlocked.'); }
   else if(e.target.dataset.action==='addcar'){ const c=e.target.dataset.class, t=e.target.dataset.tier||'pro'; if(!state.teams[c])state.teams[c]={pro:[],casual:[]}; state.teams[c][t].push([]); save(); renderContent(); }
   else if(e.target.dataset.action==='delcar'){ const c=e.target.dataset.class,t=e.target.dataset.tier,j=+e.target.dataset.idx; if(state.teams[c]&&state.teams[c][t]&&state.teams[c][t][j]&&!state.teams[c][t][j].length){ state.teams[c][t].splice(j,1);
       const pre=c+'|'+t+'|', nw={}; Object.keys(state.stintWin).forEach(kk=>{ if(kk.indexOf(pre)!==0){ nw[kk]=state.stintWin[kk]; return; } const idx=+kk.slice(pre.length); if(idx<j) nw[kk]=state.stintWin[kk]; else if(idx>j) nw[pre+(idx-1)]=state.stintWin[kk]; }); state.stintWin=nw;   // keep per-car window overrides aligned after the splice
