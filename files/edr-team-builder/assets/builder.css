@@ -79,6 +79,12 @@
   .calbadge.tgt{border-color:rgba(240,240,0,.5);color:var(--yellow)}
   .calbadge.selb{background:var(--yellow);color:#0a0a0a;border-color:var(--yellow)}
   .calbadge.next{border-color:var(--green);color:var(--green)}
+  html,body{color-scheme:dark}
+  input[type=time]{background:#0a0a14;color:#fff;border:1px solid var(--line);border-radius:8px;padding:6px;font-family:'Karla',sans-serif}
+  optgroup{background:#11111c;color:var(--dim);font-style:normal}
+  .carfuel{display:flex;gap:12px;align-items:center;flex-wrap:wrap;margin:-2px 0 12px;padding:7px 12px;background:var(--panel2);border:1px solid var(--lineSoft);border-radius:var(--rmd)}
+  .carfuel label{display:flex;align-items:center;gap:5px;font-size:11px;color:var(--dim)}
+  .carfuel input{width:64px;padding:5px;font-size:11px}
   /* ---- availability matrix ---- */
   .avmatrix{border-collapse:collapse;font-size:12px;min-width:100%}
   .avmatrix th,.avmatrix td{padding:7px 9px;text-align:center;border:1px solid var(--lineSoft);white-space:nowrap}
@@ -155,7 +161,9 @@
    the app (white slider boxes, theme-coloured buttons). Force ours back. ---- */
 #edr-tb-app input[type=range]{-webkit-appearance:auto!important;appearance:auto!important;background:transparent!important;border:0!important;box-shadow:none!important;padding:0!important;margin:0!important;min-height:0!important;height:auto!important;width:100%!important;border-radius:0!important}
 #edr-tb-app input[type=checkbox]{-webkit-appearance:auto!important;appearance:auto!important;background:transparent!important;border:none!important;box-shadow:none!important;padding:0!important;min-height:0!important}
-#edr-tb-app select,#edr-tb-app textarea,#edr-tb-app input[type=text],#edr-tb-app input[type=number]{background:#0a0a14!important;color:#fff!important;border:1px solid var(--line)!important;border-radius:8px!important;box-shadow:none!important;text-shadow:none!important;line-height:1.4!important;min-height:0!important}
+#edr-tb-app select,#edr-tb-app textarea,#edr-tb-app input[type=text],#edr-tb-app input[type=number],#edr-tb-app input[type=time]{background:#0a0a14!important;color:#fff!important;border:1px solid var(--line)!important;border-radius:8px!important;box-shadow:none!important;text-shadow:none!important;line-height:1.4!important;min-height:0!important}
+#edr-tb-app{color-scheme:dark}
+#edr-tb-app optgroup{background:#11111c;color:var(--dim);font-style:normal}
 #edr-tb-app button{box-shadow:none!important;text-shadow:none!important;text-decoration:none!important;letter-spacing:inherit;min-height:0!important}
 #edr-tb-app button:focus{outline:2px solid rgba(240,240,0,.55);outline-offset:1px}
 #edr-tb-app .tab{background:transparent!important;border:1px solid transparent!important;color:var(--dim)!important;border-radius:999px!important;padding:9px 18px!important;text-transform:uppercase!important}

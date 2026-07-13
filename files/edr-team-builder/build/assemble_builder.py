@@ -17,7 +17,9 @@ open(os.path.join(OUT,"builder.css"),"w",encoding="utf-8").write("/* EDR Team Bu
    the app (white slider boxes, theme-coloured buttons). Force ours back. ---- */
 #edr-tb-app input[type=range]{-webkit-appearance:auto!important;appearance:auto!important;background:transparent!important;border:0!important;box-shadow:none!important;padding:0!important;margin:0!important;min-height:0!important;height:auto!important;width:100%!important;border-radius:0!important}
 #edr-tb-app input[type=checkbox]{-webkit-appearance:auto!important;appearance:auto!important;background:transparent!important;border:none!important;box-shadow:none!important;padding:0!important;min-height:0!important}
-#edr-tb-app select,#edr-tb-app textarea,#edr-tb-app input[type=text],#edr-tb-app input[type=number]{background:#0a0a14!important;color:#fff!important;border:1px solid var(--line)!important;border-radius:8px!important;box-shadow:none!important;text-shadow:none!important;line-height:1.4!important;min-height:0!important}
+#edr-tb-app select,#edr-tb-app textarea,#edr-tb-app input[type=text],#edr-tb-app input[type=number],#edr-tb-app input[type=time]{background:#0a0a14!important;color:#fff!important;border:1px solid var(--line)!important;border-radius:8px!important;box-shadow:none!important;text-shadow:none!important;line-height:1.4!important;min-height:0!important}
+#edr-tb-app{color-scheme:dark}
+#edr-tb-app optgroup{background:#11111c;color:var(--dim);font-style:normal}
 #edr-tb-app button{box-shadow:none!important;text-shadow:none!important;text-decoration:none!important;letter-spacing:inherit;min-height:0!important}
 #edr-tb-app button:focus{outline:2px solid rgba(240,240,0,.55);outline-offset:1px}
 #edr-tb-app .tab{background:transparent!important;border:1px solid transparent!important;color:var(--dim)!important;border-radius:999px!important;padding:9px 18px!important;text-transform:uppercase!important}
@@ -145,11 +147,12 @@ function _flushPlan(){
   _postBusy=true;
   apiPOST('plan',{plan:serializePlan(), baseRev:PLAN_REV}).then(function(r){
     _postBusy=false;
-    if(r&&r.ok&&typeof r.rev==='number'){ PLAN_REV=r.rev; if(_postAgain){ _postAgain=false; _flushPlan(); } }
+    if(r&&r.ok&&typeof r.rev==='number'){ PLAN_REV=r.rev; _postRetried=false; if(_postAgain){ _postAgain=false; _flushPlan(); } }
     else if(r&&r.code==='stale_plan'){ _postAgain=false; clearTimeout(_saveT); _saveT=null; refreshShared(true); }   // adopt latest; message shown after the pull actually lands
     else if(_postAgain){ _postAgain=false; _flushPlan(); }
-  }).catch(function(){ _postBusy=false; _postAgain=false; });
+  }).catch(function(){ _postBusy=false; if(!_postRetried){ _postRetried=true; setTimeout(_flushPlan, 1500); } else { _postAgain=false; } });
 }
+var _postRetried=false;
 function save(){
   try{ localStorage.setItem('edrTB_local', JSON.stringify({role:state.role,me:state.me,pass:state.pass})); }catch(e){}
   if(!isAdmin()) return;
@@ -188,7 +191,10 @@ function refreshShared(force){
     if(!force && (_saveT||_postBusy)) return;           // an edit landed while this GET was in flight — let its save reconcile
     if(!force && _editingNow()){ setTimeout(function(){ refreshShared(); },4000); return; }  // don't rip an open input out from under the user
     PLAN_REV=rev;
+    var _localNames=state.teamNames||{};
     _adoptPlan(r.plan, true);
+    var _renamedBack=false; Object.keys(_localNames).forEach(function(k){ if(_localNames[k] && !state.teamNames[k]){ state.teamNames[k]=_localNames[k]; _renamedBack=true; } });   // a rename in flight when another device saved must survive the adopt
+    if(_renamedBack && isAdmin()) save();
     if(state.evsel){ var _ev=calEvent(state.evsel); if(_ev){ var _r0=state.stint.race; applyEventTiming(_ev); if(_r0>0) state.stint.race=_r0; } }
     apiGET('avail').then(function(av){
       if(av&&av.store){
@@ -428,6 +434,7 @@ async function bootSetup(){
 // ---- boot ----
 document.getElementById('edr-tb-app').dataset.ready='1';
 document.addEventListener('visibilitychange', function(){ if(document.visibilityState==='visible') refreshShared(); });
+window.addEventListener('pagehide', function(){ if(_saveT){ clearTimeout(_saveT); _saveT=null; try{ fetch(API+'plan',{method:'POST',headers:_hdrs(true),body:JSON.stringify({plan:serializePlan(),baseRev:PLAN_REV}),keepalive:true}); }catch(e){} } });   // a rename made just before closing the tab must not die in the 600ms debounce
 window.addEventListener('focus', function(){ refreshShared(); });
 bootSetup();
 """

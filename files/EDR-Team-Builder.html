@@ -85,6 +85,12 @@
   .calbadge.tgt{border-color:rgba(240,240,0,.5);color:var(--yellow)}
   .calbadge.selb{background:var(--yellow);color:#0a0a0a;border-color:var(--yellow)}
   .calbadge.next{border-color:var(--green);color:var(--green)}
+  html,body{color-scheme:dark}
+  input[type=time]{background:#0a0a14;color:#fff;border:1px solid var(--line);border-radius:8px;padding:6px;font-family:'Karla',sans-serif}
+  optgroup{background:#11111c;color:var(--dim);font-style:normal}
+  .carfuel{display:flex;gap:12px;align-items:center;flex-wrap:wrap;margin:-2px 0 12px;padding:7px 12px;background:var(--panel2);border:1px solid var(--lineSoft);border-radius:var(--rmd)}
+  .carfuel label{display:flex;align-items:center;gap:5px;font-size:11px;color:var(--dim)}
+  .carfuel input{width:64px;padding:5px;font-size:11px}
   /* ---- availability matrix ---- */
   .avmatrix{border-collapse:collapse;font-size:12px;min-width:100%}
   .avmatrix th,.avmatrix td{padding:7px 9px;text-align:center;border:1px solid var(--lineSoft);white-space:nowrap}
@@ -868,8 +874,12 @@ function applyIrWeather(ev, se){  // map an iRacing schedule weather{} onto stat
   const w=se&&se.weather; if(!w) return;
   let startTod=null; if(w.simulated_start_time){ const m=(''+w.simulated_start_time).match(/T(\d\d):(\d\d)/); if(m) startTod=(+m[1])*60+(+m[2]); }
   let temp=(w.temp_value!=null)?+w.temp_value:null; if(temp!=null && (+w.temp_units)===0) temp=Math.round((temp-32)*5/9);  // iRacing 0 = Fahrenheit
-  const wetBase=((+w.precip_option)>0)||(w.forecast_options&&(+w.forecast_options.precipitation)>0);
-  state.evWeather[evKey(ev)]={ src:'iracing', startTod:(startTod!=null?startTod:720), mult:(+w.simulated_time_multiplier)||1, tempC:temp, wet:!!wetBase, todOffsets:(Array.isArray(w.simulated_time_offsets)?w.simulated_time_offsets.map(Number):null) };
+  let pct=null; const ws=w.weather_summary||{};
+  if(ws.precip_chance!=null){ pct=+ws.precip_chance; if(pct>0&&pct<1) pct=pct*100;   // 0.35 -> 35, but integer 1 stays 1%
+    pct=Math.max(0,Math.min(100,Math.round(pct))); }
+  // "wet" means rain is LIKELY — a 1% chance must not paint the whole race wet
+  const wetBase = (pct!=null) ? pct>=50 : (((+w.precip_option)>0)||(w.forecast_options&&(+w.forecast_options.precipitation)>0));
+  state.evWeather[evKey(ev)]={ src:'iracing', startTod:(startTod!=null?startTod:720), mult:(+w.simulated_time_multiplier)||1, tempC:temp, wet:!!wetBase, rainPct:pct, todOffsets:(Array.isArray(w.simulated_time_offsets)?w.simulated_time_offsets.map(Number):null) };
 }
 function blockTimes(off,len,race){ const n=Math.ceil(race/len),t=[]; for(let i=0;i<n;i++)t.push({s:off+i*len,e:off+Math.min((i+1)*len,race)}); return t; }
 /* ---- weather (F7): maps a stint's clock offset to sim conditions for the event ---- */
@@ -884,9 +894,11 @@ function weatherAt(absMin, raceStartOff, winNo){
   const wet = !!w.wet || (w.wetFrom!=null && w.wetFrom!=='' && elapsed>=(+w.wetFrom));
   const hh=Math.floor(todMin/60), mm=Math.round(todMin%60);
   const clk=(hh<10?'0':'')+hh+':'+(mm<10?'0':'')+mm;
+  const pct=(w.rainPct!=null&&w.rainPct!=='')?Math.round(+w.rainPct):null;
   const icon = wet?'🌧':(night?'🌙':'☀');
-  const label = wet?(clk+' wet'):(night?(clk+' night'):(clk+(w.tempC!=null&&w.tempC!==''?' '+w.tempC+'°':'')));
-  return { todMin, night, wet, tempC:w.tempC, clk, icon, label };
+  let label = wet?(clk+' wet'):(night?(clk+' night'):(clk+(w.tempC!=null&&w.tempC!==''?' '+w.tempC+'°':'')));
+  if(pct!=null&&pct>0) label+=' · '+pct+'%';   // rain probability, so "wet" vs "1% chance" is unambiguous
+  return { todMin, night, wet, rainPct:pct, tempC:w.tempC, clk, icon, label };
 }
 function carBestWindow(memberIds, byId, len, race){   // window with fewest uncovered blocks for this car
   let best=null;
@@ -983,23 +995,13 @@ function renderStints(byId){
       +'<div class="ctl"><label>TEMP (°C)</label><input type="number" step="1" value="'+(w.tempC!=null?w.tempC:'')+'" placeholder="—" data-action="wxtemp" style="width:74px;padding:6px"></div>'
       +'<div class="ctl"><label>SIM MULT</label><input type="number" step="0.5" min="1" value="'+(w.mult||'')+'" placeholder="1" data-action="wxmult" style="width:74px;padding:6px"></div>'
       +'<div class="ctl"><label>TURNS WET AT (min)</label><input type="number" step="10" value="'+(w.wetFrom!=null?w.wetFrom:'')+'" placeholder="dry" data-action="wxwetfrom" style="width:90px;padding:6px"></div>'
+      +'<div class="ctl"><label>RAIN CHANCE (%)</label><input type="number" min="0" max="100" step="5" value="'+(w.rainPct!=null?w.rainPct:'')+'" placeholder="—" data-action="wxrain" style="width:74px;padding:6px"></div>'
       +'<label class="meta" style="align-self:center"><input type="checkbox" data-action="wxwet"'+(w.wet?' checked':'')+'> wet from start</label>'
       +(Object.keys(w).length?'<span class="meta" style="cursor:pointer;text-decoration:underline;align-self:center" data-action="wxclear">clear</span>':'')
       +'</div>';
   }
   const classes=Object.keys(state.teams);
   if(!classes.length) return html+'<div class="meta">Hit Generate to build teams first.</div>';
-  const summ=windowSummary(byId,len,race);
-  const bestW=summ.slice().sort((a,b)=>(b.covered-a.covered)||(b.free-a.free))[0];
-  html+='<div style="margin:2px 0 18px"><div class="meta" style="margin-bottom:8px;text-transform:uppercase;letter-spacing:.04em">Session finder, click a window to set it as the default for all cars</div><div style="display:flex;gap:10px;flex-wrap:wrap">';
-  summ.forEach(s=>{
-    const sel=s.w===state.stint.window, isBest=bestW&&s.w===bestW.w;
-    html+='<button data-action="stintwin" value="'+s.w+'" class="winbtn'+(sel?' sel':'')+(isBest?' best':'')+'">'
-      +'<div style="font-family:Prompt;font-weight:600;color:#fff;text-transform:uppercase;font-size:12px">#'+s.w+' · '+START_LABELS[s.w]+(isBest?' <span style="color:var(--green)">● best</span>':'')+'</div>'
-      +'<div class="meta">'+s.free+'/'+s.total+' drivers free (full race)</div>'
-      +'<div class="meta">'+s.covered+'/'+s.cars+' cars coverable</div></button>';
-  });
-  html+='</div></div>';
   // driver bank — drag any name onto any stint block
   const bankByCls={}; Object.values(byId).forEach(d=>{(bankByCls[d._class]=bankByCls[d._class]||[]).push(d);});
   Object.keys(bankByCls).forEach(c=>bankByCls[c].sort((a,b)=>a.name.localeCompare(b.name)));
@@ -1032,20 +1034,21 @@ function renderStints(byId){
         let gaps=0, conflicts=0;
         arr.forEach((id,i)=>{ const t=times[i]; if(id==null||!byId[id]||!mem.has(id)){ gaps++; return; } if(!driverFree(byId[id],t.s,t.e)) conflicts++; });
         const badge = gaps? '<span class="meta" style="color:var(--red)">'+gaps+' empty</span>' : conflicts? '<span class="meta" style="color:var(--red)">'+conflicts+' conflict'+(conflicts>1?'s':'')+'</span>' : '<span class="meta" style="color:var(--green)">all covered</span>';
-        const winSel='<select data-action="carwin" data-key="'+key+'">'+Object.keys(START_OFFSETS).map(Number).map(w=>'<option value="'+w+'"'+(w===win?' selected':'')+'>start #'+w+' · '+START_LABELS[w]+'</option>').join('')+'</select>';
         const best=carBestWindow(team,byId,len,race);
-        const curCovGaps=times.filter(t=>!members.some(m=>driverFree(m,t.s,t.e))).length;
-        const bestHint=(best && best.gaps<curCovGaps)? '<span class="meta" style="color:var(--green);cursor:pointer;text-decoration:underline" data-action="usebest" data-key="'+key+'" data-win="'+best.w+'">better fit: #'+best.w+' '+START_LABELS[best.w]+' ('+(best.gaps?best.gaps+' gaps':'full cover')+'), use</span>' : '';
+        const winTabs='<span style="display:inline-flex;gap:5px;flex-wrap:wrap;align-items:center"><span class="meta" style="font-size:9px;text-transform:uppercase;letter-spacing:.06em">start</span>'+Object.keys(START_OFFSETS).map(Number).map(w=>{
+          const on=w===win, isBest=best&&best.w===w;
+          return '<button class="btn '+(on?'btn-amber':'btn-ghost')+'" data-action="carwin" data-key="'+key+'" data-win="'+w+'" title="start '+START_LABELS[w]+(isBest?' · best coverage for this car':'')+'" style="font-size:10px;padding:5px 10px">'+START_LABELS[w]+(isBest?' <span style="color:'+(on?'#0a0a0a':'var(--green)')+'">●</span>':'')+'</button>';
+        }).join('')+'</span>';
         html+='<div class="stintcar"><div style="display:flex;align-items:center;gap:10px;margin-bottom:12px;flex-wrap:wrap"><span class="swatch" style="background:'+col+'"></span><span class="head" style="letter-spacing:.04em;color:#fff;font-size:15px">'+(_renaming===key
           ? esc(cls)+' · <input class="avfree" data-action="renamesave" data-key="'+key+'" value="'+esc(carLabel(cls,tier,ti)||'')+'" placeholder="'+label[0]+(ti+1)+'" style="font-size:13px;padding:3px 7px;width:150px">'
-          : esc(cls)+' · '+(carLabel(cls,tier,ti)?esc(carLabel(cls,tier,ti))+' <span class="meta" style="font-size:11px">'+label[0]+(ti+1)+'</span>':label[0]+(ti+1))+(isAdmin()?' <span data-action="renamecar" data-key="'+key+'" title="rename this car" style="cursor:pointer;font-size:12px;opacity:.6">✎</span>':''))+'</span>'+winSel+badge+bestHint+(fp.anyCfg?'<span class="meta" style="color:var(--dim)">⛽ '+fp.totLaps+' laps · '+fp.totFuel+'L · '+fp.pits+' stop'+(fp.pits===1?'':'s')+(fp.lostSec?' ('+fmtLost(fp.lostSec)+' lost)':'')+'</span>':'')+'</div>';
+          : esc(cls)+' · '+(carLabel(cls,tier,ti)?esc(carLabel(cls,tier,ti))+' <span class="meta" style="font-size:11px">'+label[0]+(ti+1)+'</span>':label[0]+(ti+1))+(isAdmin()?' <span data-action="renamecar" data-key="'+key+'" title="rename this car" style="cursor:pointer;font-size:12px;opacity:.6">✎</span>':''))+'</span>'+winTabs+badge+(fp.anyCfg?'<span class="meta" style="color:var(--dim)">⛽ '+fp.totLaps+' laps · '+fp.totFuel+'L · '+fp.pits+' stop'+(fp.pits===1?'':'s')+(fp.lostSec?' ('+fmtLost(fp.lostSec)+' lost)':'')+'</span>':'')+'</div>';
         if(isAdmin()&&carName){ const bc=(state.fuelCfg.byCar||{})[carName]||{}; const def=resolveFuel(carName);
-          html+='<div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin:-4px 0 10px"><span class="meta" style="font-size:10px;text-transform:uppercase;letter-spacing:.04em">'+esc(carName)+' fuel</span>'
-            +'<label class="meta" style="font-size:10px">tank <input type="number" min="0" step="1" value="'+(bc.tankL||'')+'" placeholder="'+(def.tankL||'—')+'" data-action="cartank" data-car="'+esc(carName)+'" style="width:60px;padding:4px;font-size:11px">L</label>'
-            +'<label class="meta" style="font-size:10px">per lap <input type="number" min="0" step="0.1" value="'+(bc.fuelPerLap||'')+'" placeholder="'+(def.fuelPerLap||'—')+'" data-action="carfuel" data-car="'+esc(carName)+'" style="width:60px;padding:4px;font-size:11px">L</label>'
-            +'<span class="meta" style="font-size:10px">blank = the global default above</span></div>';
+          html+='<div class="carfuel"><span class="meta" style="font-size:10px;text-transform:uppercase;letter-spacing:.05em;color:var(--yellow)">'+esc(carName)+'</span>'
+            +'<label>tank <input type="number" min="0" step="1" value="'+(bc.tankL||'')+'" placeholder="'+(def.tankL||'—')+'" data-action="cartank" data-car="'+esc(carName)+'">L</label>'
+            +'<label>per lap <input type="number" min="0" step="0.1" value="'+(bc.fuelPerLap||'')+'" placeholder="'+(def.fuelPerLap||'—')+'" data-action="carfuel" data-car="'+esc(carName)+'">L</label>'
+            +'<span class="meta" style="font-size:10px">blank = global default</span></div>';
         }
-        html+='<div class="stintwrap"><div class="stintgrid" style="grid-template-columns:150px repeat('+times.length+',minmax(84px,1fr))">';
+        html+='<div class="stintwrap" data-key="'+key+'"><div class="stintgrid" style="grid-template-columns:150px repeat('+times.length+',minmax(84px,1fr))">';
         html+='<div class="sg-corner">stint →</div>';
         times.forEach((t,i)=>{ const wx=weatherAt(t.s,off,win); html+='<div class="sg-time"><b>'+(i+1)+'</b>'+fmtClock(t.s)+(wx?'<div style="font-size:9px;color:'+(wx.wet?'#6ea8ff':wx.night?'var(--dim)':'var(--amber)')+'">'+wx.icon+' '+wx.label+'</div>':'')+'</div>'; });
         html+='<div class="sg-label" style="font-family:Prompt;font-weight:600;color:#fff;text-transform:uppercase;font-size:11px;letter-spacing:.05em">Driving</div>';
@@ -1079,7 +1082,9 @@ function renderContent(){
   const byId={}; Object.keys(model).forEach(c=>model[c].forEach(d=>byId[d.id]=d));
   renderSummary(model);
   const el=document.getElementById('content');
+  const _sx={}; el.querySelectorAll('.stintwrap[data-key]').forEach(w=>{ if(w.scrollLeft) _sx[w.dataset.key]=w.scrollLeft; });   // keep horizontal scroll across re-renders
   el.innerHTML = state.tab==='event' ? renderEventTab() : state.tab==='availability' ? renderAvail() : state.tab==='teams' ? renderTeams(byId) : state.tab==='stints' ? renderStints(byId) : renderDrivers(model);
+  if(Object.keys(_sx).length) el.querySelectorAll('.stintwrap[data-key]').forEach(w=>{ const v=_sx[w.dataset.key]; if(v!=null) w.scrollLeft=v; });
 }
 
 function setStatus(t){ const s=document.getElementById('status'); s.textContent=t; if(t) setTimeout(()=>{if(s.textContent===t)s.textContent='';},3000); }
@@ -1139,9 +1144,8 @@ document.getElementById('content').addEventListener('change',e=>{
     if(state.teams[tc] && state.teams[tc][tt] && state.teams[tc][tt][tj]) state.teams[tc][tt][tj].push(id);
     save(); renderContent();
   }
-  else if(state.stintsLocked && (a==='stintwin'||a==='carwin'||a==='stintlen'||a==='stintrace')){ setStatus('Stints are locked — unlock on the Stints tab to change block length, race or start windows.'); renderContent(); }
+  else if(state.stintsLocked && (a==='stintwin'||a==='stintlen'||a==='stintrace')){ setStatus('Stints are locked — unlock on the Stints tab to change block length, race or start windows.'); renderContent(); }
   else if(a==='stintwin'){ state.stint.window=+e.target.value; Object.keys(state.stintAssign).forEach(k=>{ if(!state.stintWin[k]) delete state.stintAssign[k]; }); save(); renderContent(); }   // default change replans only cars WITHOUT a per-car window
-  else if(a==='carwin'){ const k=e.target.dataset.key; state.stintWin[k]=+e.target.value; delete state.stintAssign[k]; save(); renderContent(); }
   else if(a==='stintlen'){ state.stint.len=Math.max(10,+e.target.value||60); save(); renderContent(); }
   else if(a==='stintrace'){ state.stint.race=Math.max(30,+e.target.value||360); save(); renderContent(); }
   else if(a==='fueltank'){ state.fuelCfg.tankL=Math.max(0,+e.target.value||0); save(); renderContent(); }
@@ -1152,12 +1156,13 @@ document.getElementById('content').addEventListener('change',e=>{
     if(a==='cartank'){ if(v>0)bc.tankL=v; else delete bc.tankL; } else { if(v>0)bc.fuelPerLap=v; else delete bc.fuelPerLap; }
     if(!Object.keys(bc).length) delete state.fuelCfg.byCar[car];
     save(); renderContent(); }
-  else if(a==='wxstart'||a==='wxtemp'||a==='wxmult'||a==='wxwetfrom'||a==='wxwet'){ const W=(state.evWeather[state.evsel]=state.evWeather[state.evsel]||{src:'manual'});
+  else if(a==='wxstart'||a==='wxtemp'||a==='wxmult'||a==='wxwetfrom'||a==='wxwet'||a==='wxrain'){ const W=(state.evWeather[state.evsel]=state.evWeather[state.evsel]||{src:'manual'});
     if(a==='wxstart'){ const v=e.target.value; if(v){ const p=v.split(':'); W.startTod=(+p[0])*60+(+p[1]); } else delete W.startTod; }
     else if(a==='wxtemp'){ W.tempC=e.target.value===''?null:(+e.target.value); }
     else if(a==='wxmult'){ W.mult=+e.target.value||1; }
     else if(a==='wxwetfrom'){ W.wetFrom=e.target.value===''?null:(+e.target.value); }
     else if(a==='wxwet'){ W.wet=e.target.checked; }
+    else if(a==='wxrain'){ W.rainPct=e.target.value===''?null:Math.max(0,Math.min(100,+e.target.value)); }
     save(); renderContent(); }
 });
 document.getElementById('content').addEventListener('click',e=>{
@@ -1214,14 +1219,14 @@ document.getElementById('content').addEventListener('click',e=>{
     save(); renderContent(); return;
   }
   if(!isAdmin()) return;
-  const winBtn=e.target.closest&&e.target.closest('button[data-action="stintwin"]');
-  if(winBtn){ if(state.stintsLocked){ setStatus('Stints are locked — unlock to change the start window.'); return; } state.stint.window=+winBtn.value; Object.keys(state.stintAssign).forEach(k=>{ if(!state.stintWin[k]) delete state.stintAssign[k]; }); save(); renderContent(); return; }   // cars with their own start keep it (and their stints)
+  const cwBtn=e.target.closest&&e.target.closest('button[data-action="carwin"]');
+  if(cwBtn){ if(!isAdmin()) return; if(state.stintsLocked){ setStatus('Stints are locked — unlock to change the start window.'); return; }
+    state.stintWin[cwBtn.dataset.key]=+cwBtn.dataset.win; save(); renderContent(); return; }   // re-times the SAME stint plan — assignments are kept, conflicts recompute
   const lane=e.target.closest&&e.target.closest('[data-lanecell]');
   if(lane){ const k=lane.dataset.key,b=+lane.dataset.block,d=+lane.dataset.driver,a=state.stintAssign[k]; if(a){ a[b]=(a[b]===d)?null:d; save(); renderContent(); } return; }
   if(e.target.dataset.action==='carlock'){ if(!isAdmin())return; const d=state.drivers.find(x=>x.id==e.target.dataset.id); if(d){ d.carLock=!d.carLock; save(); renderContent(); } return; }
   if(e.target.dataset.action==='remove'){ state.drivers=state.drivers.filter(x=>x.id!=e.target.dataset.id); generate(); save(); renderContent(); }
   else if(e.target.dataset.action==='stintreset'){ if(state.stintsLocked){ setStatus('Stints are locked — unlock to auto-fill all.'); return; } state.stintAssign={}; state.stintSig=''; save(); renderContent(); }
-  else if(e.target.dataset.action==='usebest'){ if(state.stintsLocked){ setStatus('Stints are locked — unlock to change the window.'); return; } const k=e.target.dataset.key; state.stintWin[k]=+e.target.dataset.win; delete state.stintAssign[k]; save(); renderContent(); }
   else if(e.target.dataset.action==='stintlock'){ if(!isAdmin())return; state.stintsLocked=!state.stintsLocked; save(); renderContent(); setStatus(state.stintsLocked?'Stints locked — auto-fill and window changes will leave them alone.':'Stints unlocked.'); }
   else if(e.target.dataset.action==='teamlock'){ if(!isAdmin())return; state.teamsLocked=!state.teamsLocked; save(); renderContent(); setStatus(state.teamsLocked?'Line-up locked — Generate/Import will leave it alone.':'Line-up unlocked.'); }
   else if(e.target.closest&&e.target.closest('[data-action="renamecar"]')){ if(!isAdmin())return; _renaming=e.target.closest('[data-action="renamecar"]').dataset.key; renderContent(); const inp=document.querySelector('#content input[data-action="renamesave"]'); if(inp){ inp.focus(); inp.select(); } }
