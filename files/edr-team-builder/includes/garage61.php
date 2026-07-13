@@ -168,9 +168,11 @@ function edr_g61_roster($token, $trackIds, $teamSlug) {
         if ($name === '') $name = !empty($drv['name']) ? $drv['name'] : (!empty($drv['slug']) ? $drv['slug'] : 'Unknown');
         $car  = isset($lap['car']) && !empty($lap['car']['name']) ? $lap['car']['name'] : 'Unknown car';
         if (!isset($bucket[$name])) $bucket[$name] = array();
-        if (!isset($bucket[$name][$car])) $bucket[$name][$car] = array('clean' => array(), 'total' => 0);
+        if (!isset($bucket[$name][$car])) $bucket[$name][$car] = array('clean' => array(), 'total' => 0, 'last' => '');
         $bucket[$name][$car]['total']++;
         if (!empty($lap['clean']) && isset($lap['lapTime'])) $bucket[$name][$car]['clean'][] = floatval($lap['lapTime']);
+        // most recent outing per car (ISO strings compare lexicographically) — drives the default car pick
+        if (!empty($lap['startTime']) && strcmp((string) $lap['startTime'], $bucket[$name][$car]['last']) > 0) $bucket[$name][$car]['last'] = (string) $lap['startTime'];
     }
 
     $roster = array();
@@ -179,9 +181,10 @@ function edr_g61_roster($token, $trackIds, $teamSlug) {
         $cs = array();
         foreach ($cars as $car => $v) {
             $cs[$car] = array(
-                'laps'      => $v['total'],
-                'medianLap' => edr_g61_median($v['clean']),
-                'cleanPct'  => $v['total'] ? round(count($v['clean']) / $v['total'], 3) : 0,
+                'laps'       => $v['total'],
+                'medianLap'  => edr_g61_median($v['clean']),
+                'cleanPct'   => $v['total'] ? round(count($v['clean']) / $v['total'], 3) : 0,
+                'lastDriven' => ($v['last'] !== '') ? $v['last'] : null,
             );
         }
         $ir = isset($ratings[edr_tb_namekey($name)]) ? $ratings[edr_tb_namekey($name)] : null;

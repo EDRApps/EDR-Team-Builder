@@ -307,7 +307,7 @@ function applyImport(payload){
     var prev=prevByKey[nameKey(r.name)];
     var locked=!!(prev&&prev.carLock);
     var keep=(locked&&prev.assignedCar&&r.cars&&r.cars[prev.assignedCar])?prev.assignedCar:null;
-    drivers.push({id:id++, name:r.name, cars:r.cars, assignedCar:keep||fastestCar(r.cars), avail:null, irating:(typeof r.irating==='number'?r.irating:(prev?prev.irating:null)), carLock:locked});
+    drivers.push({id:id++, name:r.name, cars:r.cars, assignedCar:keep||lastCar(r.cars), avail:null, irating:(typeof r.irating==='number'?r.irating:(prev?prev.irating:null)), carLock:locked});
   });
   state.drivers=drivers; state.stintAssign={}; state.stintSig=''; state.stintWin={};
   applyAvailToDrivers();  // in-house per-event availability is the single source of truth

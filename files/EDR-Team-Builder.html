@@ -223,9 +223,14 @@ function fastestCar(cars){
   Object.keys(cars||{}).forEach(c=>{ const m=cars[c]&&cars[c].medianLap; if(m!=null&&m<bt){ bt=m; best=c; } });
   return best||Object.keys(cars||{})[0];
 }
+function lastCar(cars){   // most recently driven car (lastDriven ISO from the G61 import); falls back to fastest
+  let best=null, bt='';
+  Object.keys(cars||{}).forEach(c=>{ const t=cars[c]&&cars[c].lastDriven; if(t && t>bt){ bt=t; best=c; } });
+  return best || fastestCar(cars);
+}
 function seed(list){
   let id=1;
-  state.drivers = list.map(d => ({ id:id++, name:d.name, cars:d.cars||{}, assignedCar:fastestCar(d.cars), avail:d.avail||null }));
+  state.drivers = list.map(d => ({ id:id++, name:d.name, cars:d.cars||{}, assignedCar:lastCar(d.cars), avail:d.avail||null }));
   seedSpaAvail();
 }
 
@@ -270,7 +275,7 @@ function eventPool(){
 }
 function computeModel(){
   const enriched = eventPool().map(d=>{
-    const car = (d.cars && d.cars[d.assignedCar]) ? d.assignedCar : fastestCar(d.cars);
+    const car = (d.cars && d.cars[d.assignedCar]) ? d.assignedCar : ((d.carLock && d.assignedCar) ? d.assignedCar : lastCar(d.cars));   // a hand-picked (locked) car sticks; otherwise default to the car they drove most recently
     const st = (d.cars && d.cars[car]) || {laps:0,medianLap:null,cleanPct:0};
     return Object.assign({}, d, {_car:car,_class:classOf(car),_laps:st.laps,_median:st.medianLap,_clean:st.cleanPct});
   });
@@ -829,6 +834,7 @@ function renderTeams(byId){
 
 function renderDrivers(model){
   let html='';
+  const allCars=[...new Set(state.drivers.reduce((a,x)=>a.concat(Object.keys(x.cars||{})),[]))].sort();   // any car driven at this track this season, by anyone on the team
   if(state.evsel){
     const pool=eventPool().length, hidden=state.drivers.length-pool;
     const ev=calEvent(state.evsel);
@@ -841,6 +847,8 @@ function renderDrivers(model){
     grp.forEach((d,i)=>{
       const cars=Object.keys(d.cars||{}).sort((a,b)=>((d.cars[a].medianLap==null?1e9:d.cars[a].medianLap)-(d.cars[b].medianLap==null?1e9:d.cars[b].medianLap)));
       let opts=cars.map(c=>'<option value="'+esc(c)+'"'+(c===d.assignedCar?' selected':'')+'>'+esc(c)+'</option>').join('');
+      const others=allCars.filter(c=>!(d.cars&&d.cars[c]));
+      if(others.length) opts+='<optgroup label="— any car at this track —">'+others.map(c=>'<option value="'+esc(c)+'"'+(c===d.assignedCar?' selected':'')+'>'+esc(c)+' (no laps)</option>').join('')+'</optgroup>';
       html+='<div class="row '+d._tier+'"><span class="meta" style="width:20px">#'+(i+1)+'</span><span style="font-size:13px;min-width:110px">'+esc(d.name)+'</span><select data-action="assign" data-id="'+d.id+'">'+opts+'</select>'+(isAdmin()?'<span data-action="carlock" data-id="'+d.id+'" title="'+(d.carLock?'car locked — imports keep this choice; click to unlock':'lock this car choice so imports keep it')+'" style="cursor:pointer;font-size:12px;opacity:'+(d.carLock?'1':'.4')+'">'+(d.carLock?'🔒':'🔓')+'</span>':(d.carLock?'<span title="car locked by admin" style="font-size:12px">🔒</span>':''))+'<span class="meta">'+fmtLap(d._median)+' · '+d._laps+' laps · '+Math.round(d._clean*100)+'% clean'+(d.avail?' · '+d.avail.pct+'% avail':'')+'</span><span class="tier '+d._tier+'">'+d._tier.toUpperCase()+' · '+(d._score*100).toFixed(0)+'</span><button class="x" data-action="remove" data-id="'+d.id+'">✕</button></div>';
     });
     html+='</div></div>';
@@ -1103,7 +1111,7 @@ document.getElementById('load').addEventListener('click',()=>{
     const prevByKey={}; state.drivers.forEach(d=>prevByKey[nameKey(d.name)]=d);   // keep locked car choices across imports
     state.drivers=arr.map(r=>{ const prev=prevByKey[nameKey(String(r.name||''))]; const cars=(r.cars&&typeof r.cars==='object')?r.cars:{};
       const locked=!!(prev&&prev.carLock); const keep=(locked&&prev.assignedCar&&cars[prev.assignedCar])?prev.assignedCar:null;
-      return {id:id++,name:String(r.name||('Driver '+id)),cars:cars,assignedCar:keep||fastestCar(cars),avail:r.avail||null,irating:(typeof r.irating==='number'?r.irating:(prev?prev.irating:null)),carLock:locked}; });
+      return {id:id++,name:String(r.name||('Driver '+id)),cars:cars,assignedCar:keep||lastCar(cars),avail:r.avail||null,irating:(typeof r.irating==='number'?r.irating:(prev?prev.irating:null)),carLock:locked}; });
     generate(); save(); document.getElementById('importbox').classList.add('hide'); renderContent();
     setStatus('Imported '+state.drivers.length+' drivers');
   }catch(e){ setStatus('Import failed: '+e.message); }
@@ -1268,7 +1276,7 @@ document.addEventListener('pointerup',e=>{
 // by name, so a fresh data pull updates pace WITHOUT wiping manual teams/cars/stints.
 function refreshFromSample(){
   const byName={}; SAMPLE.forEach(s=>byName[s.name]=s);
-  state.drivers.forEach(d=>{ const s=byName[d.name]; if(s){ d.cars=s.cars; if('avail' in s) d.avail=s.avail; if(!d.cars || !d.cars[d.assignedCar]) d.assignedCar=fastestCar(d.cars); } });
+  state.drivers.forEach(d=>{ const s=byName[d.name]; if(s){ d.cars=s.cars; if('avail' in s) d.avail=s.avail; if(!d.cars || !d.cars[d.assignedCar]) d.assignedCar=lastCar(d.cars); } });
 }
 if(!load()){ seed(SAMPLE); } else { refreshFromSample(); seedSpaAvail(); }
 if(state.evsel){ const _ev=calEvent(state.evsel); if(_ev){ const _r=state.stint.race; applyEventTiming(_ev); if(_r>0) state.stint.race=_r; } }  // rebuild timing globals from the restored event (don't trust persisted globals)
