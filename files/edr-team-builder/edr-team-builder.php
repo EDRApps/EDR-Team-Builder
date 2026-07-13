@@ -2,7 +2,7 @@
 /**
  * Plugin Name: EDR Team Builder
  * Description: Endurotech Racing endurance team + stint planner. Pulls Garage 61 pace and official iRacing session times, collects driver availability in-house, and builds Pro/Casual teams and stint rotations. Add the [edr_team_builder] shortcode to a page.
- * Version: 2.4.3
+ * Version: 2.4.4
  * Author: Endurotech Racing
  * License: GPL-2.0-or-later
  */
@@ -11,7 +11,7 @@ if (!defined('ABSPATH')) exit; // no direct access
 
 define('EDR_TB_DIR', plugin_dir_path(__FILE__));
 define('EDR_TB_URL', plugin_dir_url(__FILE__));
-define('EDR_TB_VER', '2.4.3');
+define('EDR_TB_VER', '2.4.4');
 
 require_once EDR_TB_DIR . 'includes/garage61.php';
 require_once EDR_TB_DIR . 'includes/iracing.php';
@@ -136,8 +136,12 @@ function edr_tb_rest_iracing(WP_REST_Request $req) {
     }
     $fresh = $req->get_param('fresh');
     if (!$fresh) {
+        // cache is keyed to the plugin version: a stale pre-upgrade payload (e.g. the old
+        // one-week-per-season walker's list) must not survive a plugin update for 12h
         $cache = get_transient('edr_tb_iracing');
-        if ($cache) return rest_ensure_response($cache);
+        if ($cache && is_array($cache) && (($cache['ver'] ?? '') === EDR_TB_VER)) {
+            return rest_ensure_response($cache['payload']);
+        }
     }
     $seasons = edr_ir_seasons($s['iracing_url'], $s['iracing_key']);
     if (is_wp_error($seasons)) {
@@ -145,7 +149,7 @@ function edr_tb_rest_iracing(WP_REST_Request $req) {
         return rest_ensure_response(array('ok' => false, 'reason' => 'error', 'message' => $seasons->get_error_message(), 'seasons' => array()));
     }
     $payload = array('ok' => true, 'seasons' => $seasons);
-    set_transient('edr_tb_iracing', $payload, 12 * HOUR_IN_SECONDS);
+    set_transient('edr_tb_iracing', array('ver' => EDR_TB_VER, 'payload' => $payload), 12 * HOUR_IN_SECONDS);
     return rest_ensure_response($payload);
 }
 

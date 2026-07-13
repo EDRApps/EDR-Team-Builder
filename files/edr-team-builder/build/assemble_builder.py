@@ -212,15 +212,26 @@ function irMatchFor(ev){
   if(!ev||!IR_SEASONS.length) return null;
   var nk=function(s){return String(s||'').toLowerCase().replace(/[^a-z0-9]/g,'');};
   var evk=nk(ev.n), evtk=nk(ev.track);
-  var best=null,bs=0;
+  var evDate=ev.s?Date.parse(ev.s+'T00:00:00Z'):NaN;
+  var best=null,bs=-1;
   IR_SEASONS.forEach(function(se){
     var nn=nk(se.name), tk=nk(se.track), sc=0;
     // token overlap on the event name
     (ev.n.toLowerCase().match(/[a-z0-9]+/g)||[]).forEach(function(w){ if(w.length>2 && nn.indexOf(w)>=0) sc+=2; });
     if(evtk && tk && (tk.indexOf(evtk.slice(0,8))>=0 || evtk.indexOf(tk.slice(0,8))>=0)) sc+=3;
+    // date proximity is decisive: an official round runs in its own calendar week. Without it,
+    // same-track different-series rounds collide (Spa 24HR was auto-applied to Creventic 12H Spa).
+    if(se.start_date && !isNaN(evDate)){
+      var sd=Date.parse(se.start_date+'T00:00:00Z');
+      if(!isNaN(sd)){ var dd=Math.abs(sd-evDate)/86400000;
+        if(dd<=2) sc+=4; else if(dd<=6) sc+=2; else return;   // a week apart = a different round
+      }
+    }
+    // race-length sanity: a 12h event must not adopt a 24h session's times
+    if(se.race_min && ev.dur){ var dm=Math.abs(se.race_min-(ev.dur*60)); if(dm<=30) sc+=2; else if(dm>=120) sc-=3; }
     if(sc>bs){ bs=sc; best=se; }
   });
-  return bs>=3?best:null;
+  return bs>=5?best:null;
 }
 function autoApplyTiming(){  // auto-apply official session times to the selected event (once; a manual pick or revert wins)
   try{
@@ -340,6 +351,7 @@ function renderSetup(){
     h+='<select data-s="irsel"><option value="">(pick the matching iRacing event)</option>'+IR_SEASONS.map(function(se,i){var sel=(match&&se===match)?' selected':''; return '<option value="'+i+'"'+sel+'>'+esc(se.name)+' · '+esc(se.track)+(se.race_min?' · '+Math.round(se.race_min/60)+'h':'')+'</option>';}).join('')+'</select>';
     h+='<button class="btn btn-amber" data-s="irapply">Apply to '+esc(selEv.n)+'</button>';
     h+='<span class="meta" data-s="irrefresh" style="cursor:pointer;text-decoration:underline">refresh</span>';
+    if(!match && IR_SEASONS.length) h+='<div class="meta" style="margin-top:6px;width:100%">No iRacing round matches '+esc(selEv.n)+' yet (same week + similar race length required) — rounds usually appear close to race week. Pick one manually above, or refresh.</div>';
     h+='</div>';
     if(cur&&cur.offsets) h+='<div class="meta" style="margin-top:8px;color:var(--green)">Using official times'+(cur.src?' from "'+esc(cur.src)+'"':'')+' — '+Object.keys(cur.offsets||{}).length+' starts, '+Math.round((cur.raceMin||0)/60)+'h race. <span data-s="irclear" style="cursor:pointer;text-decoration:underline;color:var(--red)">revert to calendar</span></div>';
     if(IR_STATUS) h+='<div class="meta" style="margin-top:8px">'+esc(IR_STATUS)+'</div>';
