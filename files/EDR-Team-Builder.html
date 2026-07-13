@@ -327,6 +327,7 @@ function generate(){
     next[cls]={pro:buildPool(grp.filter(d=>d._tier==='pro')), casual:buildPool(grp.filter(d=>d._tier==='casual'))};
   });
   state.teams=next;
+  if(!state.stintsLocked){ state.stintAssign={}; state.stintSig=''; }   // full regenerate invalidates the stint plan (the sig no longer watches teams)
 }
 
 function esc(s){ return String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
@@ -860,16 +861,17 @@ function applyIrWeather(ev, se){  // map an iRacing schedule weather{} onto stat
   let startTod=null; if(w.simulated_start_time){ const m=(''+w.simulated_start_time).match(/T(\d\d):(\d\d)/); if(m) startTod=(+m[1])*60+(+m[2]); }
   let temp=(w.temp_value!=null)?+w.temp_value:null; if(temp!=null && (+w.temp_units)===0) temp=Math.round((temp-32)*5/9);  // iRacing 0 = Fahrenheit
   const wetBase=((+w.precip_option)>0)||(w.forecast_options&&(+w.forecast_options.precipitation)>0);
-  state.evWeather[evKey(ev)]={ src:'iracing', startTod:(startTod!=null?startTod:720), mult:(+w.simulated_time_multiplier)||1, tempC:temp, wet:!!wetBase };
+  state.evWeather[evKey(ev)]={ src:'iracing', startTod:(startTod!=null?startTod:720), mult:(+w.simulated_time_multiplier)||1, tempC:temp, wet:!!wetBase, todOffsets:(Array.isArray(w.simulated_time_offsets)?w.simulated_time_offsets.map(Number):null) };
 }
 function blockTimes(off,len,race){ const n=Math.ceil(race/len),t=[]; for(let i=0;i<n;i++)t.push({s:off+i*len,e:off+Math.min((i+1)*len,race)}); return t; }
 /* ---- weather (F7): maps a stint's clock offset to sim conditions for the event ---- */
-function weatherAt(absMin, raceStartOff){
+function weatherAt(absMin, raceStartOff, winNo){
   const w=state.evWeather&&state.evWeather[state.evsel]; if(!w) return null;
   const off=(raceStartOff!=null)?raceStartOff:(START_OFFSETS[state.stint.window]||0);
   const elapsed=Math.max(0, absMin-off);                     // real minutes since this car's green flag
   const mult=(+w.mult)||1;                                   // sim minutes per real minute (day/night rollover)
-  const todMin=((((+w.startTod||0) + elapsed*mult)%1440)+1440)%1440;
+  const winAdd=(w.todOffsets&&winNo!=null&&isFinite(w.todOffsets[winNo-1]))?+w.todOffsets[winNo-1]:0;   // each start window is its own session with its own sim clock
+  const todMin=((((+w.startTod||0) + winAdd + elapsed*mult)%1440)+1440)%1440;
   const night = todMin<6*60 || todMin>=19*60;
   const wet = !!w.wet || (w.wetFrom!=null && w.wetFrom!=='' && elapsed>=(+w.wetFrom));
   const hh=Math.floor(todMin/60), mm=Math.round(todMin%60);
@@ -948,8 +950,8 @@ function carFuelPlan(times, arr, byId){
 function fmtLost(sec){ if(!sec) return '0s'; const m=Math.floor(sec/60), s=sec%60; return m ? (m+'m'+(s?(' '+s+'s'):'')) : (s+'s'); }
 function renderStints(byId){
   const len=Math.max(10,state.stint.len), race=Math.max(30,state.stint.race);
-  const sig=[len,race,JSON.stringify(state.teams)].join('|');
-  if(!state.stintsLocked && state.stintSig!==sig){ state.stintAssign={}; state.stintSig=sig; }  // block length / teams changed -> fresh auto-plan (skipped while stints are locked)
+  const sig=[len,race].join('|');
+  if(!state.stintsLocked && state.stintSig!==sig){ state.stintAssign={}; state.stintSig=sig; }  // block/race length changed -> fresh auto-plan; team moves do NOT wipe manual stints (moved-out drivers render as gaps)
   let html='<div class="importbox" style="display:flex;gap:18px;flex-wrap:wrap;align-items:flex-end">';
   html+='<div class="ctl"><label>DEFAULT START (LOCAL · UTC)</label><select data-action="stintwin">'+
     Object.keys(START_OFFSETS).map(Number).map(w=>'<option value="'+w+'"'+(w===state.stint.window?' selected':'')+'>#'+w+' · '+START_LABELS[w]+'</option>').join('')+'</select></div>';
@@ -1037,7 +1039,7 @@ function renderStints(byId){
         }
         html+='<div class="stintwrap"><div class="stintgrid" style="grid-template-columns:150px repeat('+times.length+',minmax(84px,1fr))">';
         html+='<div class="sg-corner">stint →</div>';
-        times.forEach((t,i)=>{ const wx=weatherAt(t.s,off); html+='<div class="sg-time"><b>'+(i+1)+'</b>'+fmtClock(t.s)+(wx?'<div style="font-size:9px;color:'+(wx.wet?'#6ea8ff':wx.night?'var(--dim)':'var(--amber)')+'">'+wx.icon+' '+wx.label+'</div>':'')+'</div>'; });
+        times.forEach((t,i)=>{ const wx=weatherAt(t.s,off,win); html+='<div class="sg-time"><b>'+(i+1)+'</b>'+fmtClock(t.s)+(wx?'<div style="font-size:9px;color:'+(wx.wet?'#6ea8ff':wx.night?'var(--dim)':'var(--amber)')+'">'+wx.icon+' '+wx.label+'</div>':'')+'</div>'; });
         html+='<div class="sg-label" style="font-family:Prompt;font-weight:600;color:#fff;text-transform:uppercase;font-size:11px;letter-spacing:.05em">Driving</div>';
         arr.forEach((id,i)=>{
           const t=times[i], m=(id!=null&&mem.has(id))?byId[id]:null;
@@ -1130,7 +1132,7 @@ document.getElementById('content').addEventListener('change',e=>{
     save(); renderContent();
   }
   else if(state.stintsLocked && (a==='stintwin'||a==='carwin'||a==='stintlen'||a==='stintrace')){ setStatus('Stints are locked — unlock on the Stints tab to change block length, race or start windows.'); renderContent(); }
-  else if(a==='stintwin'){ state.stint.window=+e.target.value; state.stintWin={}; state.stintAssign={}; save(); renderContent(); }
+  else if(a==='stintwin'){ state.stint.window=+e.target.value; Object.keys(state.stintAssign).forEach(k=>{ if(!state.stintWin[k]) delete state.stintAssign[k]; }); save(); renderContent(); }   // default change replans only cars WITHOUT a per-car window
   else if(a==='carwin'){ const k=e.target.dataset.key; state.stintWin[k]=+e.target.value; delete state.stintAssign[k]; save(); renderContent(); }
   else if(a==='stintlen'){ state.stint.len=Math.max(10,+e.target.value||60); save(); renderContent(); }
   else if(a==='stintrace'){ state.stint.race=Math.max(30,+e.target.value||360); save(); renderContent(); }
@@ -1205,7 +1207,7 @@ document.getElementById('content').addEventListener('click',e=>{
   }
   if(!isAdmin()) return;
   const winBtn=e.target.closest&&e.target.closest('button[data-action="stintwin"]');
-  if(winBtn){ if(state.stintsLocked){ setStatus('Stints are locked — unlock to change the start window.'); return; } state.stint.window=+winBtn.value; state.stintWin={}; state.stintAssign={}; save(); renderContent(); return; }
+  if(winBtn){ if(state.stintsLocked){ setStatus('Stints are locked — unlock to change the start window.'); return; } state.stint.window=+winBtn.value; Object.keys(state.stintAssign).forEach(k=>{ if(!state.stintWin[k]) delete state.stintAssign[k]; }); save(); renderContent(); return; }   // cars with their own start keep it (and their stints)
   const lane=e.target.closest&&e.target.closest('[data-lanecell]');
   if(lane){ const k=lane.dataset.key,b=+lane.dataset.block,d=+lane.dataset.driver,a=state.stintAssign[k]; if(a){ a[b]=(a[b]===d)?null:d; save(); renderContent(); } return; }
   if(e.target.dataset.action==='carlock'){ if(!isAdmin())return; const d=state.drivers.find(x=>x.id==e.target.dataset.id); if(d){ d.carLock=!d.carLock; save(); renderContent(); } return; }
@@ -1219,6 +1221,7 @@ document.getElementById('content').addEventListener('click',e=>{
   else if(e.target.dataset.action==='delcar'){ const c=e.target.dataset.class,t=e.target.dataset.tier,j=+e.target.dataset.idx; if(state.teams[c]&&state.teams[c][t]&&state.teams[c][t][j]&&!state.teams[c][t][j].length){ state.teams[c][t].splice(j,1);
       const pre=c+'|'+t+'|', nw={}; Object.keys(state.stintWin).forEach(kk=>{ if(kk.indexOf(pre)!==0){ nw[kk]=state.stintWin[kk]; return; } const idx=+kk.slice(pre.length); if(idx<j) nw[kk]=state.stintWin[kk]; else if(idx>j) nw[pre+(idx-1)]=state.stintWin[kk]; }); state.stintWin=nw;   // keep per-car window overrides aligned after the splice
       const nn={}; Object.keys(state.teamNames||{}).forEach(kk=>{ if(kk.indexOf(pre)!==0){ nn[kk]=state.teamNames[kk]; return; } const idx=+kk.slice(pre.length); if(idx<j) nn[kk]=state.teamNames[kk]; else if(idx>j) nn[pre+(idx-1)]=state.teamNames[kk]; }); state.teamNames=nn;   // keep custom names aligned too
+      const na={}; Object.keys(state.stintAssign||{}).forEach(kk=>{ if(kk.indexOf(pre)!==0){ na[kk]=state.stintAssign[kk]; return; } const idx=+kk.slice(pre.length); if(idx<j) na[kk]=state.stintAssign[kk]; else if(idx>j) na[pre+(idx-1)]=state.stintAssign[kk]; }); state.stintAssign=na;   // and the stint plans themselves
       save(); renderContent(); } }
 });
 
