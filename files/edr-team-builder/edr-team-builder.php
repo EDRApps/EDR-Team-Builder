@@ -2,7 +2,7 @@
 /**
  * Plugin Name: EDR Team Builder
  * Description: Endurotech Racing endurance team + stint planner. Pulls Garage 61 pace and official iRacing session times, collects driver availability in-house, and builds Pro/Casual teams and stint rotations. Add the [edr_team_builder] shortcode to a page.
- * Version: 2.4.1
+ * Version: 2.4.2
  * Author: Endurotech Racing
  * License: GPL-2.0-or-later
  */
@@ -11,7 +11,7 @@ if (!defined('ABSPATH')) exit; // no direct access
 
 define('EDR_TB_DIR', plugin_dir_path(__FILE__));
 define('EDR_TB_URL', plugin_dir_url(__FILE__));
-define('EDR_TB_VER', '2.4.1');
+define('EDR_TB_VER', '2.4.2');
 
 require_once EDR_TB_DIR . 'includes/garage61.php';
 require_once EDR_TB_DIR . 'includes/iracing.php';
@@ -173,49 +173,31 @@ function edr_tb_rest_auth(WP_REST_Request $req) {
 
 function edr_tb_rest_avail_get() {
     $all    = get_option('edr_tb_avail', array());
-    $owners = (array) get_option('edr_tb_avail_owners', array());
     $prefs = get_option('edr_tb_prefs', array());
     return rest_ensure_response(array(
         'store'  => empty($all) ? new stdClass() : $all,
-        'locked' => array_keys($owners),
+        'locked' => array(),   // advisory model (2.4.2): no hard per-device locks — see below
         'prefs'  => empty($prefs) ? new stdClass() : $prefs,
     ));
 }
 
 /**
- * Per-driver locking (no accounts): the first browser to submit a name claims it with
- * a random device token; later writes for that name must present the same token.
- * Admins (WP login or X-EDR-Pass) bypass the lock and can release it.
+ * Availability writes are ADVISORY-ONLY as of 2.4.2 (user decision): any device may edit any
+ * driver's blocks — the team runs on trust. The old first-device-token hard lock kept locking
+ * drivers out of their own availability when they switched phone->PC (no accounts, so the
+ * server can't tell "same person, new device" from "someone else"). The legacy release/token
+ * params are accepted and ignored so older clients keep working; edr_tb_avail_owners is unused.
  */
 function edr_tb_rest_avail_set(WP_REST_Request $req) {
     $name = substr(sanitize_text_field((string) $req->get_param('name')), 0, 80);
     if ($name === '') return new WP_Error('bad_req', 'Need a driver name.', array('status' => 400));
-    $isAdmin = edr_tb_req_can_edit($req);
-    $owners  = (array) get_option('edr_tb_avail_owners', array());
 
     if ($req->get_param('release')) {
-        if (!$isAdmin) return new WP_Error('forbidden', 'Only an admin can release a lock.', array('status' => 403));
-        unset($owners[$name]);
-        update_option('edr_tb_avail_owners', $owners, false);
-        return rest_ensure_response(array('ok' => true, 'released' => $name));
+        return rest_ensure_response(array('ok' => true, 'released' => $name));   // no locks to release
     }
 
     $ev = substr(sanitize_text_field((string) $req->get_param('ev')), 0, 120);
     if ($ev === '') return new WP_Error('bad_req', 'Need ev.', array('status' => 400));
-    $tok  = (string) $req->get_param('token');
-    $hash = ($tok !== '') ? hash('sha256', $tok) : '';
-
-    if (!$isAdmin) {
-        if (isset($owners[$name])) {
-            if ($hash === '' || !hash_equals($owners[$name], $hash)) {
-                return new WP_Error('locked', 'This driver is locked to whoever first submitted their availability. Ask an admin to release the lock.', array('status' => 403));
-            }
-        } else {
-            if ($hash === '') return new WP_Error('no_token', 'Missing device token.', array('status' => 400));
-            $owners[$name] = $hash;
-            update_option('edr_tb_avail_owners', $owners, false);
-        }
-    }
 
     $slots = array_slice(array_values(array_unique(array_filter(
         array_map('intval', (array) $req->get_param('slots')),
@@ -236,20 +218,43 @@ function edr_tb_rest_avail_set(WP_REST_Request $req) {
         $pAll[$ev][$name] = array('time' => $time, 'cond' => $cond);
         update_option('edr_tb_prefs', $pAll, false);
     }
-    return rest_ensure_response(array('ok' => true, 'locked' => array_keys($owners)));
+    return rest_ensure_response(array('ok' => true, 'locked' => array()));
 }
 
 function edr_tb_rest_plan_get() {
     return rest_ensure_response(array(
         'plan'     => get_option('edr_tb_plan', null),
+        'rev'      => intval(get_option('edr_tb_plan_rev', 0)),
         'can_edit' => is_user_logged_in(),
         'updated'  => get_option('edr_tb_plan_updated', ''),
     ));
 }
+/**
+ * Optimistic concurrency: clients send the revision they loaded (baseRev); a save based on
+ * a stale revision is rejected with 409 instead of silently clobbering another device's work
+ * (the "stints reshuffled over the weekend" bug — two admin browsers, last write wins).
+ * Clients that don't send baseRev (pre-2.4.2) keep the old last-write-wins behaviour.
+ */
 function edr_tb_rest_plan_set(WP_REST_Request $req) {
+    global $wpdb;
+    // named lock makes the check-then-write atomic: two overlapping saves with the same
+    // baseRev can no longer both pass the guard (the residual ms-window clobber)
+    $locked = $wpdb->get_var("SELECT GET_LOCK('edr_tb_plan_write', 3)");
+    if ((int) $locked !== 1) {
+        return new WP_Error('busy', 'Another save is in progress — try again.', array('status' => 503));
+    }
+    wp_cache_delete('edr_tb_plan_rev', 'options');   // re-read fresh inside the lock (object-cache safety)
+    $rev  = intval(get_option('edr_tb_plan_rev', 0));
+    $base = $req->get_param('baseRev');
+    if ($base !== null && intval($base) !== $rev) {
+        $wpdb->query("SELECT RELEASE_LOCK('edr_tb_plan_write')");
+        return new WP_Error('stale_plan', 'The plan was updated from another device. Latest version reloaded — re-apply your change.', array('status' => 409, 'rev' => $rev));
+    }
     update_option('edr_tb_plan', $req->get_param('plan'), false);
+    update_option('edr_tb_plan_rev', $rev + 1, false);
     update_option('edr_tb_plan_updated', current_time('mysql'), false);
-    return rest_ensure_response(array('ok' => true));
+    $wpdb->query("SELECT RELEASE_LOCK('edr_tb_plan_write')");
+    return rest_ensure_response(array('ok' => true, 'rev' => $rev + 1));
 }
 
 function edr_tb_rest_tracks() {

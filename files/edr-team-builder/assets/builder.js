@@ -1151,19 +1151,67 @@ function releaseLock(name){
 }
 let lastTrackIds=[], _saveT=null;
 function serializePlan(){ return {drivers:state.drivers,w:state.w,proPct:state.proPct,teams:state.teams,stint:state.stint,stintAssign:state.stintAssign,stintWin:state.stintWin,stintSig:state.stintSig,overrides:overrides,meta:IMPORT_META,winStart:WIN_START_MS,startOffsets:START_OFFSETS,startLabels:START_LABELS,matches:lastMatches,trackIds:lastTrackIds,evsel:state.evsel,evWinMin:EV_WIN_MIN,evTiming:state.evTiming,teamsLocked:state.teamsLocked,stintsLocked:state.stintsLocked,teamNames:state.teamNames,fuelCfg:state.fuelCfg,customEvents:state.customEvents,irEvents:state.irEvents,evWeather:state.evWeather,prefStore:state.prefStore}; }
+var _postBusy=false, _postAgain=false;
+function _flushPlan(){
+  if(_postBusy){ _postAgain=true; return; }              // serialize: the retry below re-posts the LATEST state with the updated rev
+  _postBusy=true;
+  apiPOST('plan',{plan:serializePlan(), baseRev:PLAN_REV}).then(function(r){
+    _postBusy=false;
+    if(r&&r.ok&&typeof r.rev==='number'){ PLAN_REV=r.rev; if(_postAgain){ _postAgain=false; _flushPlan(); } }
+    else if(r&&r.code==='stale_plan'){ _postAgain=false; clearTimeout(_saveT); _saveT=null; refreshShared(true); }   // adopt latest; message shown after the pull actually lands
+    else if(_postAgain){ _postAgain=false; _flushPlan(); }
+  }).catch(function(){ _postBusy=false; _postAgain=false; });
+}
 function save(){
   try{ localStorage.setItem('edrTB_local', JSON.stringify({role:state.role,me:state.me,pass:state.pass})); }catch(e){}
   if(!isAdmin()) return;
-  clearTimeout(_saveT); _saveT=setTimeout(function(){ try{ apiPOST('plan',{plan:serializePlan()}); }catch(e){} }, 600);
+  clearTimeout(_saveT); _saveT=setTimeout(function(){ _saveT=null; _flushPlan(); }, 600);
 }
-function loadPlan(){ return apiGET('plan').then(function(r){ var p=r&&r.plan; if(!p||!p.drivers||!p.drivers.length) return false;
+var PLAN_REV=0;
+function _adoptPlan(p, keepEvsel){
+  var _localEv=keepEvsel?state.evsel:null;
   state.drivers=p.drivers; state.w=p.w||state.w; state.proPct=(typeof p.proPct==='number')?p.proPct:state.proPct; state.teams=p.teams||{};
   state.stint=Object.assign(state.stint,p.stint||{}); state.stintAssign=p.stintAssign||{}; state.stintWin=p.stintWin||{}; state.stintSig=p.stintSig||'';
   if(p.overrides)overrides=p.overrides; if(p.meta)IMPORT_META=p.meta; if(p.winStart)WIN_START_MS=p.winStart;
   if(p.startOffsets&&Object.keys(p.startOffsets).length)START_OFFSETS=p.startOffsets; if(p.startLabels&&Object.keys(p.startLabels).length)START_LABELS=p.startLabels;
   if(p.evsel)state.evsel=p.evsel; if(p.evWinMin)EV_WIN_MIN=p.evWinMin; if(p.evTiming)state.evTiming=p.evTiming; state.teamsLocked=!!p.teamsLocked; state.stintsLocked=!!p.stintsLocked;
   state.teamNames=p.teamNames||{}; if(p.fuelCfg)state.fuelCfg=p.fuelCfg; state.customEvents=p.customEvents||[]; state.irEvents=p.irEvents||[]; state.evWeather=p.evWeather||{}; state.prefStore=p.prefStore||{};
-  lastMatches=p.matches||[]; lastTrackIds=p.trackIds||[]; return true; }).catch(function(){return false;}); }
+  lastMatches=p.matches||[]; lastTrackIds=p.trackIds||[];
+  if(_localEv && _localEv!==state.evsel && calEvent(_localEv)){ state.evsel=_localEv; }   // don't yank the viewer off their selected event
+}
+function loadPlan(){ return apiGET('plan').then(function(r){ if(r&&typeof r.rev==='number') PLAN_REV=r.rev; var p=r&&r.plan; if(!p||!p.drivers||!p.drivers.length) return false; _adoptPlan(p); return true; }).catch(function(){return false;}); }
+/* Multi-device convergence: when this tab wakes up (phone unlocked, tab refocused), pull the
+   latest shared state if the server revision moved instead of sitting on stale weekend state.
+   Hardened per adversarial review: monotonic rev guard, re-check for local edits when the GET
+   RESOLVES (not just at entry), per-event availability merge that honours staged ticks, defer
+   while an inline edit has focus, and a force mode for 409 recovery. */
+var _refreshLast=0;
+function _editingNow(){ try{ if(typeof _renaming!=='undefined'&&_renaming!==null) return true; var ae=document.activeElement, c=document.getElementById('content'); return !!(ae&&c&&c.contains(ae)&&/^(INPUT|TEXTAREA|SELECT)$/.test(ae.tagName)); }catch(e){ return false; } }
+function refreshShared(force){
+  var now=Date.now();
+  if(!force && now-_refreshLast<2500) return;           // visibilitychange+focus both fire on wake — one fetch is enough
+  _refreshLast=now;
+  if(!force && (_saveT||_postBusy)) return;             // our own save is queued/in flight; it will reconcile
+  apiGET('plan').then(function(r){
+    if(!(r&&r.plan&&r.plan.drivers&&r.plan.drivers.length)) return;
+    var rev=(typeof r.rev==='number')?r.rev:null;
+    if(rev===null) return;                              // legacy PHP (deploy skew): never blind-adopt on focus
+    if(rev<=PLAN_REV && !force) return;                 // monotonic: a late stale GET must not rewind us
+    if(!force && (_saveT||_postBusy)) return;           // an edit landed while this GET was in flight — let its save reconcile
+    if(!force && _editingNow()){ setTimeout(function(){ refreshShared(); },4000); return; }  // don't rip an open input out from under the user
+    PLAN_REV=rev;
+    _adoptPlan(r.plan, true);
+    if(state.evsel){ var _ev=calEvent(state.evsel); if(_ev){ var _r0=state.stint.race; applyEventTiming(_ev); if(_r0>0) state.stint.race=_r0; } }
+    apiGET('avail').then(function(av){
+      if(av&&av.store){
+        var dirty={}; Object.keys(_availDirty||{}).forEach(function(k){ if(Object.keys(_availDirty[k]||{}).length) dirty[k]=1; });
+        Object.keys(av.store).forEach(function(evk){ if(!dirty[evk]) state.availStore[evk]=av.store[evk]; });   // never wipe staged, unsubmitted ticks — any event
+        if(av.prefs) Object.keys(av.prefs).forEach(function(evk){ if(!dirty[evk]) state.prefStore[evk]=av.prefs[evk]; });
+        LOCKED_NAMES=av.locked||[];
+      }
+    }).catch(function(){}).then(function(){ applyAvailToDrivers(); renderContent(); setStatus(force?'Another device updated the plan — showing the latest; re-apply your last change.':'Synced the latest plan from the server.'); });
+  }).catch(function(){});
+}
 var IR_SEASONS=[], IR_STATUS='';
 function loadIracing(){
   return apiGET('iracing').then(function(r){
@@ -1186,6 +1234,16 @@ function irMatchFor(ev){
   });
   return bs>=3?best:null;
 }
+function autoApplyTiming(){  // auto-apply official session times to the selected event (once; a manual pick or revert wins)
+  try{
+    if(!state.evsel || !IR_SEASONS.length) return;
+    var ev=calEvent(state.evsel); if(!ev) return;
+    if(state.evTiming && state.evTiming[state.evsel]) return;   // already applied / manually set / deliberately reverted — leave it
+    if(state.stintsLocked) return;                              // locked stint plan: timing changes only via the manual Apply
+    var se=irMatchFor(ev); if(!se || !(se.sessions&&se.sessions.length)) return;
+    if(applyIrTiming(ev, se)){ applyEventTiming(ev); state.stintAssign={}; state.stintWin={}; state.stintSig=''; applyAvailToDrivers(); save(); setSetupMsg('Auto-applied official session times from "'+se.name+'".'); renderContent(); }
+  }catch(e){}
+}
 function autoApplyWeather(){  // auto-pull: match the selected event to an iRacing season and apply its weather (manual override wins)
   try{
     if(!state.evsel || !IR_SEASONS.length) return;
@@ -1196,7 +1254,7 @@ function autoApplyWeather(){  // auto-pull: match the selected event to an iRaci
     if(se && se.weather){ applyIrWeather(ev, se); save(); if(state.tab==='stints') renderContent(); }
   }catch(e){}
 }
-var _selectEvent0=selectEvent; selectEvent=function(k){ _selectEvent0(k); autoApplyWeather(); };   // picking an event auto-applies its iRacing weather
+var _selectEvent0=selectEvent; selectEvent=function(k){ _selectEvent0(k); autoApplyTiming(); autoApplyWeather(); };   // picking an event auto-applies its iRacing session times + weather
 function syncIrEvents(){  // F1: pull whatever endurance events the proxy exposes and merge into the calendar
   _evSyncMsg='Syncing iRacing…'; renderContent();
   loadIracing().then(function(){
@@ -1210,7 +1268,7 @@ function syncIrEvents(){  // F1: pull whatever endurance events the proxy expose
       if(existing[evKey(ev)]){ have++; return; }
       fresh.push(ev); if(se.weather) applyIrWeather(ev, se); added++;
     });
-    state.irEvents=fresh; save(); autoApplyWeather();
+    state.irEvents=fresh; save(); autoApplyTiming(); autoApplyWeather();
     _evSyncMsg = IR_STATUS ? IR_STATUS : ('Synced: added '+added+' iRacing event'+(added===1?'':'s')+(have?', '+have+' already on the calendar':'')+'.');
     renderContent();
   }).catch(function(){ _evSyncMsg='iRacing unavailable right now.'; renderContent(); });
@@ -1285,17 +1343,17 @@ function renderSetup(){
   h+='<span class="meta" style="align-self:center;max-width:360px">'+esc(setupMsg||'This is the shared team plan, saved for everyone. Pick a track (or use the event\'s tracks), then Import / Refresh to pull Garage 61 pace.')+'</span>';
   h+='</div>';
   // official iRacing session start times + race length (via the proxy)
-  h+='<div class="importbox"><div class="meta" style="margin-bottom:6px;text-transform:uppercase;letter-spacing:.04em">Official iRacing session times</div>';
+  h+='<div class="importbox"><div class="meta" style="margin-bottom:6px;text-transform:uppercase;letter-spacing:.04em">Official iRacing session times — applied automatically when a round matches; pick below to override</div>';
   if(!selEv){ h+='<div class="meta">Select a target event on the Event tab to pull its official session start times and race length.</div>'; }
   else {
     var cur=state.evTiming&&state.evTiming[evKey(selEv)];
     var match=irMatchFor(selEv);
     h+='<div style="display:flex;gap:12px;flex-wrap:wrap;align-items:center">';
-    h+='<select data-s="irsel"><option value="">(pick the matching iRacing event)</option>'+IR_SEASONS.map(function(se,i){var sel=(match&&se.season_id===match.season_id)?' selected':''; return '<option value="'+i+'"'+sel+'>'+esc(se.name)+' · '+esc(se.track)+(se.race_min?' · '+Math.round(se.race_min/60)+'h':'')+'</option>';}).join('')+'</select>';
+    h+='<select data-s="irsel"><option value="">(pick the matching iRacing event)</option>'+IR_SEASONS.map(function(se,i){var sel=(match&&se===match)?' selected':''; return '<option value="'+i+'"'+sel+'>'+esc(se.name)+' · '+esc(se.track)+(se.race_min?' · '+Math.round(se.race_min/60)+'h':'')+'</option>';}).join('')+'</select>';
     h+='<button class="btn btn-amber" data-s="irapply">Apply to '+esc(selEv.n)+'</button>';
     h+='<span class="meta" data-s="irrefresh" style="cursor:pointer;text-decoration:underline">refresh</span>';
     h+='</div>';
-    if(cur) h+='<div class="meta" style="margin-top:8px;color:var(--green)">Using official times'+(cur.src?' from "'+esc(cur.src)+'"':'')+' — '+Object.keys(cur.offsets||{}).length+' starts, '+Math.round((cur.raceMin||0)/60)+'h race. <span data-s="irclear" style="cursor:pointer;text-decoration:underline;color:var(--red)">revert to calendar</span></div>';
+    if(cur&&cur.offsets) h+='<div class="meta" style="margin-top:8px;color:var(--green)">Using official times'+(cur.src?' from "'+esc(cur.src)+'"':'')+' — '+Object.keys(cur.offsets||{}).length+' starts, '+Math.round((cur.raceMin||0)/60)+'h race. <span data-s="irclear" style="cursor:pointer;text-decoration:underline;color:var(--red)">revert to calendar</span></div>';
     if(IR_STATUS) h+='<div class="meta" style="margin-top:8px">'+esc(IR_STATUS)+'</div>';
     if(!IR_SEASONS.length && !IR_STATUS) h+='<div class="meta" style="margin-top:8px">Loading iRacing…</div>';
   }
@@ -1326,7 +1384,7 @@ document.getElementById('content').addEventListener('click',function(e){
   }
   else if(s==='irclear'){
     const selEv=state.evsel?calEvent(state.evsel):null;
-    if(selEv){ delete state.evTiming[evKey(selEv)]; applyEventTiming(selEv); state.stintAssign={}; state.stintWin={}; state.stintSig=''; applyAvailToDrivers(); save(); setSetupMsg('Reverted to calendar session times.'); renderContent(); }
+    if(selEv){ state.evTiming[evKey(selEv)]={src:'calendar'};   /* tombstone: blocks auto re-apply after a deliberate revert */ applyEventTiming(selEv); state.stintAssign={}; state.stintWin={}; state.stintSig=''; applyAvailToDrivers(); save(); setSetupMsg('Reverted to calendar session times.'); renderContent(); }
   }
 });
 
@@ -1363,12 +1421,14 @@ async function bootSetup(){
     try{ TRACKS=await apiGET('tracks'); }catch(e){ TRACKS=[]; } if(!Array.isArray(TRACKS)) TRACKS=[];
     preselectNearest();
     if(state.tab==='setup') renderContent();
-    loadIracing().then(function(){ autoApplyWeather(); if(state.tab==='setup') renderContent(); });
+    loadIracing().then(function(){ autoApplyTiming(); autoApplyWeather(); if(state.tab==='setup') renderContent(); });
   }
 }
 
 // ---- boot ----
 document.getElementById('edr-tb-app').dataset.ready='1';
+document.addEventListener('visibilitychange', function(){ if(document.visibilityState==='visible') refreshShared(); });
+window.addEventListener('focus', function(){ refreshShared(); });
 bootSetup();
 
 })();

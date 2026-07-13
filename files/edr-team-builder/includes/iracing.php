@@ -58,7 +58,8 @@ function edr_ir_seasons($base, $key) {
                 'sessions'   => array_values($times),
                 'weather'    => isset($wk['weather']) ? $wk['weather'] : null,
             );
-            break; // one schedule per season is enough
+            // no break: seasons like Creventic carry several rounds (Mugello, Spa, …) —
+            // emit every week that has session_times so each round is matchable
         }
     }
     return $out;
