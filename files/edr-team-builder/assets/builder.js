@@ -24,6 +24,7 @@ const APP_HTML=`
 </div>
 <div class="tabs">
   <button class="tab active" data-tab="setup">Setup</button>
+  <button class="tab" data-tab="instructions">Instructions</button>
   <button class="tab" data-tab="event">Event</button>
   <button class="tab" data-tab="availability">Availability</button>
   <button class="tab" data-tab="drivers">Drivers</button>
@@ -51,7 +52,7 @@ let START_LABELS = {1:'Sat 08:00 · 22:00Z', 2:'Sat 17:00 · 07:00Z', 3:'Sat 22:
 // Availability merged from iRacePlan survey 2307 timeline (green = available). Empty cars = no Spa data shared.
 const SAMPLE = [];
 
-let state = { drivers:[], w:{pace:50,clean:30,prep:20}, proPct:40, tab:'event', teams:{}, stint:{window:1,len:60,race:1440}, stintAssign:{}, stintWin:{}, stintSig:'', evsel:null, role:'driver', me:'', pass:'', availStore:{}, evWinMin:0, evTiming:{}, teamsLocked:false, stintsLocked:false, teamNames:{}, fuelCfg:{pitLossSec:60,byCar:{},byClass:{}}, customEvents:[], irEvents:[], evWeather:{}, prefStore:{} };
+let state = { drivers:[], w:{pace:50,clean:30,prep:20}, proPct:40, tab:'event', teams:{}, stint:{window:1,len:60,race:1440}, stintAssign:{}, stintWin:{}, stintSig:'', evsel:null, role:'driver', me:'', pass:'', availStore:{}, evWinMin:0, evTiming:{}, teamsLocked:false, stintsLocked:false, teamNames:{}, fuelCfg:{pitLossSec:60,byCar:{},byClass:{}}, customEvents:[], irEvents:[], evWeather:{}, prefStore:{}, swapNote:'' };
 /* Per-user timezone (F10) is device-local, never in the shared plan. Auto-detect, override persisted in edrTB_tz. */
 let TZ = 'auto';   // default: auto-detect the viewer's zone; picker override persists per device
 try{ TZ = localStorage.getItem('edrTB_tz') || 'auto'; }catch(e){}
@@ -77,14 +78,14 @@ function seed(list){
   seedSpaAvail();
 }
 
-function save(){ try{ localStorage.setItem(KEY, JSON.stringify({drivers:state.drivers,w:state.w,proPct:state.proPct,teams:state.teams,stint:state.stint,stintAssign:state.stintAssign,stintWin:state.stintWin,stintSig:state.stintSig,evsel:state.evsel,role:state.role,me:state.me,pass:state.pass,availStore:state.availStore,evTiming:state.evTiming,teamsLocked:state.teamsLocked,stintsLocked:state.stintsLocked,teamNames:state.teamNames,fuelCfg:state.fuelCfg,customEvents:state.customEvents,irEvents:state.irEvents,evWeather:state.evWeather,prefStore:state.prefStore,evWinMin:EV_WIN_MIN,winStart:WIN_START_MS,startOffsets:START_OFFSETS,startLabels:START_LABELS})); }catch(e){} }
+function save(){ try{ localStorage.setItem(KEY, JSON.stringify({drivers:state.drivers,w:state.w,proPct:state.proPct,teams:state.teams,stint:state.stint,stintAssign:state.stintAssign,stintWin:state.stintWin,stintSig:state.stintSig,evsel:state.evsel,role:state.role,me:state.me,pass:state.pass,availStore:state.availStore,evTiming:state.evTiming,teamsLocked:state.teamsLocked,stintsLocked:state.stintsLocked,teamNames:state.teamNames,fuelCfg:state.fuelCfg,customEvents:state.customEvents,irEvents:state.irEvents,evWeather:state.evWeather,prefStore:state.prefStore,swapNote:state.swapNote,evWinMin:EV_WIN_MIN,winStart:WIN_START_MS,startOffsets:START_OFFSETS,startLabels:START_LABELS})); }catch(e){} }
 function load(){
   try{
     const s = JSON.parse(localStorage.getItem(KEY));
     if(s && s.drivers && s.drivers.length){
       state.drivers=s.drivers; state.w=s.w||state.w; state.proPct=(typeof s.proPct==='number')?s.proPct:state.proPct; state.teams=s.teams||{}; state.stint=Object.assign(state.stint, s.stint||{}); state.stintAssign=s.stintAssign||{}; state.stintWin=s.stintWin||{}; state.stintSig=s.stintSig||'';
       state.evsel=s.evsel||null; state.role=s.role||'driver'; state.me=s.me||''; state.pass=s.pass||''; state.availStore=s.availStore||{}; state.evTiming=s.evTiming||{}; state.teamsLocked=!!s.teamsLocked; state.stintsLocked=!!s.stintsLocked;
-      state.teamNames=s.teamNames||{}; state.fuelCfg=s.fuelCfg||state.fuelCfg; state.customEvents=s.customEvents||[]; state.irEvents=s.irEvents||[]; state.evWeather=s.evWeather||{}; state.prefStore=s.prefStore||{};
+      state.teamNames=s.teamNames||{}; state.fuelCfg=s.fuelCfg||state.fuelCfg; state.customEvents=s.customEvents||[]; state.irEvents=s.irEvents||[]; state.evWeather=s.evWeather||{}; state.prefStore=s.prefStore||{}; state.swapNote=s.swapNote||'';
       if(s.evWinMin) EV_WIN_MIN=s.evWinMin;
       if(s.winStart) WIN_START_MS=s.winStart;
       if(s.startOffsets&&Object.keys(s.startOffsets).length){ START_OFFSETS=s.startOffsets; START_LABELS=s.startLabels||START_LABELS; }
@@ -433,6 +434,34 @@ function fmtDay(absMin){
   return new Date(WIN_START_MS+absMin*60000).toLocaleDateString('en-AU',{timeZone:tzZone(),weekday:'short',day:'numeric',month:'short'});
 }
 
+/* ===== Instructions tab (driver landing page) ===== */
+function renderInstructions(){
+  const wn=(state.swapNote||'').trim();
+  const hasIds=Object.keys(ROSTER_IDS||{}).length>0;
+  let h='';
+  h+='<div class="importbox"><div class="head" style="font-size:17px;color:#fff;text-transform:uppercase">How this works</div>'
+    +'<div class="meta" style="margin-top:7px;max-width:780px;line-height:1.7">This is the team\'s endurance planner. You tell it <b style="color:#fff">when you can drive</b>; the admins build the cars and the stint plan around everyone\'s availability. Everything here is live and shared with the whole team, and every clock shows <b style="color:#fff">your local time</b> — set with the timezone picker in the top-right corner.</div></div>';
+  h+='<div class="importbox"><div class="meta" style="text-transform:uppercase;letter-spacing:.05em;margin-bottom:8px;color:var(--yellow)">Step 1 · Tell us when you can race</div>'
+    +'<div class="meta" style="line-height:1.7;max-width:780px">Open the <b style="color:#fff">Availability</b> tab. '
+    +(hasIds?'Type your <b style="color:#fff">iRacing customer ID</b> (helmet menu in iRacing, or your Garage 61 profile) and hit <b style="color:#fff">Find me</b> — your name comes up automatically, and this device remembers you from then on.':'Pick your name from the list.')
+    +' Tap every 2-hour block you could be in the car, choose your race preference (start or finish the race · wet or dry), then hit <b style="color:#fff">Submit availability</b>. You can update it any time — more green blocks makes the planner\'s job easier.</div>'
+    +'<div style="margin-top:12px"><button class="btn btn-amber avfree" data-action="gotoavail">Enter my availability</button></div></div>';
+  h+='<div class="importbox"><div class="meta" style="text-transform:uppercase;letter-spacing:.05em;margin-bottom:8px;color:var(--yellow)">Step 2 · Read your stints</div>'
+    +'<div class="meta" style="line-height:1.8;max-width:780px">On the <b style="color:#fff">Stints</b> tab, each card is one car. How to read it:'
+    +'<br>· The top row is the clock (your local time) with the conditions that hour: <b style="color:var(--amber)">\u2600 day</b> · <b style="color:#9aa3c0">\uD83C\uDF19 night</b> · <b style="color:#6ea8ff">\uD83C\uDF27 rain</b> — the percentage is the rain chance.'
+    +'<br>· The <b style="color:#fff">Driving</b> row is who\'s in the car for each stint.'
+    +'<br>· Your own lane below it: <span style="color:var(--green)">green = you said you\'re available</span> · striped = you\'re not · solid colour = <b style="color:#fff">you are driving that stint</b>.'
+    +'<br>· The fuel line shows laps and litres per stint, and \u26FD marks where a pit stop lands.'
+    +'<br>· Scroll each card sideways to see the whole race.</div></div>';
+  h+='<div class="importbox"><div class="meta" style="text-transform:uppercase;letter-spacing:.05em;margin-bottom:8px;color:var(--yellow)">Step 3 · Know your car</div>'
+    +'<div class="meta" style="line-height:1.7;max-width:780px">The <b style="color:#fff">Teams</b> tab shows your car and teammates, with each driver\'s pace, laps, clean percentage and iRating. The <b style="color:#fff">Drivers</b> tab is the ranking the split is built from. Both are read-only for drivers — the admins arrange the cars.</div></div>';
+  h+='<div class="importbox" style="border-left:4px solid var(--yellow)"><div class="meta" style="text-transform:uppercase;letter-spacing:.05em;margin-bottom:6px">Need a stint swapped, or can\'t make your slot?</div>'
+    +'<div style="font-family:Prompt,sans-serif;font-weight:600;color:#fff;font-size:15px">'+(wn?esc(wn):'Message Thomaz on Discord — @tomhernandes')+'</div>'
+    +'<div class="meta" style="margin-top:6px;line-height:1.6;max-width:780px">Don\'t just not show up — the plan can be rearranged in minutes if we know early.</div>'
+    +(isAdmin()?'<div style="margin-top:10px;display:flex;gap:8px;align-items:center;flex-wrap:wrap"><span class="meta" style="font-size:10px;text-transform:uppercase">Admin · edit this contact line</span><input type="text" data-action="swapnote" value="'+esc(wn)+'" placeholder="e.g. Message Thomaz on Discord (@thomaz) for swaps" style="padding:7px 10px;font-size:12px;min-width:320px"></div>':'')
+    +'</div>';
+  return h;
+}
 /* ===== Event tab (season calendar) ===== */
 let _calFilter='all', _calTargets=true, _calPast=false, _evFormOpen=false, _evSyncMsg='';
 function weekStartOf(s){ const dt=new Date(s+'T00:00:00'); const day=dt.getDay(); dt.setDate(dt.getDate()+((day===0?-6:1)-day)); return dt; }
@@ -942,7 +971,7 @@ function renderContent(){
   renderSummary(model);
   const el=document.getElementById('content');
   const _sx={}; el.querySelectorAll('.stintwrap[data-key]').forEach(w=>{ if(w.scrollLeft) _sx[w.dataset.key]=w.scrollLeft; });   // keep horizontal scroll across re-renders
-  el.innerHTML = state.tab==='setup' ? renderSetup() : state.tab==='event' ? renderEventTab() : state.tab==='availability' ? renderAvail() : state.tab==='teams' ? renderTeams(byId) : state.tab==='stints' ? renderStints(byId) : renderDrivers(model);
+  el.innerHTML = state.tab==='setup' ? renderSetup() : state.tab==='event' ? renderEventTab() : state.tab==='availability' ? renderAvail() : state.tab==='teams' ? renderTeams(byId) : state.tab==='stints' ? renderStints(byId) : state.tab==='instructions' ? renderInstructions() : renderDrivers(model);
   if(Object.keys(_sx).length) el.querySelectorAll('.stintwrap[data-key]').forEach(w=>{ const v=_sx[w.dataset.key]; if(v!=null) w.scrollLeft=v; });
 }
 
@@ -998,6 +1027,7 @@ document.getElementById('content').addEventListener('change',e=>{
   if(a==='caltargets'){ _calTargets=e.target.checked; renderContent(); return; }
   if(a==='calpast'){ _calPast=e.target.checked; renderContent(); return; }
   if(!isAdmin()) return;
+  if(a==='swapnote'){ if(!isAdmin())return; state.swapNote=(e.target.value||'').trim(); save(); setStatus('Swap contact saved.'); return; }
   if(a==='renamesave'){ const k=e.target.dataset.key, v=(e.target.value||'').trim(); if(v) state.teamNames[k]=v; else delete state.teamNames[k]; _renaming=null; save(); renderContent(); return; }
   if(a==='assign'){ const d=state.drivers.find(x=>x.id==e.target.dataset.id); if(d){ d.assignedCar=e.target.value; d.carLock=true; save(); renderContent(); } }   // manual choice locks it (imports keep it); padlock to unlock
   else if(a==='move'){
@@ -1040,6 +1070,7 @@ document.getElementById('content').addEventListener('click',e=>{
   const filt=e.target.closest&&e.target.closest('[data-action="calfilter"]');
   if(filt){ _calFilter=filt.dataset.val; renderContent(); return; }
   if(e.target.dataset.action==='gotoevent'){ state.tab='event'; setActiveTab(); renderContent(); return; }
+  if(e.target.dataset.action==='gotoavail'){ state.tab='availability'; setActiveTab(); renderContent(); return; }
   const bcell=e.target.closest&&e.target.closest('button[data-avtoggle]');
   if(bcell){ if(toggleAvail(bcell.dataset.name,+bcell.dataset.slot)) renderContent(); return; }
   const pb=e.target.closest&&e.target.closest('[data-prefset]');
@@ -1200,7 +1231,7 @@ function releaseLock(name){
   }).catch(function(){});
 }
 let lastTrackIds=[], _saveT=null;
-function serializePlan(){ return {drivers:state.drivers,w:state.w,proPct:state.proPct,teams:state.teams,stint:state.stint,stintAssign:state.stintAssign,stintWin:state.stintWin,stintSig:state.stintSig,overrides:overrides,meta:IMPORT_META,winStart:WIN_START_MS,startOffsets:START_OFFSETS,startLabels:START_LABELS,matches:lastMatches,trackIds:lastTrackIds,evsel:state.evsel,evWinMin:EV_WIN_MIN,evTiming:state.evTiming,teamsLocked:state.teamsLocked,stintsLocked:state.stintsLocked,teamNames:state.teamNames,fuelCfg:state.fuelCfg,customEvents:state.customEvents,irEvents:state.irEvents,evWeather:state.evWeather,prefStore:state.prefStore}; }
+function serializePlan(){ return {drivers:state.drivers,w:state.w,proPct:state.proPct,teams:state.teams,stint:state.stint,stintAssign:state.stintAssign,stintWin:state.stintWin,stintSig:state.stintSig,overrides:overrides,meta:IMPORT_META,winStart:WIN_START_MS,startOffsets:START_OFFSETS,startLabels:START_LABELS,matches:lastMatches,trackIds:lastTrackIds,evsel:state.evsel,evWinMin:EV_WIN_MIN,evTiming:state.evTiming,teamsLocked:state.teamsLocked,stintsLocked:state.stintsLocked,teamNames:state.teamNames,fuelCfg:state.fuelCfg,customEvents:state.customEvents,irEvents:state.irEvents,evWeather:state.evWeather,prefStore:state.prefStore,swapNote:state.swapNote}; }
 var _postBusy=false, _postAgain=false;
 function _flushPlan(){
   if(_postBusy){ _postAgain=true; return; }              // serialize: the retry below re-posts the LATEST state with the updated rev
@@ -1226,7 +1257,7 @@ function _adoptPlan(p, keepEvsel){
   if(p.overrides)overrides=p.overrides; if(p.meta)IMPORT_META=p.meta; if(p.winStart)WIN_START_MS=p.winStart;
   if(p.startOffsets&&Object.keys(p.startOffsets).length)START_OFFSETS=p.startOffsets; if(p.startLabels&&Object.keys(p.startLabels).length)START_LABELS=p.startLabels;
   if(p.evsel)state.evsel=p.evsel; if(p.evWinMin)EV_WIN_MIN=p.evWinMin; if(p.evTiming)state.evTiming=p.evTiming; state.teamsLocked=!!p.teamsLocked; state.stintsLocked=!!p.stintsLocked;
-  state.teamNames=p.teamNames||{}; if(p.fuelCfg)state.fuelCfg=p.fuelCfg; state.customEvents=p.customEvents||[]; state.irEvents=p.irEvents||[]; state.evWeather=p.evWeather||{}; state.prefStore=p.prefStore||{};
+  state.teamNames=p.teamNames||{}; if(p.fuelCfg)state.fuelCfg=p.fuelCfg; state.customEvents=p.customEvents||[]; state.irEvents=p.irEvents||[]; state.evWeather=p.evWeather||{}; state.prefStore=p.prefStore||{}; state.swapNote=p.swapNote||'';
   lastMatches=p.matches||[]; lastTrackIds=p.trackIds||[];
   if(_localEv && _localEv!==state.evsel && calEvent(_localEv)){ state.evsel=_localEv; }   // don't yank the viewer off their selected event
 }
@@ -1471,7 +1502,7 @@ async function bootSetup(){
   });
   renderRolebar();
   syncControls();
-  state.tab = CAN ? 'setup' : 'event'; setActiveTab();
+  state.tab = CAN ? 'setup' : 'instructions'; setActiveTab();
   var ok=false; try{ ok=await loadPlan(); }catch(e){}
   if(state.evsel){ var _bev=calEvent(state.evsel); if(_bev){ var _br=state.stint.race; applyEventTiming(_bev); if(_br>0) state.stint.race=_br; } }  // rebuild timing globals from the restored event (don't trust persisted globals)
   try{
