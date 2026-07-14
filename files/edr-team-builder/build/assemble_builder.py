@@ -265,9 +265,19 @@ function syncIrEvents(){  // F1: pull whatever endurance events the proxy expose
   _evSyncMsg='Syncing iRacing…'; renderContent();
   loadIracing().then(function(){
     var existing={}; CAL_EVENTS.concat(state.customEvents||[]).forEach(function(e){ existing[evKey(e)]=1; });
+    // an iRacing round that MATCHES an event already on the calendar (same week/track/length —
+    // the irMatchFor rules) is the SAME race under its season name: never import it as a second
+    // row, it only feeds that event's official times + weather. This killed the
+    // "Creventic Round 2 — 12H Spa" + "Creventic Endurance Series - 2026 Season" double-up.
+    var claimed=[];
+    CAL_EVENTS.concat(state.customEvents||[]).forEach(function(ev){
+      if(!isTarget(ev)) return;
+      var m=irMatchFor(ev); if(m && claimed.indexOf(m)<0) claimed.push(m);
+    });
     var fresh=[], added=0, have=0;
     (IR_SEASONS||[]).forEach(function(se){
       if(!se.name||!se.start_date) return;
+      if(claimed.indexOf(se)>=0){ have++; return; }
       var dur=se.race_min?Math.max(1,Math.round(se.race_min/60)):6;
       var isEnd=/endur|24|12\s*h|le mans|petit|creventic|global endurance|imsa|nurburg|bathurst|sebring|spa|daytona|suzuka|road america/i.test(se.name);
       var ev={n:se.name, track:se.track||'', s:se.start_date, e:se.start_date, cars:'GT3', cat:isEnd?'endurance':'other', dur:dur, special:isEnd, src:'iracing', raceMin:se.race_min||0};

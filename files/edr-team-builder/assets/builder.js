@@ -105,9 +105,30 @@ function classOf(name){
   const n=(name||'').toUpperCase();
   if(n.includes('GTP')||n.includes('HYBRID')||n.includes('LMDH'))return 'GTP';
   if(n.includes('LMP2')||n.includes('P217')||n.includes('LMP'))return 'LMP2';
+  if(/(911|992|PORSCHE)[^A-Z]*CUP|CUP[^A-Z]*\(?99/.test(n))return 'Porsche Cup';
+  if(n.includes('TCR'))return 'TCR';
+  if(n.includes('BMW M2'))return 'M2';
   if(n.includes('GT4'))return 'GT4';
   if(n.includes('GT3'))return 'GT3';
   return 'Other';
+}
+/* Classes an event runs, parsed from its cars string ("GTP & HYP // LMP2 // GT3"). Canonical
+   labels double as the team/model class keys, so a declared class groups correctly. */
+function evClasses(ev){
+  const raw=(ev&&ev.cars)||''; if(!raw||/TBD/i.test(raw)) return [];
+  const out=[]; raw.split('//').forEach(seg=>{
+    const t=seg.trim(); if(!t) return; const u=t.toUpperCase(); let c;
+    if(u.includes('GTP')||u.includes('HYP'))c='GTP';
+    else if(u.includes('LMP2'))c='LMP2';
+    else if(u.includes('CUP'))c='Porsche Cup';
+    else if(u.includes('TCR'))c='TCR';
+    else if(u.includes('M2'))c='M2';
+    else if(u.includes('GT4'))c='GT4';
+    else if(u.includes('GT3'))c='GT3';
+    else c=t;
+    if(out.indexOf(c)<0) out.push(c);
+  });
+  return out;
 }
 function fmtLap(s){ if(s==null)return '—'; const m=Math.floor(s/60); const sec=(s%60).toFixed(3); return m+':'+String(sec).padStart(6,'0'); }
 
@@ -121,7 +142,8 @@ function computeModel(){
   const enriched = eventPool().map(d=>{
     const car = (d.cars && d.cars[d.assignedCar]) ? d.assignedCar : ((d.carLock && d.assignedCar) ? d.assignedCar : lastCar(d.cars));   // a hand-picked (locked) car sticks; otherwise default to the car they drove most recently
     const st = (d.cars && d.cars[car]) || {laps:0,medianLap:null,cleanPct:0};
-    return Object.assign({}, d, {_car:car,_class:classOf(car),_laps:st.laps,_median:st.medianLap,_clean:st.cleanPct});
+    const _dcls=prefsFor(d.name).cls;
+    return Object.assign({}, d, {_car:car,_class:_dcls||classOf(car),_laps:st.laps,_median:st.medianLap,_clean:st.cleanPct});
   });
   const groups={};
   enriched.forEach(d=>{(groups[d._class]=groups[d._class]||[]).push(d);});
@@ -444,7 +466,7 @@ function renderInstructions(){
   h+='<div class="importbox"><div class="meta" style="text-transform:uppercase;letter-spacing:.05em;margin-bottom:8px;color:var(--yellow)">Step 1 · Tell us when you can race</div>'
     +'<div class="meta" style="line-height:1.7;max-width:780px">Open the <b style="color:#fff">Availability</b> tab. '
     +(hasIds?'Type your <b style="color:#fff">iRacing customer ID</b> (helmet menu in iRacing, or your Garage 61 profile) and hit <b style="color:#fff">Find me</b> — your name comes up automatically, and this device remembers you from then on.':'Pick your name from the list.')
-    +' Tap every 2-hour block you could be in the car, choose your race preference (start or finish the race · wet or dry), then hit <b style="color:#fff">Submit availability</b>. You can update it any time — more green blocks makes the planner\'s job easier.</div>'
+    +' Tap every 2-hour block you could be in the car, choose your race preference (start or finish the race · wet or dry) — and on multi-class events, pick <b style="color:#fff">which class you\'re racing</b> — then hit <b style="color:#fff">Submit availability</b>. You can update it any time — more green blocks makes the planner\'s job easier.</div>'
     +'<div style="margin-top:12px"><button class="btn btn-amber avfree" data-action="gotoavail">Enter my availability</button></div></div>';
   h+='<div class="importbox"><div class="meta" style="text-transform:uppercase;letter-spacing:.05em;margin-bottom:8px;color:var(--yellow)">Step 2 · Read your stints</div>'
     +'<div class="meta" style="line-height:1.8;max-width:780px">On the <b style="color:#fff">Stints</b> tab, each card is one car. How to read it:'
@@ -491,7 +513,8 @@ function renderEventTab(){
         +'<div class="ctl"><label>START</label><input id="cev_s" type="date" style="padding:6px"></div>'
         +'<div class="ctl"><label>END</label><input id="cev_e" type="date" style="padding:6px"></div>'
         +'<div class="ctl"><label>RACE (h)</label><input id="cev_dur" type="number" min="1" step="1" value="24" style="padding:6px;width:70px"></div>'
-        +'<div class="ctl"><label>CLASS</label><select id="cev_cat"><option value="endurance">Endurance</option><option value="other">Other</option><option value="nascar">NASCAR</option></select></div>'
+        +'<div class="ctl"><label>CATEGORY</label><select id="cev_cat"><option value="endurance">Endurance</option><option value="other">Other</option><option value="nascar">NASCAR</option></select></div>'
+        +'<div class="ctl"><label>CLASSES</label><input id="cev_cls" placeholder="GT3 // Cup // GT4" value="GT3" style="padding:6px;width:150px"></div>'
         +'<label class="meta" style="align-self:center"><input type="checkbox" id="cev_tgt" checked> EDR target</label>'
         +'<button class="btn btn-amber" data-action="savecustomev" style="font-size:11px">Save event</button>'
         +'<button class="btn btn-ghost" data-action="cancelcustomev" style="font-size:11px">Cancel</button></div>';
@@ -551,7 +574,7 @@ function setAllAvail(name,on){
   (_availDirty[state.evsel]=_availDirty[state.evsel]||{})[name]=1; _avMsg='';
   applyAvailToDrivers(); save(); return true;
 }
-function prefsFor(name){ const p=((state.prefStore||{})[state.evsel]||{})[name]; return {time:(p&&p.time)||'any', cond:(p&&p.cond)||'any'}; }
+function prefsFor(name){ const p=((state.prefStore||{})[state.evsel]||{})[name]; return {time:(p&&p.time)||'any', cond:(p&&p.cond)||'any', cls:(p&&p.cls)||''}; }
 function renderMyBlocks(a){
   const nm=state.me; const arr=a[nm]||[]; const n=evSlots(); const canEdit=canEditAvail(nm);
   const pr=prefsFor(nm);
@@ -564,6 +587,10 @@ function renderMyBlocks(a){
   h+='<div class="meta" style="margin:2px 0 4px">Tap every 2-hour block you can race ('+tzLabel()+' time), or use Tick all. Then Submit below.</div>';
   const hasWx=!!(state.evWeather&&state.evWeather[state.evsel]);
   h+='<div class="meta" style="margin:8px 0 3px;text-transform:uppercase;letter-spacing:.04em">Race preference</div>';
+  const evcls=evClasses(calEvent(state.evsel));
+  if(evcls.length>1){ const co={}; evcls.forEach(c=>co[c]=c);
+    h+='<div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-bottom:4px"><span class="meta" style="width:56px">Class</span>'+seg('cls',co)+'</div>';
+  }
   h+='<div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-bottom:4px"><span class="meta" style="width:56px">Time</span>'+seg('time',{start:'Start',finish:'Finish',any:'No pref'})+'</div>';
   h+='<div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-bottom:8px"><span class="meta" style="width:56px">Weather</span>'+seg('cond',{wet:'Wet',dry:'Dry',any:'Both'})+(hasWx?'':'<span class="meta" style="font-size:10px">· applies once weather is set for this event</span>')+'</div>';
   groups.forEach(function(g){
@@ -1062,7 +1089,7 @@ document.getElementById('content').addEventListener('click',e=>{
   if(delcev){ if(isAdmin()){ deleteCustomEvent(delcev.dataset.ev); renderContent(); } return; }
   if(e.target.dataset.action==='addcustomev'){ _evFormOpen=true; _evSyncMsg=''; renderContent(); return; }
   if(e.target.dataset.action==='cancelcustomev'){ _evFormOpen=false; renderContent(); return; }
-  if(e.target.dataset.action==='savecustomev'){ const v=id=>{const el=document.getElementById(id);return el?el.value:'';}; const n=(v('cev_n')||'').trim(); if(!n){ setStatus('Event needs a name.'); return; } const s=v('cev_s')||new Date().toISOString().slice(0,10); const ev={n, track:(v('cev_track')||'').trim(), s, e:v('cev_e')||s, cars:'GT3', cat:v('cev_cat')||'endurance', dur:+v('cev_dur')||24, special:!!(document.getElementById('cev_tgt')&&document.getElementById('cev_tgt').checked)}; addCustomEvent(ev); _evFormOpen=false; renderContent(); setStatus('Added "'+n+'" to the calendar.'); return; }
+  if(e.target.dataset.action==='savecustomev'){ const v=id=>{const el=document.getElementById(id);return el?el.value:'';}; const n=(v('cev_n')||'').trim(); if(!n){ setStatus('Event needs a name.'); return; } const s=v('cev_s')||new Date().toISOString().slice(0,10); const ev={n, track:(v('cev_track')||'').trim(), s, e:v('cev_e')||s, cars:(v('cev_cls')||'GT3').trim()||'GT3', cat:v('cev_cat')||'endurance', dur:+v('cev_dur')||24, special:!!(document.getElementById('cev_tgt')&&document.getElementById('cev_tgt').checked)}; addCustomEvent(ev); _evFormOpen=false; renderContent(); setStatus('Added "'+n+'" to the calendar.'); return; }
   if(e.target.dataset.action==='syncir'){ if(typeof syncIrEvents==='function'){ syncIrEvents(); } else { _evSyncMsg='iRacing sync runs on the live site (WordPress).'; renderContent(); } return; }
   if(e.target.dataset.action==='wxclear'){ delete state.evWeather[state.evsel]; save(); renderContent(); return; }
   const calRow=e.target.closest&&e.target.closest('[data-action="selev"]');
@@ -1355,9 +1382,19 @@ function syncIrEvents(){  // F1: pull whatever endurance events the proxy expose
   _evSyncMsg='Syncing iRacing…'; renderContent();
   loadIracing().then(function(){
     var existing={}; CAL_EVENTS.concat(state.customEvents||[]).forEach(function(e){ existing[evKey(e)]=1; });
+    // an iRacing round that MATCHES an event already on the calendar (same week/track/length —
+    // the irMatchFor rules) is the SAME race under its season name: never import it as a second
+    // row, it only feeds that event's official times + weather. This killed the
+    // "Creventic Round 2 — 12H Spa" + "Creventic Endurance Series - 2026 Season" double-up.
+    var claimed=[];
+    CAL_EVENTS.concat(state.customEvents||[]).forEach(function(ev){
+      if(!isTarget(ev)) return;
+      var m=irMatchFor(ev); if(m && claimed.indexOf(m)<0) claimed.push(m);
+    });
     var fresh=[], added=0, have=0;
     (IR_SEASONS||[]).forEach(function(se){
       if(!se.name||!se.start_date) return;
+      if(claimed.indexOf(se)>=0){ have++; return; }
       var dur=se.race_min?Math.max(1,Math.round(se.race_min/60)):6;
       var isEnd=/endur|24|12\s*h|le mans|petit|creventic|global endurance|imsa|nurburg|bathurst|sebring|spa|daytona|suzuka|road america/i.test(se.name);
       var ev={n:se.name, track:se.track||'', s:se.start_date, e:se.start_date, cars:'GT3', cat:isEnd?'endurance':'other', dur:dur, special:isEnd, src:'iracing', raceMin:se.race_min||0};

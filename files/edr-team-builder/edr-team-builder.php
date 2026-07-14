@@ -2,7 +2,7 @@
 /**
  * Plugin Name: EDR Team Builder
  * Description: Endurotech Racing endurance team + stint planner. Pulls Garage 61 pace and official iRacing session times, collects driver availability in-house, and builds Pro/Casual teams and stint rotations. Add the [edr_team_builder] shortcode to a page.
- * Version: 2.4.8
+ * Version: 2.4.9
  * Author: Endurotech Racing
  * License: GPL-2.0-or-later
  */
@@ -11,7 +11,7 @@ if (!defined('ABSPATH')) exit; // no direct access
 
 define('EDR_TB_DIR', plugin_dir_path(__FILE__));
 define('EDR_TB_URL', plugin_dir_url(__FILE__));
-define('EDR_TB_VER', '2.4.8');
+define('EDR_TB_VER', '2.4.9');
 
 require_once EDR_TB_DIR . 'includes/garage61.php';
 require_once EDR_TB_DIR . 'includes/iracing.php';
@@ -238,9 +238,10 @@ function edr_tb_rest_avail_set(WP_REST_Request $req) {
     if (is_array($prefsParam)) {
         $time = in_array(($prefsParam['time'] ?? 'any'), array('start','finish','any'), true) ? $prefsParam['time'] : 'any';
         $cond = in_array(($prefsParam['cond'] ?? 'any'), array('wet','dry','any'), true) ? $prefsParam['cond'] : 'any';
+        $cls  = substr(sanitize_text_field((string) ($prefsParam['cls'] ?? '')), 0, 24);   // declared event class (GT3 / Porsche Cup / …)
         $pAll = (array) get_option('edr_tb_prefs', array());
         if (!isset($pAll[$ev]) || !is_array($pAll[$ev])) $pAll[$ev] = array();
-        $pAll[$ev][$name] = array('time' => $time, 'cond' => $cond);
+        $pAll[$ev][$name] = array('time' => $time, 'cond' => $cond) + ($cls !== '' ? array('cls' => $cls) : array());
         update_option('edr_tb_prefs', $pAll, false);
     }
     return rest_ensure_response(array('ok' => true, 'locked' => array()));
