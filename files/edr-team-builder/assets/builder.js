@@ -412,6 +412,8 @@ function lockedForMe(name){ const k=nameKey(name); return LOCKED_NAMES.some(x=>n
 /* EDR membership pulled live from Garage 61 on 2026-07-05 (teams edr-endurotech +
    edr-endurotech-casual).
    Baked-in fallback; the WP build replaces it with the live list from GET /roster. */
+let ROSTER_IDS={};   // iRacing customer ID -> display name (filled by the WP /roster payload)
+let _iridMsg='';
 let TEAM_ROSTER=["Aaron Werth", "Aden Lennox-Bradley", "Ben Hagstrom", "Bernardo Hickmann", "Bradley Whittaker", "Brock Hellmech", "Chris w", "David Piljek", "Dominic Bou-Samra", "Erik van der Bijl", "Fred Zufelt", "Jake Lennox-Bradley", "Janne Salminen", "John Nyhouse", "Joseph Tavora", "Landon Schrecengost", "Laurent Masson", "Luke Hay", "matt blee", "Matthew Halden", "Michael Cullen", "Roland Fokkens", "Sam Mackenzie", "Sam Millar", "Stipe Ljubić", "Thomas McEwan", "Thomaz Hernandes", "Valentin Ozhiganov", "Zachary Martin"];
 let _availDirty={};   /* {evKey:{name:1}} — ticked but not yet submitted */
 let _avMsg='';
@@ -556,10 +558,30 @@ function renderAvail(){
   let html='<div class="importbox">';
   html+='<div style="display:flex;gap:14px;flex-wrap:wrap;align-items:baseline"><span class="head" style="font-size:17px;color:#fff;text-transform:uppercase">'+esc(ev.n)+'</span>'
     +'<span class="meta">'+esc(ev.track)+' · '+fmtDates(ev.s,ev.e)+(ev.dur?' · '+ev.dur+'h race':'')+'</span></div>';
-  html+='<div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-top:10px"><label class="meta">'+(isAdmin()?'Editing availability for':'I am')+'</label>'
-    +'<select class="avfree" data-action="meselect"><option value="">— '+(isAdmin()?'pick a driver':'pick your name')+' —</option>'
-    +roster.map(nm=>'<option value="'+esc(nm)+'"'+(nm===state.me?' selected':'')+((!isAdmin()&&lockedForMe(nm))?' disabled':'')+'>'+esc(nm)+(lockedForMe(nm)?' 🔒':'')+'</option>').join('')+'</select>'
-    +(state.me?'':'<span class="meta">'+(isAdmin()?'Pick a driver to set their blocks, or just review coverage below.':'Pick your name to enter availability.')+'</span>')+'</div>';
+  const hasIds=Object.keys(ROSTER_IDS||{}).length>0;
+  if(!isAdmin() && hasIds && !state.me){ try{ const sid=localStorage.getItem('edrTB_irid'); if(sid&&ROSTER_IDS[sid]) state.me=ROSTER_IDS[sid]; }catch(e){} }   // this device already identified once
+  if(isAdmin()){
+    html+='<div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-top:10px"><label class="meta">Editing availability for</label>'
+      +'<select class="avfree" data-action="meselect"><option value="">— pick a driver —</option>'
+      +roster.map(nm=>'<option value="'+esc(nm)+'"'+(nm===state.me?' selected':'')+'>'+esc(nm)+'</option>').join('')+'</select>'
+      +(state.me?'':'<span class="meta">Pick a driver to set their blocks, or just review coverage below.</span>')+'</div>';
+  } else if(hasIds){
+    if(state.me){
+      html+='<div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-top:10px"><span class="meta">You are</span><span style="font-family:Prompt,sans-serif;font-weight:600;color:#fff">'+esc(state.me)+'</span>'
+        +'<span class="meta avfree" data-action="iridchange" style="cursor:pointer;text-decoration:underline">not you?</span></div>';
+    } else {
+      html+='<div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-top:10px"><label class="meta">Your iRacing ID</label>'
+        +'<input id="iridbox" type="text" inputmode="numeric" placeholder="e.g. 267342" style="padding:7px 10px;font-size:13px;width:130px">'
+        +'<button class="btn btn-amber avfree" data-action="iridgo" style="font-size:11px;padding:6px 14px">Find me</button>'
+        +'<span class="meta" style="font-size:11px">your customer ID — in iRacing under Helmet → Account</span></div>'
+        +(_iridMsg?'<div class="meta" style="margin-top:6px;color:var(--red)">'+esc(_iridMsg)+'</div>':'');
+    }
+  } else {
+    html+='<div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-top:10px"><label class="meta">I am</label>'
+      +'<select class="avfree" data-action="meselect"><option value="">— pick your name —</option>'
+      +roster.map(nm=>'<option value="'+esc(nm)+'"'+(nm===state.me?' selected':'')+'>'+esc(nm)+'</option>').join('')+'</select>'
+      +(state.me?'':'<span class="meta">Pick your name to enter availability.</span>')+'</div>';
+  }
   const dirtyN=Object.keys(_availDirty[state.evsel]||{}).length;
   html+='<div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap;margin-top:12px">'
     +'<button class="btn btn-amber avfree" data-action="avsubmit">Submit availability</button>'
@@ -962,6 +984,9 @@ document.getElementById('load').addEventListener('click',()=>{
 document.querySelectorAll('.tab').forEach(t=>t.addEventListener('click',()=>{ state.tab=t.dataset.tab; setActiveTab(); renderContent(); }));
 function setActiveTab(){ document.querySelectorAll('.tab').forEach(t=>t.classList.toggle('active',t.dataset.tab===state.tab)); }
 
+document.getElementById('content').addEventListener('keydown',e=>{
+  if(e.key==='Enter' && e.target.id==='iridbox'){ const b=document.querySelector('[data-action="iridgo"]'); if(b) b.click(); }
+});
 document.getElementById('content').addEventListener('change',e=>{
   const a=e.target.dataset.action;
   if(e.target.dataset.avtoggle!==undefined && e.target.type==='checkbox'){
@@ -1021,6 +1046,21 @@ document.getElementById('content').addEventListener('click',e=>{
   if(pb){ const nm=pb.dataset.name; if(!canEditAvail(nm)) return; const axis=pb.dataset.prefset, val=pb.dataset.val;
     const st=(state.prefStore[state.evsel]=state.prefStore[state.evsel]||{}); const p=(st[nm]=st[nm]||{time:'any',cond:'any'}); p[axis]=val;
     (_availDirty[state.evsel]=_availDirty[state.evsel]||{})[nm]=1; _avMsg=''; save(); renderContent(); return; }
+  if(e.target.dataset.action==='iridgo'){ const inp=document.getElementById('iridbox'); const v=((inp&&inp.value)||'').replace(/\D/g,'');
+    if(!v){ _iridMsg='Type your iRacing customer ID first.'; renderContent(); return; }
+    const nm=ROSTER_IDS[v];
+    if(nm){ state.me=nm; _iridMsg=''; try{ localStorage.setItem('edrTB_irid', v); }catch(_e){} save(); renderContent(); }
+    else if(typeof apiGET==='function'){   // live check: new members who joined Garage 61 after this page's roster was cached
+      _iridMsg='Checking Garage 61 for ID '+v+'…'; renderContent();
+      apiGET('roster?lookup='+encodeURIComponent(v)).then(function(r){
+        if(r&&r.name){ ROSTER_IDS[v]=r.name; state.me=r.name; _iridMsg=''; try{ localStorage.setItem('edrTB_irid', v); }catch(_e){} save(); }
+        else { _iridMsg='No EDR driver found for iRacing ID '+v+' — are you on the EDR Garage 61 team with your iRacing account linked? Ask an admin if unsure.'; }
+        renderContent();
+      }).catch(function(){ _iridMsg='Could not reach the server to check — try again in a moment.'; renderContent(); });
+    }
+    else { _iridMsg='No EDR driver found for iRacing ID '+v+' — check the number, or ask an admin to link your Garage 61 account.'; renderContent(); }
+    return; }
+  if(e.target.dataset.action==='iridchange'){ state.me=''; _iridMsg=''; try{ localStorage.removeItem('edrTB_irid'); }catch(_e){} save(); renderContent(); return; }
   if(e.target.dataset.action==='avtickall'){ if(state.me&&setAllAvail(state.me,true)) renderContent(); return; }
   if(e.target.dataset.action==='avclear'){ if(state.me&&setAllAvail(state.me,false)) renderContent(); return; }
   const avcol=e.target.closest&&e.target.closest('[data-action="avcol"]');
@@ -1439,7 +1479,10 @@ async function bootSetup(){
     if(av&&av.store){ state.availStore=av.store; LOCKED_NAMES=av.locked||[]; if(av.prefs)state.prefStore=av.prefs; }
     else if(av&&typeof av==='object'&&!Array.isArray(av)) state.availStore=av;  /* pre-2.1.4 server shape */
   }catch(e){}
-  try{ const tr=await apiGET('roster'); if(Array.isArray(tr)&&tr.length) TEAM_ROSTER=tr; }catch(e){}
+  try{ const tr=await apiGET('roster');
+    if(tr&&tr.names){ TEAM_ROSTER=tr.names; ROSTER_IDS=tr.ids||{}; }        // 2.4.7 shape: {names, ids}
+    else if(Array.isArray(tr)&&tr.length) TEAM_ROSTER=tr;                    // pre-2.4.7 cache fallback
+  }catch(e){}
   applyAvailToDrivers();
   if(ok && state.drivers.length && !Object.keys(state.teams||{}).length) generate();
   renderContent();

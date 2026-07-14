@@ -46,6 +46,7 @@ function edr_g61_all_members($token) {
     if (is_wp_error($teams)) return $teams;
     $list = isset($teams['items']) && is_array($teams['items']) ? $teams['items'] : (is_array($teams) ? $teams : array());
     $names = array();
+    $ids   = array();
     foreach ($list as $t) {
         if (!is_array($t) || empty($t['slug'])) continue;
         $detail = edr_g61_get_json('/teams/' . rawurlencode($t['slug']), $token);
@@ -64,12 +65,19 @@ function edr_g61_all_members($token) {
             } elseif (!empty($m['driver']) && is_array($m['driver']) && !empty($m['driver']['name'])) {
                 $n = $m['driver']['name'];
             }
-            if ($n !== '') $names[$n] = true;
+            if ($n === '') continue;
+            $names[$n] = true;
+            // iRacing customer IDs let drivers self-identify by number instead of picking a name
+            foreach ((isset($m['accounts']) && is_array($m['accounts'])) ? $m['accounts'] : array() as $ac) {
+                if (is_array($ac) && (($ac['platform'] ?? '') === 'iracing') && !empty($ac['id'])) {
+                    $ids[(string) preg_replace('/\D/', '', (string) $ac['id'])] = $n;
+                }
+            }
         }
     }
     $out = array_keys($names);
     sort($out, SORT_NATURAL | SORT_FLAG_CASE);
-    return $out;
+    return array('names' => $out, 'ids' => $ids);
 }
 
 function edr_g61_tracks($token) {

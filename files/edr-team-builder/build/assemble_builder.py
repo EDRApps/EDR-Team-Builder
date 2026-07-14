@@ -419,7 +419,10 @@ async function bootSetup(){
     if(av&&av.store){ state.availStore=av.store; LOCKED_NAMES=av.locked||[]; if(av.prefs)state.prefStore=av.prefs; }
     else if(av&&typeof av==='object'&&!Array.isArray(av)) state.availStore=av;  /* pre-2.1.4 server shape */
   }catch(e){}
-  try{ const tr=await apiGET('roster'); if(Array.isArray(tr)&&tr.length) TEAM_ROSTER=tr; }catch(e){}
+  try{ const tr=await apiGET('roster');
+    if(tr&&tr.names){ TEAM_ROSTER=tr.names; ROSTER_IDS=tr.ids||{}; }        // 2.4.7 shape: {names, ids}
+    else if(Array.isArray(tr)&&tr.length) TEAM_ROSTER=tr;                    // pre-2.4.7 cache fallback
+  }catch(e){}
   applyAvailToDrivers();
   if(ok && state.drivers.length && !Object.keys(state.teams||{}).length) generate();
   renderContent();
