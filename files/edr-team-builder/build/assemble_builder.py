@@ -49,10 +49,41 @@ script=re.sub(r"const SAMPLE = \[.*?\];", "const SAMPLE = [];", script, count=1,
 #    (CAL_EVENTS) now live in the HTML as reassignable `let`s and are shared by both builds —
 #    nothing to strip or rewrite. Guard against the collision that broke 2.0.2:
 assert "const EVENTS" not in script, "standalone script declares const EVENTS — collides with the WP layer's `let EVENTS`"
-# 3) renderContent: add a Setup branch
+
+
+def _top_level_decls(src):
+    """Map of name -> kind for declarations at column 0, i.e. the shared IIFE scope.
+
+    Deliberately naive: only unindented lines, which is exactly the scope at risk. Kind
+    matters — see _fatal_clash: re-declaring a *function* is how the WP layer overrides the
+    standalone stubs (persistAvail, verifyAdminPass, ...) and is perfectly legal."""
+    out = {}
+    for m in re.finditer(r"^(let|const|var)\s+([A-Za-z_$][\w$]*)", src, re.M):
+        out.setdefault(m.group(2), m.group(1))
+    for m in re.finditer(r"^function\s+([A-Za-z_$][\w$]*)", src, re.M):
+        out.setdefault(m.group(1), "function")
+    return out
+
+
+def _fatal_clash(a, b):
+    """Names declared on both sides in a combination JavaScript rejects.
+
+    function+function and var+var are fine (last one wins — the override pattern). Anything
+    involving let or const on either side is a SyntaxError for the whole bundle."""
+    bad = []
+    for name, kind_a in a.items():
+        kind_b = b.get(name)
+        if kind_b is None:
+            continue
+        if kind_a in ("let", "const") or kind_b in ("let", "const"):
+            bad.append("%s (%s + %s)" % (name, kind_a, kind_b))
+    return sorted(bad)
+# 3) renderContent: put a Setup branch in front of the tab chain.
+#    Anchored on the start of the chain rather than the first tab in it, so adding a tab to the
+#    HTML (weekly, and whatever comes next) does not break the build.
 script, n = re.subn(
-  r"el\.innerHTML = state\.tab==='event' \? renderEventTab\(\)",
-  "el.innerHTML = state.tab==='setup' ? renderSetup() : state.tab==='event' ? renderEventTab()",
+  r"el\.innerHTML = (state\.tab===)",
+  r"el.innerHTML = state.tab==='setup' ? renderSetup() : \1",
   script, count=1)
 assert n == 1, "renderContent tab routing not found — check the el.innerHTML marker in EDR-Team-Builder.html"
 # 4) cut original boot block
@@ -87,6 +118,7 @@ APP_HTML = r"""
   <button class="tab" data-tab="drivers">Drivers</button>
   <button class="tab" data-tab="teams">Teams</button>
   <button class="tab" data-tab="stints">Stints</button>
+  <button class="tab" data-tab="weekly">Weekly</button>
 </div>
 <div class="wrap"><div class="importbox hide" id="importbox">
   <div class="meta" style="margin-bottom:8px">Paste a roster JSON (advanced / manual fallback), then Load.</div>
@@ -107,8 +139,12 @@ function apiGET(p){return fetch(API+p,{headers:_hdrs(false)}).then(r=>r.json());
 function apiPOST(p,b){return fetch(API+p,{method:'POST',headers:_hdrs(true),body:JSON.stringify(b)}).then(r=>r.json());}
 /* password-admin: verified by the server, never against a hash in this file */
 function verifyAdminPass(p,cb){
+  /* a 429 from the rate limiter carries a reason — pass it through so the unlock field can say
+     "wait 10 minutes" instead of "wrong password", which would just invite more attempts */
   fetch(API+'auth',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({pass:p})})
-    .then(r=>r.json()).then(r=>cb(!!(r&&r.ok))).catch(function(){cb(false);});
+    .then(r=>r.json().catch(function(){return {};}).then(function(j){ return {ok:r.ok,j:j}; }))
+    .then(function(x){ cb(!!(x.j&&x.j.ok), (!x.ok&&x.j&&x.j.message)?x.j.message:''); })
+    .catch(function(){cb(false,'');});
 }
 /* after a password unlock the Setup tab is newly visible — fetch its data now
    (at boot these only load for already-admin sessions) */
@@ -120,20 +156,41 @@ function onAdminUnlocked(){
     loadIracing().then(renderContent);
   })();
 }
-/* per-driver availability syncs through its own public route, not the plan.
-   Carries the device token (per-driver locking) and admin credentials when present.
-   Returns the fetch promise so the Submit button can await it and confirm. */
+/* per-driver availability syncs through its own public route, not the plan. Still carries the
+   device token (accepted and ignored server-side since the 2.4.2 advisory model) and admin
+   credentials when present. Returns the fetch promise so Submit can await it and confirm. */
 function persistAvail(evk,name){
   const slots=((state.availStore[evk]||{})[name])||[];
   const prefs=((state.prefStore[evk]||{})[name])||null;
   return fetch(API+'avail',{method:'POST',headers:_hdrs(true),body:JSON.stringify({ev:evk,name:name,slots:slots,prefs:prefs,token:DEV_TOKEN})})
     .then(function(r){
       return r.json().catch(function(){ return {}; }).then(function(j){
-        if(!r.ok) throw new Error((j&&j.message)||'avail save failed');
+        /* flag server refusals (unrecognised event, store full) so the Submit handler shows the
+           reason rather than blaming the connection and inviting a pointless retry */
+        if(!r.ok){ var e=new Error((j&&j.message)||'avail save failed'); e.fromServer=true; throw e; }
         if(j&&j.locked) LOCKED_NAMES=j.locked;
+        /* remember the stamp the server just wrote so "already in" is right immediately,
+           without waiting for the next GET /avail */
+        if(j&&j.seen){ AV_SEEN=AV_SEEN||{}; (AV_SEEN[evk]=AV_SEEN[evk]||{})[name]=j.seen; }
         return j;
       });
     });
+}
+/* Admin tidy-up: drop availability for events that finished long ago. This is the only way the
+   server's store caps are ever reached in normal use, so it needs to be doable from the page. */
+function pruneOldEvents(){
+  var days=90;
+  fetch(API+'avail/prune',{method:'POST',headers:_hdrs(true),body:JSON.stringify({days:days})})
+    .then(function(r){ return r.json().catch(function(){return {};}).then(function(j){
+      if(!r.ok) throw new Error((j&&j.message)||'prune failed');
+      return j; }); })
+    .then(function(j){
+      var n=(j&&j.removed&&j.removed.length)||0;
+      if(n){ (j.removed||[]).forEach(function(k){ delete state.availStore[k]; delete state.prefStore[k]; if(AV_SEEN)delete AV_SEEN[k]; }); }
+      _avMsg=n?('Cleared '+n+' event'+(n>1?'s':'')+' older than '+days+' days.'):('Nothing older than '+days+' days to clear.');
+      _avErr=false; save(); renderContent();
+    })
+    .catch(function(err){ _avMsg=(err&&err.message)||'Could not clear old events.'; _avErr=true; renderContent(); });
 }
 function releaseLock(name){
   apiPOST('avail',{name:name,release:1}).then(function(r){
@@ -141,7 +198,7 @@ function releaseLock(name){
   }).catch(function(){});
 }
 let lastTrackIds=[], _saveT=null;
-function serializePlan(){ return {drivers:state.drivers,w:state.w,proPct:state.proPct,teams:state.teams,stint:state.stint,stintAssign:state.stintAssign,stintWin:state.stintWin,stintSig:state.stintSig,overrides:overrides,meta:IMPORT_META,winStart:WIN_START_MS,startOffsets:START_OFFSETS,startLabels:START_LABELS,matches:lastMatches,trackIds:lastTrackIds,evsel:state.evsel,evWinMin:EV_WIN_MIN,evTiming:state.evTiming,teamsLocked:state.teamsLocked,stintsLocked:state.stintsLocked,teamNames:state.teamNames,fuelCfg:state.fuelCfg,customEvents:state.customEvents,irEvents:state.irEvents,evWeather:state.evWeather,prefStore:state.prefStore,swapNote:state.swapNote}; }
+function serializePlan(){ return {drivers:state.drivers,w:state.w,proPct:state.proPct,teams:state.teams,stint:state.stint,stintAssign:state.stintAssign,stintWin:state.stintWin,stintSig:state.stintSig,overrides:overrides,meta:IMPORT_META,winStart:WIN_START_MS,startOffsets:START_OFFSETS,startLabels:START_LABELS,matches:lastMatches,trackIds:lastTrackIds,evsel:state.evsel,evWinMin:EV_WIN_MIN,evTiming:state.evTiming,teamsLocked:state.teamsLocked,stintsLocked:state.stintsLocked,teamNames:state.teamNames,fuelCfg:state.fuelCfg,customEvents:state.customEvents,irEvents:state.irEvents,evWeather:state.evWeather,swapNote:state.swapNote}; }
 var _postBusy=false, _postAgain=false;
 function _flushPlan(){
   if(_postBusy){ _postAgain=true; return; }              // serialize: the retry below re-posts the LATEST state with the updated rev
@@ -160,6 +217,17 @@ function save(){
   clearTimeout(_saveT); _saveT=setTimeout(function(){ _saveT=null; _flushPlan(); }, 600);
 }
 var PLAN_REV=0;
+var PACE_AT=0, PACE_ERR='';   /* Garage 61 pace cache: unix seconds, and why the last refresh failed */
+function paceAgeLabel(){
+  if(PACE_ERR) return 'pace refresh failed — '+PACE_ERR;
+  if(!PACE_AT) return 'pace not pulled yet';
+  var mins=Math.max(0, Math.round((Date.now()/1000-PACE_AT)/60));
+  if(mins<2) return 'pace refreshed just now';
+  if(mins<60) return 'pace refreshed '+mins+' minutes ago';
+  var hrs=Math.round(mins/60);
+  if(hrs<24) return 'pace refreshed '+hrs+' hour'+(hrs===1?'':'s')+' ago';
+  var d=Math.round(hrs/24); return 'pace refreshed '+d+' day'+(d===1?'':'s')+' ago';
+}
 function _adoptPlan(p, keepEvsel){
   var _localEv=keepEvsel?state.evsel:null;
   state.drivers=p.drivers; state.w=p.w||state.w; state.proPct=(typeof p.proPct==='number')?p.proPct:state.proPct; state.teams=p.teams||{};
@@ -167,7 +235,13 @@ function _adoptPlan(p, keepEvsel){
   if(p.overrides)overrides=p.overrides; if(p.meta)IMPORT_META=p.meta; if(p.winStart)WIN_START_MS=p.winStart;
   if(p.startOffsets&&Object.keys(p.startOffsets).length)START_OFFSETS=p.startOffsets; if(p.startLabels&&Object.keys(p.startLabels).length)START_LABELS=p.startLabels;
   if(p.evsel)state.evsel=p.evsel; if(p.evWinMin)EV_WIN_MIN=p.evWinMin; if(p.evTiming)state.evTiming=p.evTiming; state.teamsLocked=!!p.teamsLocked; state.stintsLocked=!!p.stintsLocked;
-  state.teamNames=p.teamNames||{}; if(p.fuelCfg)state.fuelCfg=p.fuelCfg; state.customEvents=p.customEvents||[]; state.irEvents=p.irEvents||[]; state.evWeather=p.evWeather||{}; state.prefStore=p.prefStore||{}; state.swapNote=p.swapNote||'';
+  state.teamNames=p.teamNames||{}; if(p.fuelCfg)state.fuelCfg=p.fuelCfg; state.customEvents=p.customEvents||[]; state.irEvents=p.irEvents||[]; state.evWeather=p.evWeather||{}; state.swapNote=p.swapNote||'';
+  /* Race preferences live in edr_tb_prefs, written by the drivers themselves through /avail.
+     The plan used to carry a second copy, which meant an admin autosave could ship a stale
+     snapshot of everyone's preferences; /avail happened to be applied afterwards so it never
+     bit, but the duplicate was one reordering away from silently reverting driver choices.
+     Only read the legacy copy, as a fallback for plans saved before 2.4.11. */
+  if(p.prefStore && !Object.keys(state.prefStore||{}).length) state.prefStore=p.prefStore;
   lastMatches=p.matches||[]; lastTrackIds=p.trackIds||[];
   if(_localEv && _localEv!==state.evsel && calEvent(_localEv)){ state.evsel=_localEv; }   // don't yank the viewer off their selected event
 }
@@ -202,18 +276,28 @@ function refreshShared(force){
         var dirty={}; Object.keys(_availDirty||{}).forEach(function(k){ if(Object.keys(_availDirty[k]||{}).length) dirty[k]=1; });
         Object.keys(av.store).forEach(function(evk){ if(!dirty[evk]) state.availStore[evk]=av.store[evk]; });   // never wipe staged, unsubmitted ticks — any event
         if(av.prefs) Object.keys(av.prefs).forEach(function(evk){ if(!dirty[evk]) state.prefStore[evk]=av.prefs[evk]; });
+        if(av.seen) AV_SEEN=av.seen;
         LOCKED_NAMES=av.locked||[];
       }
     }).catch(function(){}).then(function(){ applyAvailToDrivers(); renderContent(); setStatus(force?'Another device updated the plan — showing the latest; re-apply your last change.':'Synced the latest plan from the server.'); });
   }).catch(function(){});
 }
 var IR_SEASONS=[], IR_STATUS='';
+/* Next fortnight's official rounds, straight from the iRacing schedule — the weekly write-up's
+   source of truth for what is on. Kept apart from IR_SEASONS on purpose: that one holds only
+   weeks carrying session_times, because irMatchFor() scores across it and would otherwise
+   settle on a sessionless week and stop the official-times feature working. */
+var IR_WEEKS=[];
+/* namespaced series key -> [{name, starts}] of who on the team actually runs it, built live
+   from iRacing results. Empty until that pull exists; the builder falls back to the seeded
+   figures and says so in the UI. */
+var TEAM_SERIES={};
 function loadIracing(){
   return apiGET('iracing').then(function(r){
-    if(r&&r.ok){ IR_SEASONS=r.seasons||[]; IR_STATUS=IR_SEASONS.length?'':'iRacing connected, but no active events expose session times right now.'; }
-    else if(r&&r.reason==='not_configured'){ IR_SEASONS=[]; IR_STATUS='iRacing proxy not set in plugin Settings — using calendar/derived session times.'; }
-    else { IR_SEASONS=[]; IR_STATUS=(r&&r.message)||'iRacing unavailable right now.'; }
-  }).catch(function(){ IR_SEASONS=[]; IR_STATUS='iRacing unavailable right now.'; });
+    if(r&&r.ok){ IR_SEASONS=r.seasons||[]; IR_WEEKS=r.weeks||[]; IR_STATUS=IR_SEASONS.length?'':'iRacing connected, but no active events expose session times right now.'; }
+    else if(r&&r.reason==='not_configured'){ IR_SEASONS=[]; IR_WEEKS=[]; IR_STATUS='iRacing proxy not set in plugin Settings — using calendar/derived session times.'; }
+    else { IR_SEASONS=[]; IR_WEEKS=[]; IR_STATUS=(r&&r.message)||'iRacing unavailable right now.'; }
+  }).catch(function(){ IR_SEASONS=[]; IR_WEEKS=[]; IR_STATUS='iRacing unavailable right now.'; });
 }
 function irMatchFor(ev){
   if(!ev||!IR_SEASONS.length) return null;
@@ -356,6 +440,9 @@ function renderSetup(){
       +((selEv&&selEv.g61Tracks)?'<div><span class="meta" data-s="autotrack" style="cursor:pointer;text-decoration:underline">back to the event tracks</span></div>':'')+'</div>';
   }
   h+='<button class="btn btn-amber" data-s="import">Import / Refresh now</button>';
+  /* the background job keeps this warm, so say how fresh it is — an admin importing on race
+     morning needs to know whether they are looking at last night's practice or last week's */
+  h+='<span class="meta" style="align-self:center;color:'+(PACE_ERR?'var(--red)':'var(--dim)')+'">'+esc(paceAgeLabel())+'</span>';
   h+='<span class="meta" style="align-self:center;max-width:360px">'+esc(setupMsg||'This is the shared team plan, saved for everyone. Pick a track (or use the event\'s tracks), then Import / Refresh to pull Garage 61 pace.')+'</span>';
   h+='</div>';
   // official iRacing session start times + race length (via the proxy)
@@ -422,12 +509,12 @@ async function bootSetup(){
   });
   renderRolebar();
   syncControls();
-  state.tab = CAN ? 'setup' : 'instructions'; setActiveTab();
+  state.tab = tabFromHash() || (CAN ? 'setup' : 'instructions'); setActiveTab();
   var ok=false; try{ ok=await loadPlan(); }catch(e){}
   if(state.evsel){ var _bev=calEvent(state.evsel); if(_bev){ var _br=state.stint.race; applyEventTiming(_bev); if(_br>0) state.stint.race=_br; } }  // rebuild timing globals from the restored event (don't trust persisted globals)
   try{
     const av=await apiGET('avail');
-    if(av&&av.store){ state.availStore=av.store; LOCKED_NAMES=av.locked||[]; if(av.prefs)state.prefStore=av.prefs; }
+    if(av&&av.store){ state.availStore=av.store; LOCKED_NAMES=av.locked||[]; if(av.prefs)state.prefStore=av.prefs; if(av.seen)AV_SEEN=av.seen; }
     else if(av&&typeof av==='object'&&!Array.isArray(av)) state.availStore=av;  /* pre-2.1.4 server shape */
   }catch(e){}
   try{ const tr=await apiGET('roster');
@@ -445,13 +532,57 @@ async function bootSetup(){
   }
 }
 
+/* ---- live heartbeat --------------------------------------------------------------------
+   Focus-only refresh meant two people planning together saw each other's work only when they
+   clicked away and back. Poll the tiny /rev endpoint instead while the tab is visible, and
+   only pull the full plan/avail payload when a revision actually moved — a few bytes every
+   20s per open tab, which is nothing for a 30-person squad, and edits land within ~20s.
+
+   Nothing polls while hidden (a phone left on the page all weekend costs nothing), a focus
+   fires an immediate check, and repeated failures back off so a site that is down or a laptop
+   that woke up on a dead connection does not hammer it. */
+var REV_POLL_MS=20000, REV_BACKOFF_MAX=180000;
+var _revTimer=null, _revFail=0, _revSeen={plan:null, avail:null};
+function _revTick(){
+  if(document.visibilityState!=='visible') return _revArm(REV_POLL_MS);
+  var q=state.evsel?('?ev='+encodeURIComponent(state.evsel)):'';
+  fetch(API+'rev'+q,{headers:{'Accept':'application/json'}})
+    .then(function(r){ if(!r.ok) throw new Error('rev '+r.status); return r.json(); })
+    .then(function(j){
+      _revFail=0;
+      var first=(_revSeen.plan===null);
+      var moved=(!first) && (j.plan!==_revSeen.plan || j.avail!==_revSeen.avail);
+      _revSeen.plan=j.plan; _revSeen.avail=j.avail;
+      PACE_AT=j.paceAt||0; PACE_ERR=j.paceErr||'';
+      if(moved) refreshShared();       // refreshShared has its own edit-in-progress guard
+      _revArm(REV_POLL_MS);
+    })
+    .catch(function(){
+      _revFail++;
+      _revArm(Math.min(REV_POLL_MS*Math.pow(2,_revFail), REV_BACKOFF_MAX));
+    });
+}
+function _revArm(ms){ clearTimeout(_revTimer); _revTimer=setTimeout(_revTick, ms); }
+function _revNow(){ clearTimeout(_revTimer); _revTick(); }
+
 // ---- boot ----
 document.getElementById('edr-tb-app').dataset.ready='1';
-document.addEventListener('visibilitychange', function(){ if(document.visibilityState==='visible') refreshShared(); });
+document.addEventListener('visibilitychange', function(){ if(document.visibilityState==='visible'){ refreshShared(); _revNow(); } });
 window.addEventListener('pagehide', function(){ if(_saveT){ clearTimeout(_saveT); _saveT=null; try{ fetch(API+'plan',{method:'POST',headers:_hdrs(true),body:JSON.stringify({plan:serializePlan(),baseRev:PLAN_REV}),keepalive:true}); }catch(e){} } });   // a rename made just before closing the tab must not die in the 600ms debounce
-window.addEventListener('focus', function(){ refreshShared(); });
+window.addEventListener('focus', function(){ refreshShared(); _revNow(); });
 bootSetup();
+_revArm(REV_POLL_MS);
 """
+
+# Both halves land in one IIFE scope, so any name declared at top level in both the HTML and
+# the WordPress layer is a SyntaxError — and it fails silently, with a blank app and an empty
+# console. That cost a release once (const EVENTS); catch the whole class rather than one name.
+_clash = _fatal_clash(_top_level_decls(script), _top_level_decls(APPEND))
+assert not _clash, (
+    "top-level name(s) declared in BOTH EDR-Team-Builder.html and the WP APPEND layer: "
+    + ", ".join(_clash)
+    + " — rename one side, or drop the HTML declaration and probe with `typeof NAME`"
+)
 
 logo_line = "const LOGO=(window.EDR_TB&&EDR_TB.logo)||'';"
 app_js = "const APP_HTML=`"+APP_HTML.replace("`","\\`").replace("${LOGO}","${LOGO}")+"`;"

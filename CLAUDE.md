@@ -36,21 +36,53 @@ python3 files/edr-team-builder/build/assemble_builder.py   # regenerate builder.
 - **Always parse-check the generated `builder.js` after a rebuild.** The assembler is string
   concatenation inside one IIFE, so a new top-level `const` in the HTML that collides with the WP
   `APPEND` layer (e.g. the old `const EVENTS`) is a SyntaxError that kills the app with no console
-  output. No node on this machine — load the bundle in a browser and run `new Function(src)` (a
-  `wp-test.html` harness with fetch stubs for `/plan`, `/avail`, `/roster`, `/auth`, `/import` is
-  the established pattern), or at minimum grep for duplicate declarations. The assembler asserts
-  its HTML markers exist and fails loudly if they move.
-- **CI** (`.github/workflows/ci.yml`): on push/PR, rebuilds assets, lints PHP, uploads the zip artifact.
+  output. **The assembler now catches this whole class itself** (`_fatal_clash`): it compares
+  top-level declarations in the HTML against the WP `APPEND` layer and fails the build on any
+  overlap involving `let`/`const`. Duplicate `function` declarations still pass — that is the
+  deliberate stub-override pattern (`persistAvail`, `verifyAdminPass`, `pruneOldEvents`, …).
+  To use a WP-layer global from HTML code, probe it with `typeof NAME` rather than declaring it.
+  Node **is** installed (v22) — `node --check files/edr-team-builder/assets/builder.js` is
+  the quickest check. To exercise behaviour, the established pattern is a `wp-test.html` harness
+  with fetch stubs for `/plan`, `/avail`, `/roster`, `/auth`, `/tracks`, `/import`, `/iracing`;
+  build it outside the repo and serve it (the bundle is IIFE-wrapped, so drive it through the DOM
+  — its internals are not reachable from the console). The assembler asserts its HTML markers
+  exist and fails loudly if they move.
+- `python3 files/edr-team-builder/build/package_plugin.py` rebuilds **and** writes the uploadable
+  zip to `Admin Folder/edr-team-builder-V2.zip` (and syncs `HANDOFF.md` beside it). `EDR_ZIP`
+  overrides the path. That zip is what gets uploaded to WordPress, so regenerate it whenever the
+  plugin version changes — **CI fails if its version does not match `edr-team-builder.php`**.
+- **CI** (`.github/workflows/ci.yml`): on push/PR, rebuilds assets, **fails if the committed
+  assets or zip are stale**, parse-checks the bundle, lints PHP, uploads the zip artifact.
 - **Release** (`.github/workflows/release.yml`): pushing a `v*` tag builds + publishes a GitHub
   Release with `edr-team-builder-<version>.zip` (version stamped from the tag). Bump the version
   in `edr-team-builder.php` to match the tag.
 
-There is **no test suite, linter, or package manifest** for the repo as a whole.
+There is **no test suite or package manifest** for the repo as a whole, but both linters the
+code actually needs are on this machine now: `node --check <bundle>` for the generated
+JavaScript and `php -l <file>` for the plugin (PHP 8.3, installed via winget — if `php` is not
+on PATH in a fresh shell it lives under
+`%LOCALAPPDATA%\Microsoft\WinGet\Packages\PHP.PHP.8.3_*\php.exe`). Run both before calling a
+change done; CI runs the same two.
 
-## Team Builder workflow & roles (v2.3)
+## Staying live (2.4.12)
 
-Tab order is the planning flow: **Event → Availability → Drivers → Teams → Stints** (WP adds an
-admin-only Setup tab first). Key facts:
+`GET /rev` is a heartbeat every open tab polls every 20s: `{plan, avail, paceAt, paceErr}` from
+three option reads. Clients pull the full `/plan` or `/avail` only when a revision moved, do not
+poll at all while the tab is hidden, check immediately on focus, and back off to 3 min on
+repeated failure. Availability writes bump `edr_tb_avail_rev`, so a driver submitting blocks
+lands on everyone else's screen within ~20s.
+
+Garage 61 pace is **warmed on a schedule, never auto-applied**: the heartbeat queues a
+background `wp_schedule_single_event` pull when the cache is stale (hourly within 10 days of the
+selected event, daily otherwise, transient-debounced), and `POST /import` serves that cache when
+it matches the tracks. Auto-applying pace would silently reshuffle a settled line-up, so the
+admin still presses Import. Details in the plugin's [CLAUDE.md](files/edr-team-builder/CLAUDE.md).
+
+## Team Builder workflow & roles (v2.4)
+
+Tab order is the planning flow: **Instructions → Event → Availability → Drivers → Teams →
+Stints** (WP adds an admin-only Setup tab in front). Instructions is the landing tab and is the
+driver-facing how-to, including the swap contact (2.4.8). Key facts:
 
 - **Events** come from the `CAL_EVENTS` array in the HTML (shared by both builds — edit it there).
   Each event can carry `winStart/winMin/raceMin/offsets/labels` (Spa has the survey-accurate set),
@@ -60,26 +92,50 @@ admin-only Setup tab first). Key facts:
   the page. **Per-event timing overrides** live in `state.evTiming[evKey]` (persisted in the
   plan) — `applyEventTiming()` prefers them over the `CAL_EVENTS` defaults; `applyIrTiming()`
   writes them from official iRacing session times (see the plugin CLAUDE.md).
-- **Availability is strictly per event**: 2-hour blocks (`AV_BLOCK`, 120 min) over the event
-  window, stored in `state.availStore[evKey][driverName]` (server-side in `edr_tb_avail` via public
-  `GET/POST /avail`). Drivers tick either the mobile-friendly **block picker** (`renderMyBlocks`,
+- **Availability is strictly per event**: blocks over the event window, stored in
+  `state.availStore[evKey][driverName]` (server-side in `edr_tb_avail` via public
+  `GET/POST /avail`). `AV_BLOCK` defaults to 120 min but is **per event** since 2.4.11
+  (`state.evTiming[evKey].avBlock`, admin buttons on the Availability tab). Stored ticks are
+  slot *indexes*, so the size is part of how they are read — `avSetBlock()` rescales through
+  real minute windows rather than reinterpreting, and **coarsening uses the strict
+  fully-covered rule** so a rescale can never hand back availability a driver did not give. Drivers tick either the mobile-friendly **block picker** (`renderMyBlocks`,
   with Tick all / Clear) or **their own column in the wide matrix** (`canEditAvail(nm)` gates the
   checkbox) — both edit the same data; other drivers' columns stay read-only, and the matrix is
   the full admin edit surface.
   Ticks stage locally; **Submit** persists. `slotsToAvail()` ↔ `windowsToSlots()` convert to/from
   the `{hours, pct, starts, windows}` shape scoring/stints use. Switching events wipes carried-over
-  `d.avail`. **Per-driver locking**: the first browser to submit a name owns it (random device
-  token in `localStorage`, hashed server-side in `edr_tb_avail_owners`); other devices see it
-  greyed/🔒 and are rejected server-side. Admins bypass and can release a lock.
+  `d.avail`. **Writes are advisory** (2.4.2 onwards): any device may edit any driver's blocks and
+  the team runs on trust. The old hard lock (first device to submit a name owns it, device token
+  hashed into `edr_tb_avail_owners`) was removed because it kept locking drivers out of their own
+  availability on a phone→PC switch; with no accounts the server cannot tell "same person, new
+  device" from "someone else". `DEV_TOKEN`, `LOCKED_NAMES` and the `release` param survive as
+  accepted-and-ignored vestiges so older clients keep working — `edr_tb_avail_owners` is dead.
+  The route is public but bounded: `ev` must match `<name>|<YYYY-MM-DD>`, and new keys are
+  refused past `EDR_TB_MAX_EVENTS`/`EDR_TB_MAX_DRIVERS` so the option cannot grow without limit.
+  Writes take `GET_LOCK('edr_tb_avail_write')` (concurrent submits used to silently drop one).
+  Drivers get bulk pickers (per-day, time-of-day, copy-from-last-event matched on local
+  weekday+hour), drag-to-paint on mouse/pen only (touch keeps tap, so the page can still
+  scroll), a **sticky Submit bar rendered as the last child of the tab** (`position:sticky`
+  only holds inside its own containing block — nested in the header panel it vanished exactly
+  when you needed it), and an "already in" line from the server's `seen` stamps.
 - **The event pool rule** (same as the old survey rule): with an event selected,
   Drivers/Teams/Stints only include drivers with `avail.hours > 0` for that event. Anyone who
-  submits availability joins the pool (no pace until the next import). The name picker is the
-  live Garage 61 membership (`GET /roster`, both EDR teams, cached 6 h) with a baked-in
-  `TEAM_ROSTER` fallback; `nameKey()` + `NAME_ALIASES` dedupe survey-vs-G61 spellings.
+  submits availability joins the pool (no pace until the next import). **Self-identification is
+  by iRacing customer ID** where the roster supplies one (2.4.7): `GET /roster` returns
+  `{names, ids}`, the builder fills `ROSTER_IDS`, and a driver typing their ID is resolved via
+  `GET /roster?lookup=<id>` (a cache miss re-pulls membership at most once per 10 min) and
+  remembered in `localStorage`. Only when no IDs are available — which is the case in the
+  standalone build — does it fall back to picking a name from the live Garage 61 membership
+  (both EDR teams, cached 6 h) with a baked-in `TEAM_ROSTER` fallback; `nameKey()` +
+  `NAME_ALIASES` dedupe survey-vs-G61 spellings.
 - **Roles**: default is read-only driver. Admin unlock is an **inline header password field**
   (never `window.prompt` — it is blocked in embedded/iframe views). Admin = WP login, or the
   builder admin password: standalone checks `ADMIN_HASH` in the file (password `edr2026`); WP
-  verifies the Settings `edit_pass` server-side (`POST /auth`, sent as `X-EDR-Pass` on writes).
+  verifies the Settings `edit_pass` server-side (`POST /auth`, sent as `X-EDR-Pass` on writes,
+  rate-limited to `EDR_TB_MAX_PASS_FAILS` wrong tries per IP per 10 min). **The standalone
+  `ADMIN_HASH` check is a convenience gate, not a security boundary** — the hash is in the file
+  and the comparison runs in the browser, so anyone with the file can bypass it. Only the WP
+  build enforces anything.
   Drivers-tab car dropdowns default to each driver's fastest-median car (`fastestCar()`), listed
   fastest-first. WP CSS is `!important`-armored under `#edr-tb-app` so themes can't bleed in.
 - The full REST surface and role model are documented in the plugin's

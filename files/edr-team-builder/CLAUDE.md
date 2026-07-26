@@ -35,6 +35,8 @@ The front-end is **generated**, not hand-edited:
 
 ```bash
 python3 build/assemble_builder.py        # regenerates assets/builder.js + assets/builder.css
+python3 build/package_plugin.py          # rebuilds, then writes the uploadable zip
+node --check assets/builder.js           # always parse-check a rebuild
 ```
 
 - **Source of truth for the UI is `../../EDR-Team-Builder.html`** (one level above the
@@ -48,9 +50,12 @@ python3 build/assemble_builder.py        # regenerates assets/builder.js + asset
   `build/assemble_builder.py` (the WordPress glue: import, setup, plan save/load).
 - Override source/output paths via env vars `EDR_SRC` / `EDR_OUT` (defaults are repo-relative).
 
-There is no test suite, linter, or package manifest. Distribution is a zip of the plugin
-dir (see `edr-team-builder-V2.zip` one level up); install/usage steps are in
-[INSTALL.md](INSTALL.md) and [HANDOFF.md](HANDOFF.md).
+There is no test suite, linter, or package manifest. Distribution is a zip of the plugin dir,
+built by `build/package_plugin.py` to `Admin Folder/edr-team-builder-V2.zip` at the repo root
+(`EDR_ZIP` overrides the path); the packager also copies [HANDOFF.md](HANDOFF.md) beside the
+zip, so **this file is the source of truth for that note** and the copy in `Admin Folder/` is
+generated. CI fails when the committed assets or the committed zip's version fall behind the
+source. Install/usage steps are in [INSTALL.md](INSTALL.md) and [HANDOFF.md](HANDOFF.md).
 
 ## Architecture
 
@@ -60,9 +65,82 @@ dir (see `edr-team-builder-V2.zip` one level up); install/usage steps are in
 - `GET /tracks`, `POST /import`, `POST /plan`, `GET /iracing` — logged-in user OR the
   builder admin password (`X-EDR-Pass` header, `edr_tb_req_can_edit()`).
 - `GET /plan` (public) — the single shared plan, stored in the `edr_tb_plan` option.
-- `POST /auth` (public) — verifies the admin password for the builder's role unlock.
+- `POST /auth` (public) — verifies the admin password for the builder's role unlock. Wrong
+  passwords are counted per IP (`EDR_TB_MAX_PASS_FAILS` in 10 min, shared with
+  `edr_tb_req_can_edit()` so guessing through a write route counts too) and refused with a 429
+  once tripped. It used to `sleep(1)` per failure, which held a PHP worker on a public route.
 - `GET/POST /avail` (public) — per-driver availability slots per event
-  (`edr_tb_avail` option); drivers submit without an account.
+  (`edr_tb_avail` option); drivers submit without an account. Because it is unauthenticated the
+  write is bounded: `ev` must look like `<name>|<YYYY-MM-DD>` (`edr_tb_valid_ev()`), and a key
+  that does not already exist is refused once the store hits `EDR_TB_MAX_EVENTS` events or
+  `EDR_TB_MAX_DRIVERS` names on that event. Updating an existing entry is always allowed.
+  The whole read-modify-write sits inside `GET_LOCK('edr_tb_avail_write')` — same guard as the
+  plan, and for the same reason: without it two drivers submitting at once silently lose one of
+  the two, right after being told "Submitted". `GET` also returns `seen`
+  (`edr_tb_avail_seen`: `{ev: {name: {at, n}}}`), the last-submission stamp the Availability tab
+  shows back to the driver.
+- `POST /avail/prune` (edit-gated) — drops availability, prefs and stamps for events whose date
+  is more than `days` (default 90) old. The store caps above are only ever reached legitimately
+  by accumulation, so admins need a way to tidy up; the Availability tab has a button.
+- `GET /rev` (public) — the heartbeat: `{plan, avail, paceAt, paceErr}` from three option reads.
+  Every open tab polls it every 20s and only pulls `/plan` or `/avail` when a number moved, so
+  the steady-state cost of feeling live is a few bytes per tab. It is also the **scheduler
+  tick** (`edr_tb_maybe_schedule_pace()`) — see below.
+
+## Staying live
+
+Two different problems, deliberately solved differently.
+
+**Team data (plan + availability) is near-live.** Refresh used to happen only on window focus,
+so two people planning together saw each other's work only by clicking away and back. Now
+`_revTick()` polls `/rev` every 20s while the tab is *visible*, compares the revisions it holds,
+and calls the existing `refreshShared()` only on a change. Hidden tabs poll nothing (a phone
+left on the page all weekend is free), focus triggers an immediate check, and failures back off
+20s → 40s → … → 180s so a dead connection does not hammer. Availability writes bump
+`edr_tb_avail_rev` so a driver's submission propagates exactly like a plan edit.
+
+**Garage 61 pace is warmed, not live.** A heavy pull can get the site's IP rate-limited, and
+pace only moves when people practise. `edr_tb_maybe_schedule_pace()` runs off the heartbeat and
+queues `wp_schedule_single_event('edr_tb_pace_refresh')` when the cache is stale — hourly within
+`EDR_TB_PACE_NEAR_DAYS` of the selected event, daily otherwise, debounced by a transient so
+concurrent tabs cannot pile up jobs. Hanging this off the heartbeat rather than real cron is
+deliberate: WP-Cron only fires on traffic and this page is private and quiet, so the refresh is
+considered exactly when somebody is using the tool. `POST /import` then serves the warm cache
+when it covers the same tracks and is recent (`fresh=1` forces a live pull), which is why an
+admin importing on race morning normally gets an instant answer.
+
+## Weekly update (Weekly tab, admin only)
+
+Generates a pasteable "This week in iRacing" draft. Hidden from drivers by
+`.readonly .tabs .tab[data-tab="weekly"]{display:none}`, the same mechanism as Setup.
+
+- **Next week's rounds come from the live iRacing schedule.** `GET /iracing` now returns a
+  second array, `weeks` (`edr_ir_weeks_from()`), holding every official round in the next
+  fortnight. The client keeps only rounds starting in next week's Mon–Sun window and the pick
+  list is built from those — so the tab shows what is actually on, not a fixed menu.
+- **`weeks` is deliberately separate from `seasons`.** `edr_ir_seasons()` only emits weeks that
+  carry `session_times`, because `irMatchFor()` scores across it; feed it every schedule week
+  and it can settle on a sessionless one, at which point `applyIrTiming()` bails and the
+  official-times feature silently stops working. One HTTP call, two shapes (`edr_ir_all()`).
+- **Dates are compared as ISO strings**, never timestamps. `start_date` is a plain YYYY-MM-DD
+  and mixing it with local-midnight epochs skews the window by hours in Brisbane, which drops
+  or double-counts rounds at the boundary.
+- **Series matching is exact on a normalised key** (`seriesKey()`: strip the season suffix and
+  the sponsor tail). No substring fallback — "imsa iracing series" is a prefix of "imsa iracing
+  series fixed", so a loose match collapses the Fixed and open splits and names the wrong track
+  for half the write-up. Unmatched reads "track TBC", which is honest.
+- **`WEEKLY_SERIES` and `DRIVER_NOTES` in the HTML are seeds, not truth.** The series figures
+  came from a one-off popularity report and only supply ordering, default ticks and
+  who-races-what until live data exists. `TEAM_SERIES` (WordPress layer) is the live slot:
+  populate it from iRacing results matched to the Garage 61 roster and `teamRunners()` prefers
+  it automatically. **Not yet built** — the UI says so rather than implying the numbers are live.
+- Driver mentions are de-duplicated across a draft, and the endurance section drops anything
+  that finishes before next week starts.
+
+**Pace is never auto-applied.** The warm cache only makes the *next* import instant; it does not
+rewrite `state.drivers` behind anyone's back. Silently re-running the split could reshuffle a
+line-up an admin had already settled — the same class of surprise the plan's 409 guard exists to
+prevent. The Setup tab shows how old the pace is (`paceAgeLabel()`) and the admin decides.
 - `GET /iracing` (edit-gated, cached 12h in `edr_tb_iracing`) — official iRacing session
   start times + race lengths via a teammate's proxy (`includes/iracing.php`, same
   server-side pattern as `garage61.php`; proxy URL + key in Settings). Returns only the

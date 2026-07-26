@@ -1,42 +1,43 @@
-# EDR Endurance Team Planning — how it all works
+# EDR Endurance Team Planning — start here
 
-The goal: split the squad into **Pro** and **Casual** teams using real performance
-data, and let iRacePlan handle who's available and when. Two tools, clear jobs.
+The goal: split the squad into **Pro** and **Casual** teams using real performance data, and
+build a stint plan around when people can actually drive.
 
-## The setup
+## How it fits together
 
-- **Garage 61** → performance data (practice laps, pace, clean-lap %) per driver, per car.
-- **Team Builder** (the HTML file) → turns that into a **Pro/Casual split, per car class**.
-- **iRacePlan** → the availability survey + the lineup/stint scheduling. It owns that data.
+- **Garage 61** gives us pace per driver, per car (median clean lap, lap count, clean-lap %).
+- **Drivers tell us their availability** in the tool itself, in 2-hour blocks, per event.
+- **The Team Builder** merges the two into a Pro/Casual split per car class, car entries, and a
+  stint rotation.
 
-Performance and availability are deliberately separate: the builder only knows who has
-**practised** (from Garage 61). It does **not** know who's **available** — that lives in
-iRacePlan and can't be exported (see the iRacePlan notes).
+Availability used to live in iRacePlan. It does not any more — iRacePlan could never export
+survey responses, so collection was brought in-house in 2.3.0.
 
-## Files in this folder
+## Where the tool lives
 
-| File | What it is |
-|------|------------|
-| `EDR-Team-Builder.html` | The tool. Double-click to open in a browser. Import your roster, get the split. Saves your data on this computer. Send it to a teammate to share. |
-| `garage61-pull.py` | The script that pulls practice data from Garage 61 (run it in Google Colab). Produces the roster you paste into the builder. |
-| `iraceplan-api-notes.md` | What we learned about iRacePlan's API and its limits, plus a feature-request summary. |
-| `00-START-HERE.md` | This file. |
+| Thing | What it is |
+|-------|------------|
+| `EDR-Team-Builder.html` | The standalone tool. Open it in a browser. This is also the **source of truth for all front-end logic**. |
+| `edr-team-builder/` | The same tool as a WordPress plugin for endurotechracing.com. Its assets are **generated** from the HTML — never hand-edit them. |
+| `../Admin Folder/` | The zip to upload to WordPress, plus the note for whoever manages the site. |
+| `colab_pull_garage61.py` | Reference Garage 61 pull (Google Colab). The plugin does this server-side now. |
+| `iraceplan-api-notes.md` | Historical iRacePlan API notes. Kept for reference only. |
 
-## To plan an event (e.g. 6 Hours of the Glen)
+## To plan an event
 
-1. **Pull the data.** Open Google Colab, paste in `garage61-pull.py`, run it, and paste your
-   Garage 61 token when asked. It's pre-set for team `edr-endurotech`, Watkins Glen (Boot),
-   current season, practice laps. Copy the roster it prints — **and back it up in this folder.**
-2. **Build the split.** Open `EDR-Team-Builder.html`, click **Import**, paste the roster, hit
-   **Load**. It groups drivers by class (GTP / LMP2 / GT3) and tags each **Pro** or **Casual**
-   from pace + practice laps + clean-lap %. Use the weight sliders and the Pro % cutoff to taste.
-3. **Assign in iRacePlan.** Take the Pro/Casual labels into iRacePlan's lineup planner. Put your
-   Pro drivers in the pro car entries, Casual in the rest. iRacePlan shows each driver's
-   availability and auto-builds the stint rotation across the race.
+Work left to right through the tabs: **Instructions → Event → Availability → Drivers → Teams →
+Stints**.
+
+1. **Event** — pick it from the calendar. That sets the availability window and race length.
+2. **Availability** — drivers tick the 2-hour blocks they can race and hit Submit. Anyone with
+   more than zero hours is in the pool for that event.
+3. **Setup** (admin, WordPress build) — import Garage 61 pace for the event's track, and pull
+   official iRacing session times if you want the real start times rather than derived ones.
+4. **Drivers / Teams / Stints** — check the ranking, arrange the cars, then auto-fill and adjust
+   the stint plan. Lock teams or stints once they are final so they stop being regenerated.
 
 ## Worth remembering
 
 - **Pace is only ever compared within a class** — a GTP lap is never ranked against a GT3 lap.
-- The reliable memory is **these files**, not any chat. Keep them here in iCloud so they sync
-  and never vanish.
-- Garage 61 team slug: **edr-endurotech**.  ·  Glen availability survey id: **1525**.
+- Garage 61 team slug: **edr-endurotech**. Pace queries use `age=-1` (current season).
+- Fuller detail: `../PROJECT.md`. Working guidance for AI assistants: `../CLAUDE.md`.
