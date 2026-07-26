@@ -178,6 +178,27 @@ function persistAvail(evk,name){
 }
 /* Admin tidy-up: drop availability for events that finished long ago. This is the only way the
    server's store caps are ever reached in normal use, so it needs to be doable from the page. */
+/* Kick the results sweep and watch for it to finish. It is a search per driver plus a fetch
+   per subsession against a rate-limited proxy, so this can take minutes — the button returns
+   at once and we poll the cached copy. */
+function refreshRecap(){
+  RECAP_RUNNING=true; RECAP_ERR=''; renderContent();
+  fetch(API+'recap/refresh',{method:'POST',headers:_hdrs(true),body:'{}'})
+    .then(function(r){ return r.json().catch(function(){return {};}).then(function(j){
+      if(!r.ok) throw new Error((j&&j.message)||'could not start the results pull'); return j; }); })
+    .then(function(){ pollRecap(0); })
+    .catch(function(err){ RECAP_RUNNING=false; RECAP_ERR=(err&&err.message)||'results pull failed'; renderContent(); });
+}
+function pollRecap(n){
+  if(n>60){ RECAP_RUNNING=false; RECAP_ERR='The results pull is taking longer than expected — reopen the tab shortly.'; renderContent(); return; }
+  setTimeout(function(){
+    apiGET('recap').then(function(rc){
+      if(rc){ RECAP=rc.recap||RECAP; RECAP_ERR=rc.error||''; RECAP_RUNNING=!!rc.running; }
+      if(rc && rc.running) return pollRecap(n+1);
+      RECAP_RUNNING=false; renderContent();
+    }).catch(function(){ pollRecap(n+1); });
+  }, 5000);
+}
 function pruneOldEvents(){
   var days=90;
   fetch(API+'avail/prune',{method:'POST',headers:_hdrs(true),body:JSON.stringify({days:days})})
@@ -535,6 +556,7 @@ async function bootSetup(){
   if(ok && state.drivers.length && !Object.keys(state.teams||{}).length) generate();
   renderContent();
   if(isAdmin()){
+    try{ var rc=await apiGET('recap'); if(rc){ RECAP=rc.recap||null; RECAP_RUNNING=!!rc.running; RECAP_ERR=rc.error||''; } }catch(e){}
     try{ TRACKS=await apiGET('tracks'); }catch(e){ TRACKS=[]; } if(!Array.isArray(TRACKS)) TRACKS=[];
     preselectNearest();
     if(state.tab==='setup') renderContent();

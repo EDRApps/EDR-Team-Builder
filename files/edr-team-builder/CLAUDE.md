@@ -137,6 +137,32 @@ Generates a pasteable "This week in iRacing" draft. Hidden from drivers by
 - Driver mentions are de-duplicated across a draft, and the endurance section drops anything
   that finishes before next week starts.
 
+### Last-week recap (`includes/results.php`)
+
+The draft opens with how the week just gone went: top three on iRating, most improved, biggest
+loss, Safety Rating movers, wins, busiest and cleanest.
+
+**This is the expensive pull.** One `results/search_series` per driver plus one `results/get`
+per unique subsession, against a GET-only proxy on a single shared iRacing account that
+rate-limits. It runs at `EDR_TB_RECAP_PACE` (0.45s) between calls and is capped at
+`EDR_TB_RECAP_MAX_SUBS`; anything dropped by that cap is reported in the UI rather than
+silently truncated. It **never** runs in a page request — `POST /recap/refresh` sets a
+running flag and queues `edr_tb_recap_job`, the client polls `GET /recap` every 5s, and the
+result is cached in `edr_tb_recap` until the next run. Both routes are edit-gated.
+
+Conventions this code depends on, all easy to get wrong:
+- **finish positions are 0-based** (winner = 0) — the recap adds one only for display
+- `results/search_series` returns practice and qualifying too; only `event_type_name == "Race"`
+  and `official_session` count
+- team events nest the real drivers under `driver_results`, so rows are flattened before tallying
+- Safety Rating sub-levels encode `licence_class*1000 + SR*100`, so 4217 is B 2.17
+  (`edr_tb_sr_label()`)
+- iRacing customer IDs come from the Garage 61 membership (`edr_g61_all_members()['ids']`),
+  which is the only join between Garage 61 names and official results
+
+The awards are computed **client-side** from the cached driver rows, so adding a new one never
+needs another sweep of the API.
+
 **Pace is never auto-applied.** The warm cache only makes the *next* import instant; it does not
 rewrite `state.drivers` behind anyone's back. Silently re-running the split could reshuffle a
 line-up an admin had already settled — the same class of surprise the plan's 409 guard exists to
