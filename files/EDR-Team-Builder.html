@@ -950,13 +950,21 @@ function renderEventTab(){
    When the Claude API step is wired in it consumes weeklyFacts() and replaces weeklyDraft()
    only — nothing else has to move. */
 let _wkMsg='', _wkDraft='', _wkErr=false;
+let _wkCat='all', _wkQ='';   /* pick-list discipline filter and search, display only */
+function catLabel(c){
+  const m={'sports_car':'Sports car','formula_car':'Formula','oval':'Oval','dirt_oval':'Dirt oval','dirt_road':'Dirt road','road':'Road'};
+  return m[c]||cap(String(c||'').replace(/_/g,' '));
+}
 function weeklyState(){
-  if(!state.weekly) state.weekly={series:{}, track:{}, driver:{}, flare:true, seeded:false};
+  if(!state.weekly) state.weekly={pick:{}, track:{}, driver:{}, flare:true};
   const w=state.weekly;
-  if(!w.seeded){   // first open: tick the twelve the team actually races
-    WEEKLY_SERIES.forEach(function(s){ if(w.series[s.n]===undefined) w.series[s.n]=!!s.on; });
-    w.seeded=true;
-  }
+  /* `pick` holds ONLY explicit admin choices. It used to bulk-seed every known series on first
+     open, which meant a stored `false` for everything outside the top twelve — indistinguishable
+     from a deliberate untick, so the defaults could never change afterwards. Endurance rounds
+     defaulting on (the point being to advertise the endurance calendar) had no effect on any
+     install that had already been opened once. Defaults are computed fresh in weeklyPickList();
+     only what an admin actually clicked is stored. */
+  if(!w.pick) w.pick={};
   return w;
 }
 /* iRacing season names carry the season and the sponsor ("iRacing Porsche Cup by CONSPIT -
@@ -997,6 +1005,8 @@ function isoDay(d){
    series run 90 minutes and up, the sprints 12 to 45. Series names are not reliable — plenty
    of sprint series have "Challenge" or a track famous for enduros in the name. */
 const ENDURO_MIN=90;
+/* An event further out than this gets the "start practising" nudge in the write-up. */
+const PRACTICE_NUDGE_DAYS=21;
 /* iRacing season names carry the season on the end ("IMSA Endurance Series - 2026 Season 3").
    Fine as a key, ugly in a write-up. */
 function prettySeriesName(n){
@@ -1090,6 +1100,7 @@ function weeklyFacts(){
   const enduros=[];
   rounds.forEach(function(r){
     if((r.race_min||0) < ENDURO_MIN && !r.team) return;   // team events count regardless of length
+    if(!picked[seriesKey(r.series)]) return;              // an unticked series must actually drop out
     const label=prettySeriesName(r.series);
     if(specials.some(function(ev){ return sameRace(ev, r); })) return;   // already led with it above
     enduros.push({
@@ -1224,6 +1235,9 @@ function weeklyDraft(f){
            +(e.target?' · *EDR target*':''));
     if(e.cars) L.push('-# '+e.cars);
     if(e.note) L.push('> '+cap(e.note)+'.');
+    /* far enough out that there is still runway to build up to it — that is the moment the
+       nudge is useful, not the week before when it is already too late to start */
+    if(!e.live && e.inDays>PRACTICE_NUDGE_DAYS) L.push('**It\'s time to start practising.**');
     L.push('');
   });
 
@@ -1278,9 +1292,14 @@ function weeklyPickList(){
     if(!inNextWeek(r.start_date)) return;
     const k=seriesKey(r.series); if(seen[k]) return; seen[k]=1;
     const seed=known[k]||null;
-    const label=seed?seed.n:String(r.series||'').replace(/\s*[-–]\s*20\d\d\s*season\s*\d.*$/i,'');
-    const on=(w.series[label]!==undefined) ? !!w.series[label] : !!(seed&&seed.on);
-    rows.push({key:k, label:label, track:r.track, cars:(r.cars||[]).join(' / '), starts:seed?seed.st:0, on:on});
+    const label=seed?seed.n:prettySeriesName(r.series);
+    /* Endurance rounds default ON whether or not the team has ever started one — the point of
+       listing them is to remind people the endurance calendar exists, which a history-based
+       default would defeat exactly for the series nobody has got around to yet. */
+    const isEnduro=((r.race_min||0)>=ENDURO_MIN) || !!r.team;
+    const on=(w.pick[label]!==undefined) ? !!w.pick[label] : (isEnduro || !!(seed&&seed.on));
+    rows.push({key:k, label:label, track:r.track, cars:(r.cars||[]).join(' / '),
+               starts:seed?seed.st:0, enduro:isEnduro, cat:r.cat||'', on:on});
   });
   rows.sort(function(a,b){ return (b.starts||0)-(a.starts||0) || a.label.localeCompare(b.label); });
   return rows;
@@ -1314,16 +1333,47 @@ function renderWeekly(){
   h+='<div class="meta" style="font-size:10.5px">Straight from the iRacing schedule for '+esc(f.week.from)+' to '+esc(f.week.to)+'. '
     +(f.liveRunners?'Team participation is live from iRacing results.'
                    :'Team participation is still the seeded snapshot — it becomes live once the results pull has run.')+'</div>';
-  const rows=weeklyPickList();
-  if(!rows.length){
-    h+='<div class="meta" style="margin-top:8px">'+(f.haveIracing?'No official rounds land in that window yet — iRacing usually publishes a week or so ahead.':'No schedule available. Set the iRacing proxy in plugin Settings.')+'</div>';
-  } else {
-    h+='<div class="wkser">';
-    rows.forEach(function(r){
-      h+='<label><input type="checkbox" class="avfree" data-action="wkser" data-n="'+esc(r.label)+'"'+(r.on?' checked':'')+'>'
-        +'<span>'+esc(r.label)+'<span class="st"> · '+esc(r.track||'track TBC')+(r.cars?' · '+esc(r.cars):'')+(r.starts?' · '+r.starts+' team starts':' · new to the team')+'</span></span></label>';
+  const allRows=weeklyPickList();
+  /* Discipline filter + search. Both narrow what is DISPLAYED only — a series ticked while a
+     filter was on stays in the draft when the filter changes, otherwise the filter would
+     quietly edit the write-up. */
+  const cats=[]; allRows.forEach(function(r){ if(r.cat && cats.indexOf(r.cat)<0) cats.push(r.cat); });
+  if(cats.length>1 || _wkQ){
+    h+='<div class="quickrow" style="margin-top:8px">';
+    h+='<button class="quickbtn avfree'+(_wkCat==='all'?' on':'')+'" data-action="wkcat" data-c="all"'
+      +(_wkCat==='all'?' style="border-color:var(--yellow);color:#fff"':'')+'>All</button>';
+    cats.sort().forEach(function(c){
+      h+='<button class="quickbtn avfree'+(_wkCat===c?' on':'')+'" data-action="wkcat" data-c="'+esc(c)+'"'
+        +(_wkCat===c?' style="border-color:var(--yellow);color:#fff"':'')+'>'+esc(catLabel(c))+'</button>';
     });
+    h+='<input id="wkq" class="avfree" type="search" placeholder="search series or track" value="'+esc(_wkQ)+'" data-action="wkq" style="margin-left:auto;padding:5px 10px;font-size:11px;width:190px">';
     h+='</div>';
+  }
+  const rows=allRows.filter(function(r){
+    if(_wkCat!=='all' && r.cat!==_wkCat) return false;
+    if(!_wkQ) return true;
+    const q=_wkQ.toLowerCase();
+    return (r.label+' '+(r.track||'')+' '+(r.cars||'')).toLowerCase().indexOf(q)>=0;
+  });
+  if(!allRows.length){
+    h+='<div class="meta" style="margin-top:8px">'+(f.haveIracing?'No official rounds land in that window yet — iRacing usually publishes a week or so ahead.':'No schedule available. Set the iRacing proxy in plugin Settings.')+'</div>';
+  } else if(!rows.length){
+    h+='<div class="meta" style="margin-top:8px">Nothing matches that filter.</div>';
+  } else {
+    /* split the list the same way the write-up is split, so what you tick maps onto the
+       section it will appear in */
+    [['Endurance', true], ['Sprints', false]].forEach(function(grp){
+      const set=rows.filter(function(r){ return !!r.enduro===grp[1]; });
+      if(!set.length) return;
+      h+='<div class="meta" style="text-transform:uppercase;letter-spacing:.04em;margin:10px 0 2px">'+grp[0]+' · '+set.length+'</div>';
+      h+='<div class="wkser">';
+      set.forEach(function(r){
+        h+='<label><input type="checkbox" class="avfree" data-action="wkser" data-n="'+esc(r.label)+'"'+(r.on?' checked':'')+'>'
+          +'<span>'+esc(r.label)+'<span class="st"> · '+esc(r.track||'track TBC')+(r.cars?' · '+esc(r.cars):'')
+          +(r.starts?' · '+r.starts+' team starts':(r.enduro?'':' · new to the team'))+'</span></span></label>';
+      });
+      h+='</div>';
+    });
   }
   h+='</div>';
 
@@ -2031,6 +2081,16 @@ function tabFromHash(){
   }catch(e){ return ''; }
 }
 
+/* The search box re-renders the whole tab on every keystroke, which throws focus and caret
+   away with the old DOM — put both back or it is unusable after one character. */
+document.getElementById('content').addEventListener('input',function(e){
+  if(!e.target||!e.target.dataset||e.target.dataset.action!=='wkq') return;
+  _wkQ=e.target.value||'';
+  const pos=e.target.selectionStart;
+  renderContent();
+  const el=document.getElementById('wkq');
+  if(el){ el.focus(); try{ el.setSelectionRange(pos,pos); }catch(_e){} }
+});
 document.getElementById('content').addEventListener('keydown',e=>{
   if(e.key==='Enter' && e.target.id==='iridbox'){ const b=document.querySelector('[data-action="iridgo"]'); if(b) b.click(); }
 });
@@ -2146,11 +2206,12 @@ document.getElementById('content').addEventListener('click',e=>{
     else { try{ ta.select(); document.execCommand('copy'); done(true); }catch(_e){ done(false); } }
     return;
   }
+  if(e.target.dataset.action==='wkcat'){ if(isAdmin()){ _wkCat=e.target.dataset.c; renderContent(); } return; }
   if(e.target.dataset.action==='wkpost'){ if(isAdmin()) postDraftToDiscord(); return; }
   if(e.target.dataset.action==='wkrecap'){ if(isAdmin()) refreshRecap(); return; }
   if(e.target.dataset.action==='wkser'){
     if(!isAdmin()) return;
-    const w=weeklyState(); w.series[e.target.dataset.n]=e.target.checked; save(); return;   // no re-render: keeps the scroll position while ticking a long list
+    const w=weeklyState(); w.pick[e.target.dataset.n]=e.target.checked; save(); return;   // no re-render: keeps the scroll position while ticking a long list
   }
   if(e.target.dataset.action==='wkflare'){
     if(!isAdmin()) return;

@@ -108,6 +108,22 @@ function edr_ir_weeks_from($data, $from_ts, $to_ts, $classes = array()) {
         $rounds = count($scheds);   // recurring series vs one-off special
         // a team event is worth calling out whatever its length — this is the API's own flag
         $teamEv = (isset($s['max_team_drivers']) && intval($s['max_team_drivers']) > 1);
+        // discipline, for the Weekly tab's filters. iRacing split "road" into sports_car and
+        // formula_car in 2024, so prefer the string and fall back to the legacy id.
+        $cat = '';
+        foreach (array('category', 'track_types') as $k) {
+            if (!empty($s[$k])) {
+                $v = $s[$k];
+                if (is_array($v)) { $v = reset($v); if (is_array($v)) $v = reset($v); }
+                $cat = strtolower(trim((string) $v));
+                break;
+            }
+        }
+        if ($cat === '' && isset($s['category_id'])) {
+            $legacy = array(1 => 'oval', 2 => 'road', 3 => 'dirt_oval', 4 => 'dirt_road');
+            $cid = intval($s['category_id']);
+            $cat = isset($legacy[$cid]) ? $legacy[$cid] : '';
+        }
         foreach ($scheds as $wk) {
             $sd = isset($wk['start_date']) ? strtotime((string) $wk['start_date'] . ' 00:00:00 UTC') : false;
             if ($sd === false || $sd < $from_ts || $sd >= $to_ts) continue;
@@ -137,6 +153,7 @@ function edr_ir_weeks_from($data, $from_ts, $to_ts, $classes = array()) {
                 'cars'       => array_values($wkCars),
                 'rounds'     => $rounds,
                 'team'       => $teamEv,
+                'cat'        => $cat,
             );
         }
     }
