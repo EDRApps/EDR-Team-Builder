@@ -2,7 +2,7 @@
 /**
  * Plugin Name: EDR Team Builder
  * Description: Endurotech Racing endurance team + stint planner. Pulls Garage 61 pace and official iRacing session times, collects driver availability in-house, and builds Pro/Casual teams and stint rotations. Add the [edr_team_builder] shortcode to a page.
- * Version: 2.4.17
+ * Version: 2.4.18
  * Author: Endurotech Racing
  * License: GPL-2.0-or-later
  */
@@ -11,10 +11,11 @@ if (!defined('ABSPATH')) exit; // no direct access
 
 define('EDR_TB_DIR', plugin_dir_path(__FILE__));
 define('EDR_TB_URL', plugin_dir_url(__FILE__));
-define('EDR_TB_VER', '2.4.17');
+define('EDR_TB_VER', '2.4.18');
 
 require_once EDR_TB_DIR . 'includes/garage61.php';
 require_once EDR_TB_DIR . 'includes/iracing.php';
+require_once EDR_TB_DIR . 'includes/results.php';
 
 /* ----------------------------------------------------------------
  * Settings (one shared credential set, admin-only, server-side)
@@ -181,6 +182,14 @@ add_action('rest_api_init', function () {
     register_rest_route('edr/v1', '/avail/prune', array(
         'methods' => 'POST', 'permission_callback' => 'edr_tb_req_can_edit', 'callback' => 'edr_tb_rest_avail_prune',
     ));
+    // last week's results recap for the weekly write-up (admin content, and the refresh is
+    // an expensive proxy sweep, so both sides are edit-gated)
+    register_rest_route('edr/v1', '/recap', array(
+        'methods' => 'GET', 'permission_callback' => 'edr_tb_req_can_edit', 'callback' => 'edr_tb_rest_recap',
+    ));
+    register_rest_route('edr/v1', '/recap/refresh', array(
+        'methods' => 'POST', 'permission_callback' => 'edr_tb_req_can_edit', 'callback' => 'edr_tb_rest_recap_refresh',
+    ));
     // heartbeat: a few bytes, polled every ~20s by every open tab. Public, like /plan and /avail.
     register_rest_route('edr/v1', '/rev', array(
         'methods' => 'GET', 'permission_callback' => '__return_true', 'callback' => 'edr_tb_rest_rev',
@@ -276,6 +285,62 @@ function edr_tb_rest_auth(WP_REST_Request $req) {
  * mean either configuring server cron or having it fire erratically. Using the heartbeat means
  * the pull is considered exactly when someone is looking at the tool, which is when it matters.
  */
+function edr_tb_rest_recap() {
+    $r = get_option('edr_tb_recap', null);
+    return rest_ensure_response(array(
+        'recap'   => $r ?: null,
+        'running' => (bool) get_transient('edr_tb_recap_running'),
+        'error'   => (string) get_option('edr_tb_recap_err', ''),
+    ));
+}
+
+/**
+ * Queue the sweep. Returns immediately — a search per driver plus a fetch per subsession takes
+ * minutes against a rate-limited proxy, so it cannot happen inside the request.
+ */
+function edr_tb_rest_recap_refresh(WP_REST_Request $req) {
+    $s = edr_tb_settings();
+    if (empty($s['iracing_url']) || empty($s['iracing_key'])) {
+        return new WP_Error('not_configured', 'Set the iRacing proxy in plugin Settings first.', array('status' => 400));
+    }
+    if (get_transient('edr_tb_recap_running')) {
+        return rest_ensure_response(array('ok' => true, 'running' => true, 'queued' => false));
+    }
+    /* The write-up previews NEXT week, so the recap is the week immediately before it — the one
+       just finishing — not the one before that. Generated mid-week it is results-so-far, which
+       is still the right thing to look back on. */
+    $to   = $req->get_param('to')   ?: gmdate('Y-m-d\TH:i:s\Z', strtotime('monday next week'));
+    $from = $req->get_param('from') ?: gmdate('Y-m-d\TH:i:s\Z', strtotime('monday this week'));
+    set_transient('edr_tb_recap_running', 1, 20 * MINUTE_IN_SECONDS);
+    wp_schedule_single_event(time(), 'edr_tb_recap_job', array((string) $from, (string) $to));
+    return rest_ensure_response(array('ok' => true, 'running' => true, 'queued' => true, 'from' => $from, 'to' => $to));
+}
+
+add_action('edr_tb_recap_job', 'edr_tb_recap_run', 10, 2);
+function edr_tb_recap_run($from, $to) {
+    $s = edr_tb_settings();
+    if (empty($s['iracing_url']) || empty($s['iracing_key']) || empty($s['g61_token'])) {
+        delete_transient('edr_tb_recap_running');
+        update_option('edr_tb_recap_err', 'Garage 61 token and iRacing proxy both need to be set.', false);
+        return;
+    }
+    @set_time_limit(0);
+    $members = edr_g61_all_members($s['g61_token']);
+    if (is_wp_error($members) || empty($members['ids'])) {
+        delete_transient('edr_tb_recap_running');
+        update_option('edr_tb_recap_err', 'Could not read the Garage 61 membership (needed for iRacing customer IDs).', false);
+        return;
+    }
+    $out = edr_tb_recap_build($s['iracing_url'], $s['iracing_key'], $members['ids'], $from, $to);
+    if (is_wp_error($out)) {
+        update_option('edr_tb_recap_err', $out->get_error_message(), false);
+    } else {
+        update_option('edr_tb_recap', $out, false);
+        update_option('edr_tb_recap_err', '', false);
+    }
+    delete_transient('edr_tb_recap_running');
+}
+
 function edr_tb_rest_rev(WP_REST_Request $req) {
     $pace = (array) get_option('edr_tb_pace', array());
     edr_tb_maybe_schedule_pace($req->get_param('ev'));
@@ -284,6 +349,8 @@ function edr_tb_rest_rev(WP_REST_Request $req) {
         'avail'   => intval(get_option('edr_tb_avail_rev', 0)),
         'paceAt'  => isset($pace['at']) ? intval($pace['at']) : 0,
         'paceErr' => isset($pace['err']) ? (string) $pace['err'] : '',
+        'recapAt' => intval((array) get_option('edr_tb_recap', array()) ? (get_option('edr_tb_recap')['at'] ?? 0) : 0),
+        'recapRunning' => (bool) get_transient('edr_tb_recap_running'),
     ));
 }
 

@@ -944,6 +944,47 @@ function teamRunners(key, seed){
   if(live && live[key] && live[key].length) return live[key].map(function(x){ return x.name||x; });
   return seed?seed.who:[];
 }
+/* Last week's results, pulled from the iRacing proxy by a background sweep and cached
+   server-side (WORDPRESS ONLY — the standalone has no proxy, so this stays empty and the
+   recap section is simply omitted). */
+let RECAP=null, RECAP_RUNNING=false, RECAP_ERR='';
+function sgn(n){ return (n>0?'+':'')+n; }
+/* The awards. Deliberately computed from the same driver rows rather than pre-baked server
+   side, so adding an award never needs a re-sweep of the API. */
+function recapAwards(r){
+  if(!r || !r.drivers || !r.drivers.length) return null;
+  const ds=r.drivers.slice();
+  const raced=ds.filter(function(d){ return d.races>0; });
+  if(!raced.length) return null;
+  const byIr=raced.slice().sort(function(a,b){ return b.irDelta-a.irDelta; });
+  const bySr=raced.slice().sort(function(a,b){ return b.srDelta-a.srDelta; });
+  const byRaces=raced.slice().sort(function(a,b){ return b.races-a.races; });
+  const byClean=raced.filter(function(d){ return d.races>=2; })
+                     .sort(function(a,b){ return (a.inc/a.races)-(b.inc/b.races); });
+  const winners=raced.filter(function(d){ return d.wins>0; })
+                     .sort(function(a,b){ return b.wins-a.wins || b.podiums-a.podiums; });
+  return {
+    top3:      byIr.filter(function(d){ return d.irDelta>0; }).slice(0,3),
+    improved:  (byIr[0] && byIr[0].irDelta>0) ? byIr[0] : null,
+    lost:      (byIr[byIr.length-1] && byIr[byIr.length-1].irDelta<0) ? byIr[byIr.length-1] : null,
+    srUp:      (bySr[0] && bySr[0].srDelta>0) ? bySr[0] : null,
+    srDown:    (bySr[bySr.length-1] && bySr[bySr.length-1].srDelta<0) ? bySr[bySr.length-1] : null,
+    busiest:   byRaces[0]||null,
+    cleanest:  byClean[0]||null,
+    winners:   winners.slice(0,3),
+    starts:    raced.reduce(function(t,d){ return t+d.races; },0),
+    drivers:   raced.length
+  };
+}
+function recapAgeLabel(){
+  if(RECAP_ERR) return RECAP_ERR;
+  if(RECAP_RUNNING) return 'a search per driver plus a fetch per race — this takes a few minutes';
+  if(!RECAP||!RECAP.at) return 'no results pulled yet — the recap section is left out until you do';
+  const d=RECAP.drivers?RECAP.drivers.length:0;
+  return 'last pulled '+relTime(new Date(RECAP.at*1000).toISOString().replace('T',' ').slice(0,19))
+       +' · '+d+' driver'+(d===1?'':'s')+', '+(RECAP.races||0)+' race'+((RECAP.races||0)===1?'':'s')
+       +((RECAP.dropped)?' · '+RECAP.dropped+' not fetched (run capped)':'');
+}
 function cap(s){ s=String(s||''); return s.charAt(0).toUpperCase()+s.slice(1); }
 /* "3h" reads better than "180 min" for an enduro, "20 min" better than "0.33h" for a sprint */
 function fmtRaceLen(m){
@@ -957,6 +998,31 @@ function weeklyDraft(f){
   L.push('This week in iRacing');
   L.push('Week of '+f.week.from+' to '+f.week.to+'.');
   L.push('');
+  /* Recap first: people read the week they just had before the week they are about to have. */
+  const aw=recapAwards(RECAP);
+  if(aw){
+    L.push('LAST WEEK');
+    L.push(aw.drivers+' driver'+(aw.drivers===1?'':'s')+' started '+aw.starts+' official race'+(aw.starts===1?'':'s')+'.');
+    if(aw.top3.length){
+      L.push('Top three on iRating:');
+      aw.top3.forEach(function(d,i){
+        L.push('  '+(i+1)+'. '+d.name+' '+sgn(d.irDelta)+(d.irEnd?' (now '+d.irEnd+')':'')
+               +' — '+d.races+' race'+(d.races===1?'':'s')
+               +(d.wins?', '+d.wins+' win'+(d.wins===1?'':'s'):'')
+               +(!d.wins&&d.podiums?', '+d.podiums+' podium'+(d.podiums===1?'':'s'):''));
+      });
+    }
+    if(aw.improved) L.push('Most improved: '+aw.improved.name+' '+sgn(aw.improved.irDelta)+' iRating.');
+    if(aw.lost)     L.push('Took one for the team: '+aw.lost.name+' '+sgn(aw.lost.irDelta)+' iRating. It happens.');
+    if(aw.srUp)     L.push('Safety rating climb: '+aw.srUp.name+' '+aw.srUp.srStart+' to '+aw.srUp.srEnd+'.');
+    if(aw.srDown)   L.push('Safety rating slide: '+aw.srDown.name+' '+aw.srDown.srStart+' to '+aw.srDown.srEnd+'.');
+    if(aw.winners.length){
+      L.push('Wins: '+aw.winners.map(function(d){ return d.name+' ('+d.wins+')'; }).join(', ')+'.');
+    }
+    if(aw.busiest && aw.busiest.races>1) L.push('Busiest: '+aw.busiest.name+', '+aw.busiest.races+' starts.');
+    if(aw.cleanest) L.push('Cleanest: '+aw.cleanest.name+', '+(Math.round((aw.cleanest.inc/aw.cleanest.races)*10)/10)+'x per race.');
+    L.push('');
+  }
   L.push('SPECIAL EVENTS — NEXT FOUR WEEKS');
   if(!f.specials.length) L.push('- nothing on the EDR calendar in the next four weeks.');
   f.specials.forEach(function(e){
@@ -1042,6 +1108,13 @@ function renderWeekly(){
     +'<button class="quickbtn avfree" data-action="wkcopy">Copy to clipboard</button>'
     +'<label class="meta" style="display:flex;gap:6px;align-items:center;margin-left:8px"><input type="checkbox" data-action="wkflare"'+(w.flare?' checked':'')+'> driver mentions</label>'
     +(_wkMsg?'<span class="meta" style="color:var(--green)">'+esc(_wkMsg)+'</span>':'')
+    +'</div>';
+  /* Last week's results are a separate, slow pull, so they get their own control and their
+     own freshness line rather than being hidden behind Generate. */
+  h+='<div class="quickrow">'
+    +'<button class="quickbtn avfree" data-action="wkrecap"'+(RECAP_RUNNING?' disabled':'')+'>'
+      +(RECAP_RUNNING?'Pulling last week…':'Pull last week\'s results')+'</button>'
+    +'<span class="meta" style="font-size:10.5px;color:'+(RECAP_ERR?'var(--red)':'var(--dim)')+'">'+esc(recapAgeLabel())+'</span>'
     +'</div>';
   h+='</div>';
 
@@ -1753,6 +1826,9 @@ function stintsChanged(){
 function markStintsSeen(){ try{ localStorage.setItem(stintSeenKey(), stintFingerprint()); }catch(e){} }
 /* WP build overrides: asks the server to drop availability for long-past events */
 function pruneOldEvents(){}
+/* WP build overrides: the results sweep needs the iRacing proxy, which the standalone has no
+   access to. Left as a no-op so the button is inert rather than throwing. */
+function refreshRecap(){ RECAP_ERR='Last week\'s results need the iRacing proxy — WordPress build only.'; renderContent(); }
 /* a tab named in the URL (#availability), but only if that tab exists in this build — the
    WordPress build has Setup and the standalone does not */
 function tabFromHash(){
@@ -1876,6 +1952,7 @@ document.getElementById('content').addEventListener('click',e=>{
     else { try{ ta.select(); document.execCommand('copy'); done(true); }catch(_e){ done(false); } }
     return;
   }
+  if(e.target.dataset.action==='wkrecap'){ if(isAdmin()) refreshRecap(); return; }
   if(e.target.dataset.action==='wkser'){
     if(!isAdmin()) return;
     const w=weeklyState(); w.series[e.target.dataset.n]=e.target.checked; save(); return;   // no re-render: keeps the scroll position while ticking a long list
@@ -2051,6 +2128,27 @@ function persistAvail(evk,name){
 }
 /* Admin tidy-up: drop availability for events that finished long ago. This is the only way the
    server's store caps are ever reached in normal use, so it needs to be doable from the page. */
+/* Kick the results sweep and watch for it to finish. It is a search per driver plus a fetch
+   per subsession against a rate-limited proxy, so this can take minutes — the button returns
+   at once and we poll the cached copy. */
+function refreshRecap(){
+  RECAP_RUNNING=true; RECAP_ERR=''; renderContent();
+  fetch(API+'recap/refresh',{method:'POST',headers:_hdrs(true),body:'{}'})
+    .then(function(r){ return r.json().catch(function(){return {};}).then(function(j){
+      if(!r.ok) throw new Error((j&&j.message)||'could not start the results pull'); return j; }); })
+    .then(function(){ pollRecap(0); })
+    .catch(function(err){ RECAP_RUNNING=false; RECAP_ERR=(err&&err.message)||'results pull failed'; renderContent(); });
+}
+function pollRecap(n){
+  if(n>60){ RECAP_RUNNING=false; RECAP_ERR='The results pull is taking longer than expected — reopen the tab shortly.'; renderContent(); return; }
+  setTimeout(function(){
+    apiGET('recap').then(function(rc){
+      if(rc){ RECAP=rc.recap||RECAP; RECAP_ERR=rc.error||''; RECAP_RUNNING=!!rc.running; }
+      if(rc && rc.running) return pollRecap(n+1);
+      RECAP_RUNNING=false; renderContent();
+    }).catch(function(){ pollRecap(n+1); });
+  }, 5000);
+}
 function pruneOldEvents(){
   var days=90;
   fetch(API+'avail/prune',{method:'POST',headers:_hdrs(true),body:JSON.stringify({days:days})})
@@ -2408,6 +2506,7 @@ async function bootSetup(){
   if(ok && state.drivers.length && !Object.keys(state.teams||{}).length) generate();
   renderContent();
   if(isAdmin()){
+    try{ var rc=await apiGET('recap'); if(rc){ RECAP=rc.recap||null; RECAP_RUNNING=!!rc.running; RECAP_ERR=rc.error||''; } }catch(e){}
     try{ TRACKS=await apiGET('tracks'); }catch(e){ TRACKS=[]; } if(!Array.isArray(TRACKS)) TRACKS=[];
     preselectNearest();
     if(state.tab==='setup') renderContent();
