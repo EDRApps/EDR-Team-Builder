@@ -42,11 +42,22 @@ jobs:
           grep -q 'const SAMPLE = \[\];' "$js"
           grep -q "state.tab==='setup'" "$js"
 
-      - name: Package plugin zip
+      # never cut a release from assets that do not match the HTML they claim to be built from
+      # (scoped to assets/ because the version-stamp step above dirties the plugin PHP)
+      - name: Committed assets match the HTML source
         run: |
-          cd files
-          zip -r "$GITHUB_WORKSPACE/edr-team-builder-${{ steps.ver.outputs.v }}.zip" edr-team-builder \
-            -x '*/.DS_Store' '*/build/*'
+          if ! git diff --exit-code -- files/edr-team-builder/assets; then
+            echo "::error::assets are stale — run files/edr-team-builder/build/assemble_builder.py and commit before tagging"
+            exit 1
+          fi
+
+      - name: Parse-check the generated bundle
+        run: node --check files/edr-team-builder/assets/builder.js
+
+      - name: Package plugin zip
+        env:
+          EDR_ZIP: ${{ github.workspace }}/edr-team-builder-${{ steps.ver.outputs.v }}.zip
+        run: python files/edr-team-builder/build/package_plugin.py
 
       - name: Publish GitHub Release
         uses: softprops/action-gh-release@v2

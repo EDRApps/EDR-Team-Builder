@@ -9,6 +9,7 @@ on:
     paths:
       - 'files/EDR-Team-Builder.html'
       - 'files/edr-team-builder/**'
+      - 'Admin Folder/**'          # the uploadable zip is version-checked below
       - '.github/workflows/**'
   pull_request:
   workflow_dispatch:
@@ -38,16 +39,41 @@ jobs:
           grep -q "state.tab==='setup'" "$js"       # Setup tab wired in
           test -s files/edr-team-builder/assets/builder.css
 
+      # The steps above rebuild the assets before checking them, so on their own they can
+      # never catch a commit that edited the HTML without re-running the assembler. Compare
+      # the freshly built assets against what is committed and fail on any difference.
+      - name: Committed assets match the HTML source
+        run: |
+          if ! git diff --exit-code -- files/edr-team-builder/assets; then
+            echo "::error::assets/builder.js|css are stale — run files/edr-team-builder/build/assemble_builder.py and commit the result"
+            exit 1
+          fi
+
+      - name: Parse-check the generated bundle
+        run: node --check files/edr-team-builder/assets/builder.js
+
+      # the zip is what actually gets uploaded to WordPress, so a stale one ships old code
+      - name: Committed upload zip matches the plugin version
+        run: |
+          php=files/edr-team-builder/edr-team-builder.php
+          zip="Admin Folder/edr-team-builder-V2.zip"
+          src_ver=$(sed -n 's/^ \* Version: *//p' "$php" | head -1)
+          zip_ver=$(unzip -p "$zip" edr-team-builder/edr-team-builder.php | sed -n 's/^ \* Version: *//p' | head -1)
+          echo "source=$src_ver  zip=$zip_ver"
+          if [ "$src_ver" != "$zip_ver" ]; then
+            echo "::error::$zip is v$zip_ver but the source is v$src_ver — run files/edr-team-builder/build/package_plugin.py and commit the result"
+            exit 1
+          fi
+
       - name: Lint PHP
         run: |
           sudo apt-get update -qq && sudo apt-get install -y -qq php-cli
           find files/edr-team-builder -name '*.php' -print0 | xargs -0 -n1 php -l
 
       - name: Package plugin zip
-        run: |
-          cd files
-          zip -r "$GITHUB_WORKSPACE/edr-team-builder.zip" edr-team-builder \
-            -x '*/.DS_Store' '*/build/*'
+        env:
+          EDR_ZIP: ${{ github.workspace }}/edr-team-builder.zip
+        run: python files/edr-team-builder/build/package_plugin.py
 
       - name: Upload built plugin
         uses: actions/upload-artifact@v4

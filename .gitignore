@@ -20,5 +20,9 @@ node_modules/
 __pycache__/
 *.pyc
 
+# Per-machine Claude Code settings (settings.json is shared; .local.json is personal —
+# it was committed once and carried another machine's absolute paths)
+.claude/settings.local.json
+
 # Local working backup
 *.glenbak

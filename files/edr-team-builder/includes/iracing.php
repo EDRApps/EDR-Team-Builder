@@ -32,9 +32,60 @@ function edr_ir_get($base, $key, $path) {
  *
  * Each item: {season_id, series_id, name, track, start_date, race_min, sessions:[iso...]}.
  */
+/**
+ * Every scheduled week in a date window, for the weekly write-up.
+ *
+ * Kept deliberately separate from edr_ir_seasons(). That function only emits weeks that carry
+ * session_times, and irMatchFor() picks the best-scoring entry out of it — feed it every week
+ * of every season and it can settle on a sessionless one, at which point applyIrTiming() bails
+ * and the official-times feature quietly stops working. Two shapes, two jobs, one HTTP call.
+ *
+ * Each item: {series, track, start_date, race_min, sessions:[iso...]}.
+ */
+function edr_ir_weeks_from($data, $from_ts, $to_ts) {
+    if (!is_array($data)) return array();
+    $out = array();
+    foreach ($data as $s) {
+        if (empty($s['official'])) continue;
+        $name = isset($s['season_name']) ? $s['season_name'] : '';
+        $scheds = isset($s['schedules']) && is_array($s['schedules']) ? $s['schedules'] : array();
+        foreach ($scheds as $wk) {
+            $sd = isset($wk['start_date']) ? strtotime((string) $wk['start_date'] . ' 00:00:00 UTC') : false;
+            if ($sd === false || $sd < $from_ts || $sd >= $to_ts) continue;
+            $tr = isset($wk['track']) && is_array($wk['track']) ? $wk['track'] : array();
+            $times = array();
+            foreach ((isset($wk['race_time_descriptors']) && is_array($wk['race_time_descriptors'])) ? $wk['race_time_descriptors'] : array() as $d) {
+                if (!empty($d['session_times']) && is_array($d['session_times'])) { $times = $d['session_times']; break; }
+            }
+            $out[] = array(
+                'series'     => $name,
+                'track'      => trim((isset($tr['track_name']) ? $tr['track_name'] : '') . ' ' . (isset($tr['config_name']) ? $tr['config_name'] : '')),
+                'start_date' => isset($wk['start_date']) ? $wk['start_date'] : '',
+                'race_min'   => isset($wk['race_time_limit']) ? intval($wk['race_time_limit']) : 0,
+                'sessions'   => array_values($times),
+            );
+        }
+    }
+    return $out;
+}
+
+/** Both shapes from one fetch — the weekly write-up and the timing matcher each need their own. */
+function edr_ir_all($base, $key, $from_ts, $to_ts) {
+    $data = edr_ir_get($base, $key, '/data/series/seasons?include_series=1');
+    if (is_wp_error($data)) return $data;
+    return array(
+        'seasons' => edr_ir_seasons_from($data),
+        'weeks'   => edr_ir_weeks_from($data, $from_ts, $to_ts),
+    );
+}
+
 function edr_ir_seasons($base, $key) {
     $data = edr_ir_get($base, $key, '/data/series/seasons?include_series=1');
     if (is_wp_error($data)) return $data;
+    return edr_ir_seasons_from($data);
+}
+
+function edr_ir_seasons_from($data) {
     if (!is_array($data)) return array();
     $out = array();
     foreach ($data as $s) {

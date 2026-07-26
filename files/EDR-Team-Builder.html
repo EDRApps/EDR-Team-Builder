@@ -32,7 +32,22 @@
   .btn-amber:hover,.btn-green:hover{background:var(--yellowH)}
   .btn-ghost{background:transparent;color:var(--yellow);border:1px solid rgba(240,240,0,.55)}
   .btn-ghost:hover{background:var(--yellow);color:#0a0a0a}
-  .tabs{display:flex;gap:8px;padding:12px 22px;border-bottom:1px solid var(--lineSoft);background:rgba(13,13,31,.6)}
+  /* sticky: the availability grid runs several screens on a phone, and losing the nav the
+     moment you start scrolling was the main way people got stranded mid-task */
+  .tabs{display:flex;gap:8px;padding:12px 22px;border-bottom:1px solid var(--lineSoft);background:rgba(13,13,31,.94);position:sticky;top:0;z-index:30;backdrop-filter:blur(6px)}
+  .tabdot{display:inline-block;width:6px;height:6px;border-radius:50%;background:var(--yellow);margin-left:6px;vertical-align:middle}
+  .tabtick{margin-left:6px;color:var(--green);font-weight:700}
+  .tab.active .tabtick{color:#0a0a0a}
+  /* the only Submit used to sit above the grid — on a phone that is a two-screen scroll back
+     up after ticking the last block, so it rides along the bottom instead */
+  .subbar{position:sticky;bottom:0;z-index:25;display:flex;gap:10px;align-items:center;flex-wrap:wrap;
+    padding:11px 14px;margin:14px -4px -4px;border-top:1px solid var(--line);border-radius:var(--rmd);
+    background:rgba(10,10,20,.96);backdrop-filter:blur(6px)}
+  .quickrow{display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin:6px 0 2px}
+  .quickbtn{font-family:'Karla',sans-serif;font-size:11px;padding:5px 10px;border-radius:999px;border:1px solid var(--line);
+    background:var(--panel2);color:var(--body);cursor:pointer}
+  .quickbtn:hover{border-color:var(--yellow);color:#fff}
+  .blockcell{touch-action:manipulation}
   .tab{background:transparent;border:1px solid transparent;color:var(--dim);padding:9px 18px;font-size:12px;letter-spacing:.12em;cursor:pointer;text-transform:uppercase;font-family:'Prompt',sans-serif;font-weight:600;border-radius:999px;transition:color .15s,background .15s,border-color .15s}
   .tab:hover{color:#fff;border-color:var(--line)}
   .tab.active{color:#0a0a0a;background:var(--yellow);border-color:var(--yellow)}
@@ -67,6 +82,14 @@
   .rolechip{font-family:'Prompt',sans-serif;font-weight:700;font-size:11px;letter-spacing:.1em;padding:5px 13px;border-radius:999px;border:1px solid var(--line);color:var(--dim)}
   .rolechip.admin{border-color:var(--yellow);color:var(--yellow);background:rgba(240,240,0,.07)}
   .readonly .controls{display:none}
+  /* the weekly write-up is an admin tool — drivers never see the tab (the WordPress build
+     hides Setup the same way) */
+  .readonly .tabs .tab[data-tab="weekly"]{display:none}
+  .wkbox{width:100%;min-height:340px;background:#0a0a14;color:var(--body);border:1px solid var(--line);
+    border-radius:var(--rmd);padding:12px;font-family:ui-monospace,Menlo,Consolas,monospace;font-size:12.5px;line-height:1.55}
+  .wkser{display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:6px 14px;margin:8px 0}
+  .wkser label{display:flex;gap:7px;align-items:flex-start;font-size:12px;color:var(--body);cursor:pointer}
+  .wkser .st{color:var(--dim);font-size:10.5px}
   .readonly #content select,.readonly #content .chip,.readonly #content [data-stintcell],.readonly #content [data-lanecell],.readonly #content button{pointer-events:none;opacity:.85}
   .readonly #content .x{display:none}
   .readonly #content .avfree,.readonly #content .calrow.target,.readonly #content [data-action="calfilter"],.readonly #content [data-action="caltargets"],.readonly #content [data-action="calpast"]{pointer-events:auto;opacity:1}
@@ -190,6 +213,7 @@
   <button class="tab" data-tab="drivers">Drivers</button>
   <button class="tab" data-tab="teams">Teams</button>
   <button class="tab" data-tab="stints">Stints</button>
+  <button class="tab" data-tab="weekly">Weekly</button>
 </div>
 
 <div class="wrap">
@@ -425,6 +449,44 @@ const CAL_EVENTS=[
   {n:"Production Car Challenge @ViR", s:"2026-12-18", e:"2026-12-19", track:"VIR Grand Course", cars:"Production Car Challenge cars", cat:"endurance", dur:2, g61Tracks:[394]}
 ];
 const CAT_COLOR={endurance:'var(--yellow)', nascar:'var(--red)', other:'var(--steel)'};
+/* ===== Weekly update ==================================================================
+   Seeded from the series-popularity report (2026 S2 to 25 Jul 2026: 30 drivers, 2,064
+   official starts, 111 series). Only the series the team actually runs are carried; `on`
+   marks the twelve most-raced, which are ticked the first time an admin opens the tab.
+   `who` is who actually starts that series, so a driver mention lands on someone who
+   races it. Admin edits are stored in state.weekly and override all of this. */
+const WEEKLY_SERIES=[
+  {n:"IMSA iRacing Series",cat:"SPORTS CAR",st:215,on:true,who:["Sam Millar","Roland Fokkens","Andrew Espenes","Thomaz Hernandes"]},
+  {n:"GT Sprint Series by Simucube",cat:"SPORTS CAR",st:172,on:true,who:["Sam Millar","Joseph Tavora","Roland Fokkens","Brock Hellmech"]},
+  {n:"Ring Meister by LVRY",cat:"SPORTS CAR",st:121,on:true,who:["David Piljek","John Nyhouse","Roland Fokkens","Zachary Martin"]},
+  {n:"iRacing Porsche Cup - Fixed by CONSPIT",cat:"SPORTS CAR",st:119,on:true,who:["Ian Gee","Jake Lennox-Bradley","John Nyhouse","Aden Lennox-Bradley"]},
+  {n:"Ford Mustang Challenge by Skip Barber",cat:"SPORTS CAR",st:102,on:true,who:["Dominic Bou-Samra","Michael Cullen","Thomaz Hernandes","John Nyhouse"]},
+  {n:"iRacing Porsche Cup by CONSPIT",cat:"SPORTS CAR",st:100,on:true,who:["Ian Gee","Thomaz Hernandes","Jake Lennox-Bradley","John Nyhouse"]},
+  {n:"GT3 Challenge Fixed by Fanatec",cat:"SPORTS CAR",st:85,on:true,who:["Sam Millar","Roland Fokkens","Aaron Werth","Joseph Tavora"]},
+  {n:"IMSA iRacing Series - Fixed",cat:"SPORTS CAR",st:76,on:true,who:["Sam Millar","Roland Fokkens","Andrew Espenes","Brock Hellmech"]},
+  {n:"iRacing GT3 Regional Tour - Asia Pacific",cat:"SPORTS CAR",st:76,on:true,who:["Brock Hellmech","Aaron Werth","Joseph Tavora","Michael Cullen"]},
+  {n:"Global Mazda MX-5 Cup by Fanatec",cat:"SPORTS CAR",st:71,on:true,who:["Ian Gee","Aaron Werth","Zachary Martin","matt blee"]},
+  {n:"Toyota GR86 Cup by SIMAGIC",cat:"SPORTS CAR",st:64,on:true,who:["Ian Gee","Aaron Werth","Chris w","Zachary Martin"]},
+  {n:"iRacing GT3 Regional Tour - Americas",cat:"SPORTS CAR",st:62,on:true,who:["Fred Zufelt","Aaron Werth","Dominic Bou-Samra","Bernardo Hickmann"]},
+  {n:"Sports Car Challenge by Falken Tyre",cat:"SPORTS CAR",st:40,on:false,who:["Sam Millar","Ian Gee","Dominic Bou-Samra","Zachary Martin"]},
+  {n:"BMW M2 Cup by Nitro Concepts",cat:"SPORTS CAR",st:38,on:false,who:["Ian Gee","Jake Lennox-Bradley","John Nyhouse","Aaron Werth"]},
+  {n:"Production Car Challenge by Sim-Lab",cat:"SPORTS CAR",st:33,on:false,who:["Dominic Bou-Samra","Zachary Martin","Ian Gee","Michael Cullen"]},
+  {n:"Nurburgring Endurance Championship",cat:"SPORTS CAR",st:32,on:false,who:["Aden Lennox-Bradley","Jake Lennox-Bradley","Erik van der Bijl","John Nyhouse"]},
+  {n:"Spec Racer Ford Challenge",cat:"SPORTS CAR",st:31,on:false,who:["John Nyhouse","Fred Zufelt","Zachary Martin"]},
+  {n:"Formula 1600 Rookie Series by Asetek Racing",cat:"FORMULA CAR",st:27,on:false,who:["Fred Zufelt","Aaron Werth","John Nyhouse"]},
+  {n:"FIA Formula 4 Challenge - Fixed",cat:"FORMULA CAR",st:25,on:false,who:["Sam Millar","Aaron Werth","Brock Hellmech","Ben Hagstrom"]},
+  {n:"GT Endurance Series by Simucube",cat:"SPORTS CAR",st:23,on:false,who:["Joseph Tavora","Sam Mackenzie","Sam Millar","Brock Hellmech"]},
+  {n:"13th Week Mini Stock Cup",cat:"OVAL",st:22,on:false,who:["Sam Millar","Brock Hellmech","John Nyhouse"]},
+  {n:"24 Hours of Spa Presented by Falken Tyre",cat:"SPORTS CAR",st:22,on:false,who:["Aaron Werth","Brock Hellmech","Luke Hay","Matthew Halden"]},
+  {n:"Global Endurance Tour",cat:"SPORTS CAR",st:21,on:false,who:["Sam Millar","Ben Hagstrom","Erik van der Bijl","John Nyhouse"]},
+  {n:"Advanced Mazda MX-5 Cup by Heusinkveld",cat:"SPORTS CAR",st:20,on:false,who:["Dominic Bou-Samra","Michael Cullen","Luke Hay","Ian Gee"]},
+  {n:"BMW M2 Cup",cat:"SPORTS CAR",st:19,on:false,who:["Luke Hay","Aaron Werth"]},
+  {n:"12 Hours of Sebring",cat:"SPORTS CAR",st:18,on:false,who:["Brock Hellmech","Sam Millar","Aden Lennox-Bradley","Andrew Espenes"]},
+  {n:"FIA F4 Esports Regional Tour - Asia Pacific",cat:"FORMULA CAR",st:18,on:false,who:["Aaron Werth","Thomas McEwan","Brock Hellmech","Ben Hagstrom"]},
+  {n:"6 Hours of the Glen",cat:"SPORTS CAR",st:17,on:false,who:["Sam Mackenzie","Sam Millar","Thomaz Hernandes","Chris w"]},
+  {n:"13th Week GT3 Challenge - Fixed",cat:"SPORTS CAR",st:16,on:false,who:["Brock Hellmech","Sam Millar","Bernardo Hickmann","John Nyhouse"]},
+  {n:"GT4 Challenge by Falken Tyre",cat:"SPORTS CAR",st:16,on:false,who:["John Nyhouse","Dominic Bou-Samra","Ian Gee","Aaron Werth"]},
+];
 function isTarget(ev){ return !!ev.special || (ev.cat==='endurance' && (ev.dur||0)>=3); }
 function evKey(ev){ return ev.n+'|'+ev.s; }
 function calendar(){ const at={}, out=[]; CAL_EVENTS.concat(state.customEvents||[], state.irEvents||[]).forEach(e=>{ const k=evKey(e); if(at[k]!==undefined) out[at[k]]=e; else { at[k]=out.length; out.push(e); } }); return out; }  // seed + custom + imported, deduped by key (later wins)
@@ -448,6 +510,57 @@ function fmtDates(s,e){
 function isAdmin(){ return state.role==='admin'; }
 /* Admin password (standalone): change it by replacing ADMIN_HASH with _hash('yournewpassword')
    — run _hash('...') in the browser console. Current password: edr2026 */
+/* Driver flare for the weekly write-up. One short, usable hook per driver — the kind of thing
+   that makes a series line land. Anything from the source profiles that reads as a dig at
+   someone, or is nobody else's business, is not in here: this text gets pasted into a team
+   channel. Admins can edit or clear any of it on the Weekly tab (state.weekly.driver). */
+const DRIVER_NOTES={
+  'Matthew Halden':'team organiser; still owes Blanchimont an apology',
+  'Chris Wilson':'co-leader; steady when it matters',
+  'Aden Lennox-Bradley':'the quick one; sarcasm is load-bearing',
+  'Jake Lennox-Bradley':'asks the question everyone else was thinking',
+  'Matt Blee':'social engine of the team; badly undersells his own pace',
+  'Dominic Bou-Samra':'meme department; posts his own crashes first',
+  'Laurent Masson':'apologises more than the stewards do',
+  'Thomaz Hernandes':'turns up and immediately makes things work',
+  'Erik van der Bijl':'the coach. "Do less."',
+  'Joseph Tavora':'fast, and the first to prosecute himself for it',
+  'Michael Cullen':'hand-writes the guides the rest of us read',
+  'Aaron Werth':'loudest and keenest, wins or not',
+  'Sam Millar':'IMSA and GT3 regular; races more than anyone',
+  'Janne Salminen':'fuel and setup wizard; quietly the fastest',
+  'Brock Hellmech':'happy to learn in public, which is rarer than it sounds',
+  'Luke Hay':'few words; pays for the liveries',
+  'John Nyhouse':'boundless keenness, zero cynicism',
+  'Fred Zufelt':'resident F1 analyst; will defend Stroll to anyone',
+  'David Piljek':'Nordschleife obsessive',
+  'Jarrod Williams':'the quartermaster — setups appear when needed',
+  'Zachary Martin':'lights up about anything with carburettors',
+  'Ian Gee':'Cup car and MX-5 regular',
+  'Roland Fokkens':'IMSA mainstay',
+  'Sam Mackenzie':'endurance specialist',
+  'Andrew Espenes':'quietly racks up the starts',
+  'Bernardo Hickmann':'GT3 regular',
+  'Ben Hagstrom':'always in something',
+  'Thomas McEwan':'turns up for the odd one out'
+};
+/* Track hooks, keyed by a loose match on the iRacing track name. Seeded from the write-ups
+   that already worked; admins add to it over time (state.weekly.track). */
+const TRACK_NOTES={
+  'hockenheim':'a mix of high and low speed corners — watch turn 15 in particular',
+  'sandown':'about as close as iRacing gets to Doreen',
+  'misano':'tricky, and forever in EDR hearts. PSA: watch the long pit exit',
+  'monza':'looks simple, but there are seconds on the ground in those chicanes',
+  'tsukuba':'small, tight and twisty — perfect fit for the Mazda',
+  'suzuka':'hard to pass on, so do not bottle qualifying',
+  'spa':'Blanchimont is still undefeated',
+  'nurburgring':'bring patience and a fresh set of nerves',
+  'barcelona':'front tyres will be gone by the end of a stint',
+  'road america':'long straights, so the tow matters more than you think',
+  'watkins glen':'the esses reward commitment and punish it in equal measure',
+  'daytona':'the bus stop decides your race',
+  'bathurst':'across the top, lift and you lose it'
+};
 const ADMIN_HASH='1rdbl5c';
 function _hash(s){ let x=5381; for(let i=0;i<s.length;i++) x=(((x*33)>>>0)^s.charCodeAt(i))>>>0; return x.toString(36); }
 function verifyAdminPass(p,cb){ cb(_hash(p)===ADMIN_HASH); }  /* WP build overrides: asks the server */
@@ -459,9 +572,9 @@ function unlockAdmin(){ _unlockOpen=true; _unlockMsg=''; renderRolebar(); const 
 function submitUnlock(){
   const i=document.getElementById('adminpass'); const p=(i&&i.value)||'';
   if(!p) return;
-  verifyAdminPass(p, ok=>{
+  verifyAdminPass(p, (ok,msg)=>{
     if(ok){ _unlockOpen=false; _unlockMsg=''; state.role='admin'; state.pass=p; save(); renderRolebar(); onAdminUnlocked(); renderContent(); setStatus('Admin unlocked'); }
-    else { _unlockMsg='wrong password'; renderRolebar(); const j=document.getElementById('adminpass'); if(j) j.focus(); }
+    else { _unlockMsg=msg||'wrong password'; renderRolebar(); const j=document.getElementById('adminpass'); if(j) j.focus(); }   /* msg: the WP build passes the server's reason, e.g. the rate limit */
   });
 }
 function lockAdmin(){ state.role='driver'; state.pass=''; _unlockOpen=false; save(); renderRolebar(); renderContent(); }
@@ -507,6 +620,9 @@ function applyIrTiming(ev, sea){
 function applyEventTiming(ev0){
   const ovr=state.evTiming&&state.evTiming[evKey(ev0)];
   const ev=ovr?Object.assign({},ev0,ovr):ev0;
+  /* block size is per event (admin setting): 2h suits a 24h enduro but is far too coarse for a
+     3h sprint, where it can swallow the whole race in two ticks */
+  AV_BLOCK = avBlockOk(ev.avBlock) ? ev.avBlock : 120;
   WIN_START_MS = ev.winStart ? Date.parse(ev.winStart) : Date.parse(ev.s+'T00:00:00+10:00');
   const days=Math.round((Date.parse(ev.e+'T00:00:00Z')-Date.parse(ev.s+'T00:00:00Z'))/86400000)+1;
   EV_WIN_MIN = ev.winMin || days*1440;
@@ -536,7 +652,24 @@ function selectEvent(key){
 
 /* ===== Availability: 2h blocks over the event window, converted to the
    {hours, pct, starts, windows} shape the scoring and stints already use ===== */
-const AV_BLOCK=120;
+/* Availability block size in minutes. Per event (see applyEventTiming); 120 is the default and
+   what every event used before 2.4.11. Stored ticks are slot INDEXES, so this value is part of
+   how they are read — changing it has to rescale them (avSetBlock), never just reinterpret. */
+let AV_BLOCK=120;
+const AV_BLOCK_CHOICES=[30,60,90,120,180,240];
+function avBlockOk(v){ return AV_BLOCK_CHOICES.indexOf(+v)>=0; }
+/* slots -> [start,end] minute windows at a given block size; the pure form of slotsToAvail's
+   first half, so a rescale can read old ticks with the old size before rewriting them */
+function slotsToWindows(slots, block, winMin){
+  const set=new Set(slots||[]), out=[]; let run=null;
+  const n=Math.max(1, Math.ceil(winMin/block));
+  for(let i=0;i<n;i++){
+    if(!set.has(i)){ run=null; continue; }
+    const s=i*block, e=Math.min((i+1)*block, winMin);
+    if(run && run[1]===s){ run[1]=e; } else { run=[s,e]; out.push(run); }
+  }
+  return out;
+}
 function evSlots(){ return Math.max(1, Math.ceil(EV_WIN_MIN/AV_BLOCK)); }
 function slotsToAvail(slots){
   const set=new Set(slots||[]); const windows=[]; let run=null; const n=evSlots();
@@ -569,12 +702,19 @@ function applyAvailToDrivers(){
     d.avail=slotsToAvail(a[n]);
   });
 }
-function windowsToSlots(windows, winMin){
-  const W=winMin||EV_WIN_MIN;
-  const out=[]; const n=Math.max(1, Math.ceil(W/AV_BLOCK));
+function windowsToSlots(windows, winMin, block, strict){
+  const W=winMin||EV_WIN_MIN; const B=block||AV_BLOCK;
+  const out=[]; const n=Math.max(1, Math.ceil(W/B));
   for(let i=0;i<n;i++){
-    const s=i*AV_BLOCK, e=Math.min((i+1)*AV_BLOCK, W);
-    if((windows||[]).some(w=>{ const ov=Math.min(w[1],e)-Math.max(w[0],s); return ov>0 && ov >= Math.min(e-s, w[1]-w[0])/2; })) out.push(i);
+    const s=i*B, e=Math.min((i+1)*B, W);
+    /* strict = the block must sit entirely inside a window. Used when moving to a LARGER
+       block size, where the usual "half of it counts" rule rounds outward and hands back
+       more availability than the driver actually gave — which could put them in a stint
+       they never offered. Losing a sliver is fine; inventing one is not. */
+    const hit = strict
+      ? (windows||[]).some(w=>w[0]<=s && w[1]>=e)
+      : (windows||[]).some(w=>{ const ov=Math.min(w[1],e)-Math.max(w[0],s); return ov>0 && ov >= Math.min(e-s, w[1]-w[0])/2; });
+    if(hit) out.push(i);
   }
   return out;
 }
@@ -588,8 +728,10 @@ function seedSpaAvail(){
 }
 function persistAvail(evk,name){}  /* WP build overrides: syncs this driver's slots to the server */
 function releaseLock(name){}       /* WP build overrides: admin clears a driver's submission lock */
-/* Per-driver locking: a random device token identifies this browser; the first browser to
-   submit a name owns it (server-enforced in the WP build — admins bypass and can release). */
+/* Device token: a random per-browser id, still sent with availability writes. The hard
+   first-device-owns-the-name lock it used to drive was dropped in 2.4.2 (it kept locking
+   drivers out of their own availability when they moved phone -> PC), so ownership is now
+   advisory only — any device may edit any driver's blocks and the team runs on trust. */
 let DEV_TOKEN=(function(){ try{ let t=localStorage.getItem('edrTB_devtok'); if(!t){ t=Array.from((window.crypto&&crypto.getRandomValues)?crypto.getRandomValues(new Uint8Array(16)):[...Array(16)].map(()=>Math.floor(Math.random()*256))).map(b=>b.toString(16).padStart(2,'0')).join(''); localStorage.setItem('edrTB_devtok',t); } return t; }catch(e){ return 'mem-'+Math.random().toString(36).slice(2); } })();
 let LOCKED_NAMES=[];               /* names locked server-side (WP build fills this from GET /avail) */
 function ownedNames(){ try{ return JSON.parse(localStorage.getItem('edrTB_owned'))||[]; }catch(e){ return []; } }
@@ -602,7 +744,7 @@ let ROSTER_IDS={};   // iRacing customer ID -> display name (filled by the WP /r
 let _iridMsg='';
 let TEAM_ROSTER=["Aaron Werth", "Aden Lennox-Bradley", "Ben Hagstrom", "Bernardo Hickmann", "Bradley Whittaker", "Brock Hellmech", "Chris w", "David Piljek", "Dominic Bou-Samra", "Erik van der Bijl", "Fred Zufelt", "Jake Lennox-Bradley", "Janne Salminen", "John Nyhouse", "Joseph Tavora", "Landon Schrecengost", "Laurent Masson", "Luke Hay", "matt blee", "Matthew Halden", "Michael Cullen", "Roland Fokkens", "Sam Mackenzie", "Sam Millar", "Stipe Ljubić", "Thomas McEwan", "Thomaz Hernandes", "Valentin Ozhiganov", "Zachary Martin"];
 let _availDirty={};   /* {evKey:{name:1}} — ticked but not yet submitted */
-let _avMsg='';
+let _avMsg='', _avErr=false;   /* _avErr colours the message: sniffing it for the word "failed" mislabelled server refusals as success */
 /* the survey/plan and Garage 61 sometimes spell the same person differently — dedup via
    the documented override map + diacritic-insensitive matching */
 const NAME_ALIASES={'joey tavora':'joseph tavora','matt halden':'matthew halden','zach martin':'zachary martin','chris wilson':'chris w','michael s cullen':'michael cullen'};
@@ -649,6 +791,8 @@ function renderInstructions(){
 }
 /* ===== Event tab (season calendar) ===== */
 let _calFilter='all', _calTargets=true, _calPast=false, _evFormOpen=false, _evSyncMsg='';
+let _calAll=false;          /* false = just what is actionable; true = the whole calendar */
+const CAL_BRIEF=6;          /* rows kept in the short view, on top of anything live or selected */
 function weekStartOf(s){ const dt=new Date(s+'T00:00:00'); const day=dt.getDay(); dt.setDate(dt.getDate()+((day===0?-6:1)-day)); return dt; }
 function renderEventTab(){
   let html='';
@@ -684,8 +828,17 @@ function renderEventTab(){
     }
     html+='</div>';
   }
-  const list=calendar().filter(ev=>(_calFilter==='all'||ev.cat===_calFilter)&&(!_calTargets||isTarget(ev))&&(_calPast||statusFor(ev).state!=='past'))
+  let list=calendar().filter(ev=>(_calFilter==='all'||ev.cat===_calFilter)&&(!_calTargets||isTarget(ev))&&(_calPast||statusFor(ev).state!=='past'))
     .slice().sort((a,b)=>a.s.localeCompare(b.s));
+  /* Default to what is actually actionable — live now, the next few up, and whatever is
+     selected. The full year was 18 rows and three and a half phone screens for a driver who
+     almost always only cares about the race in front of them. */
+  const fullCount=list.length;
+  if(!_calAll && fullCount>CAL_BRIEF){
+    const keep=list.filter(ev=>statusFor(ev).state==='live'||state.evsel===evKey(ev));
+    list.filter(ev=>statusFor(ev).state!=='live'&&state.evsel!==evKey(ev)).forEach(ev=>{ if(keep.length<CAL_BRIEF) keep.push(ev); });
+    list=keep.sort((a,b)=>a.s.localeCompare(b.s));
+  }
   if(!list.length){ return html+'<div class="meta">Nothing matches this filter.</div>'; }
   const byWeek=new Map();
   list.forEach(ev=>{ const k=weekStartOf(ev.s).getTime(); if(!byWeek.has(k)) byWeek.set(k,[]); byWeek.get(k).push(ev); });
@@ -713,10 +866,247 @@ function renderEventTab(){
     });
     html+='</div>';
   });
+  if(fullCount>list.length || _calAll){
+    html+='<div style="margin:10px 0 0"><button class="quickbtn avfree" data-action="calall">'
+      +(_calAll?'Show less':'Show the full calendar ('+fullCount+' events)')+'</button></div>';
+  }
   html+='<div class="meta" style="margin:6px 0 0">Click a <b style="color:var(--yellow)">target</b> event to select it — the whole plan (availability, drivers, teams, stints) follows the selected event. Context events are shown for awareness only.</div>';
   return html;
 }
 
+/* ===== Weekly update (admin only) =====================================================
+   Two deliberately separate steps:
+     weeklyFacts()  -> a structured object: what is on this week, where, and who races it
+     weeklyDraft()  -> turns that into pasteable text
+   The split is the point. The facts are the part a WordPress plugin can actually get right;
+   the voice is not something PHP can invent, so the draft is a skeleton an admin finishes.
+   When the Claude API step is wired in it consumes weeklyFacts() and replaces weeklyDraft()
+   only — nothing else has to move. */
+let _wkMsg='', _wkDraft='';
+function weeklyState(){
+  if(!state.weekly) state.weekly={series:{}, track:{}, driver:{}, flare:true, seeded:false};
+  const w=state.weekly;
+  if(!w.seeded){   // first open: tick the twelve the team actually races
+    WEEKLY_SERIES.forEach(function(s){ if(w.series[s.n]===undefined) w.series[s.n]=!!s.on; });
+    w.seeded=true;
+  }
+  return w;
+}
+/* iRacing season names carry the season and the sponsor ("iRacing Porsche Cup by CONSPIT -
+   2026 Season 3"), the popularity report does not. Strip both ends before comparing. */
+function seriesKey(n){
+  return String(n||'').toLowerCase()
+    .replace(/\s*[-–]\s*20\d\d\s*season\s*\d.*$/,'')
+    .replace(/\s+(by|presented by|powered by)\s+[a-z0-9 .\-]+$/,'')
+    .replace(/[^a-z0-9]+/g,' ').trim();
+}
+function trackNoteFor(track){
+  const t=String(track||'').toLowerCase(), w=weeklyState();
+  const all=Object.assign({}, TRACK_NOTES, w.track||{});
+  const hit=Object.keys(all).find(function(k){ return t.indexOf(k)>=0; });
+  return hit?all[hit]:'';
+}
+/* `used` lets the caller stop the same person being the colour on four different series in one
+   write-up — the second mention adds nothing and reads like a copy-paste error. */
+function driverNoteFor(names, used){
+  const w=weeklyState(); if(!w.flare) return null;
+  const all=Object.assign({}, DRIVER_NOTES, w.driver||{});
+  const list=(names||[]);
+  const hit=list.find(function(n){ return all[n] && !(used&&used[n]); }) || null;
+  if(!hit) return null;
+  if(used) used[hit]=1;
+  return {name:hit, note:all[hit]};
+}
+/* Everything the write-up is built from. Endurance and specials lead, because that is the bit
+   the team most needs telling about; sprints follow, one per selected series. */
+/* Next week: the Monday after this one, through the following Sunday.
+   Returned as ISO date strings and compared as strings — iRacing start_date is a plain
+   YYYY-MM-DD, and mixing that with local-midnight timestamps skews the window by hours in
+   Brisbane and can drop or double-count a round at the boundary. */
+function isoDay(d){
+  return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
+}
+function nextWeekWindow(){
+  const start=weekStartOf(isoDay(new Date()));   // weekStartOf takes a date STRING, not a Date
+  start.setDate(start.getDate()+7);
+  const end=new Date(start); end.setDate(end.getDate()+6);
+  return {from:isoDay(start), to:isoDay(end)};
+}
+function inNextWeek(startDate){
+  const w=nextWeekWindow(), d=String(startDate||'');
+  return d>=w.from && d<=w.to;
+}
+function weeklyFacts(){
+  /* The live schedule is the source of truth for what is on. IR_WEEKS comes straight from the
+     iRacing API (every official round in the next fortnight); the baked WEEKLY_SERIES list is
+     only a fallback for who-races-what and ordering until the live team data has been pulled. */
+  const weeks=(typeof IR_WEEKS!=='undefined' && Array.isArray(IR_WEEKS)) ? IR_WEEKS : [];
+  const w=weeklyState();
+  const now=Date.now();
+  const win=nextWeekWindow();
+  const known={}; WEEKLY_SERIES.forEach(function(s){ known[seriesKey(s.n)]=s; });
+
+  /* only rounds that actually start next week */
+  const rounds=weeks.filter(function(r){ return inNextWeek(r.start_date); });
+
+  /* one source for "is this series in": the same list the tick boxes render from, so the draft
+     can never disagree with what the admin sees ticked */
+  const picked={}; weeklyPickList().forEach(function(p){ if(p.on) picked[p.key]=p; });
+
+  const sprints=[], usedDrivers={};
+  rounds.forEach(function(r){
+    const k=seriesKey(r.series);
+    if(!picked[k]) return;
+    const seed=known[k]||null;                       // team history for this series, if we have it
+    const label=picked[k].label;
+    const who=teamRunners(k, seed);
+    sprints.push({
+      series:label, cat:seed?seed.cat:'', starts:seed?seed.st:0, who:who,
+      track:r.track||'', raceMin:r.race_min||0, sessions:r.sessions||[],
+      matched:!!r.track, note:trackNoteFor(r.track), flare:driverNoteFor(who, usedDrivers),
+      startDate:r.start_date
+    });
+  });
+  sprints.sort(function(a,b){ return (b.starts||0)-(a.starts||0) || a.series.localeCompare(b.series); });
+
+  /* Upcoming endurance + specials come from the season calendar, not iRacing, because that is
+     where the team's own targets live. Anything that has already finished by the time next week
+     starts is dropped — the write-up is a look forward, and a race that ended on Sunday has no
+     business leading it. Four weeks of look-ahead from the start of next week. */
+  const soon=calendar().filter(function(ev){
+    if(ev.cat!=='endurance' && !ev.special) return false;
+    const ends=ev.e||ev.s;
+    if(ends < win.from) return false;                       // over before next week begins
+    return ev.s <= isoDay(new Date(Date.parse(win.from+'T00:00:00')+28*86400000));
+  }).sort(function(a,b){ return a.s.localeCompare(b.s); });
+
+  return {
+    generated:new Date().toISOString(),
+    tz:tzLabel(),
+    big:soon.map(function(ev){
+      const st=statusFor(ev);
+      return {name:ev.n, track:ev.track, cars:ev.cars, dur:ev.dur||0, dates:fmtDates(ev.s,ev.e),
+              live:st.state==='live', inDays:st.state==='live'?0:+st.label||0,
+              target:isTarget(ev), note:trackNoteFor(ev.track)};
+    }),
+    week:{from:win.from, to:win.to},
+    sprints:sprints,
+    rounds:rounds.length,
+    unmatched:sprints.filter(function(s){ return !s.matched; }).length,
+    haveIracing:weeks.length>0,
+    liveRunners:teamSeriesLive()
+  };
+}
+/* Who from the team actually runs a series.
+   Live first: TEAM_SERIES is built server-side from iRacing results matched to the Garage 61
+   roster, so it reflects reality rather than a snapshot. The figures baked into WEEKLY_SERIES
+   came from a one-off report and are only a stand-in until that pull has happened. */
+function teamSeriesLive(){
+  return (typeof TEAM_SERIES!=='undefined' && TEAM_SERIES && Object.keys(TEAM_SERIES).length) ? TEAM_SERIES : null;
+}
+function teamRunners(key, seed){
+  const live=teamSeriesLive();
+  if(live && live[key] && live[key].length) return live[key].map(function(x){ return x.name||x; });
+  return seed?seed.who:[];
+}
+function weeklyDraft(f){
+  const L=[];
+  L.push('This week in iRacing');
+  L.push('Week of '+f.week.from+' to '+f.week.to+'.');
+  L.push('');
+  if(f.big.length){
+    L.push('ENDURANCE & SPECIALS');
+    f.big.forEach(function(e){
+      const when=e.live?'LIVE NOW':('in '+e.inDays+' day'+(e.inDays===1?'':'s'));
+      L.push('- '+e.name+' — '+e.track+(e.dur?' · '+e.dur+'h':'')+' · '+e.dates+' ('+when+')'
+             +(e.target?' · EDR target':''));
+      if(e.cars) L.push('  '+e.cars);
+      if(e.note) L.push('  '+e.note+'.');
+      L.push('');
+    });
+  } else {
+    L.push('ENDURANCE & SPECIALS');
+    L.push('- nothing on the EDR calendar in the next four weeks.');
+    L.push('');
+  }
+  L.push('SPRINTS');
+  if(!f.haveIracing){
+    L.push('(no live iRacing schedule — connect the proxy in plugin Settings)');
+  } else if(!f.sprints.length){
+    L.push('(no rounds next week for the series you have ticked)');
+  }
+  f.sprints.forEach(function(s){
+    if(!s.matched){ L.push('- '+s.series+' — track TBC.'); return; }
+    let line='- '+s.series+' is going to '+s.track;
+    if(s.raceMin) line+=' ('+s.raceMin+' min)';
+    line+='.';
+    L.push(line);
+    if(s.note) L.push('  '+s.note.charAt(0).toUpperCase()+s.note.slice(1)+'.');
+    if(s.flare) L.push('  One for '+s.flare.name+' — '+s.flare.note+'.');
+    L.push('');
+  });
+  L.push('---');
+  L.push('Times shown in '+f.tz+'. Draft generated by the Team Builder; add your own flare before posting.');
+  return L.join('\n');
+}
+/* The pick list is next week's actual rounds, not a fixed menu. Series the team has history in
+   come first and are ticked; anything else is offered unticked so a new series can be added
+   without editing code. */
+function weeklyPickList(){
+  const weeks=(typeof IR_WEEKS!=='undefined' && Array.isArray(IR_WEEKS)) ? IR_WEEKS : [];
+  const w=weeklyState();
+  const known={}; WEEKLY_SERIES.forEach(function(s){ known[seriesKey(s.n)]=s; });
+  const seen={}, rows=[];
+  weeks.forEach(function(r){
+    if(!inNextWeek(r.start_date)) return;
+    const k=seriesKey(r.series); if(seen[k]) return; seen[k]=1;
+    const seed=known[k]||null;
+    const label=seed?seed.n:String(r.series||'').replace(/\s*[-–]\s*20\d\d\s*season\s*\d.*$/i,'');
+    const on=(w.series[label]!==undefined) ? !!w.series[label] : !!(seed&&seed.on);
+    rows.push({key:k, label:label, track:r.track, starts:seed?seed.st:0, on:on});
+  });
+  rows.sort(function(a,b){ return (b.starts||0)-(a.starts||0) || a.label.localeCompare(b.label); });
+  return rows;
+}
+function renderWeekly(){
+  if(!isAdmin()) return '<div class="importbox"><div class="meta">The weekly update is an admin tool.</div></div>';
+  const w=weeklyState();
+  const f=weeklyFacts();
+  let h='<div class="importbox">';
+  h+='<div class="head" style="font-size:17px;color:#fff;text-transform:uppercase">This week in iRacing</div>';
+  h+='<div class="meta" style="margin-top:4px">Pick the series to cover, hit Generate, then copy the draft out and add your own flare. '
+    +(f.haveIracing?('Tracks come from live iRacing data — '+f.sprints.filter(function(s){return s.matched;}).length+' of '+f.sprints.length+' series matched a round this week.')
+                   :'No live iRacing data right now, so tracks will be blank — set the proxy in plugin Settings.')+'</div>';
+  h+='<div class="quickrow" style="margin-top:10px">'
+    +'<button class="btn btn-amber avfree" data-action="wkgen">Generate the update</button>'
+    +'<button class="quickbtn avfree" data-action="wkcopy">Copy to clipboard</button>'
+    +'<label class="meta" style="display:flex;gap:6px;align-items:center;margin-left:8px"><input type="checkbox" data-action="wkflare"'+(w.flare?' checked':'')+'> driver mentions</label>'
+    +(_wkMsg?'<span class="meta" style="color:var(--green)">'+esc(_wkMsg)+'</span>':'')
+    +'</div>';
+  h+='</div>';
+
+  h+='<div class="importbox"><div class="meta" style="text-transform:uppercase;letter-spacing:.04em;margin-bottom:2px">Series racing next week</div>';
+  h+='<div class="meta" style="font-size:10.5px">Straight from the iRacing schedule for '+esc(f.week.from)+' to '+esc(f.week.to)+'. '
+    +(f.liveRunners?'Team participation is live from iRacing results.'
+                   :'Team participation is still the seeded snapshot — it becomes live once the results pull has run.')+'</div>';
+  const rows=weeklyPickList();
+  if(!rows.length){
+    h+='<div class="meta" style="margin-top:8px">'+(f.haveIracing?'No official rounds land in that window yet — iRacing usually publishes a week or so ahead.':'No schedule available. Set the iRacing proxy in plugin Settings.')+'</div>';
+  } else {
+    h+='<div class="wkser">';
+    rows.forEach(function(r){
+      h+='<label><input type="checkbox" class="avfree" data-action="wkser" data-n="'+esc(r.label)+'"'+(r.on?' checked':'')+'>'
+        +'<span>'+esc(r.label)+'<span class="st"> · '+esc(r.track||'track TBC')+(r.starts?' · '+r.starts+' team starts':' · new to the team')+'</span></span></label>';
+    });
+    h+='</div>';
+  }
+  h+='</div>';
+
+  h+='<div class="importbox"><div class="meta" style="text-transform:uppercase;letter-spacing:.04em;margin-bottom:6px">The draft</div>';
+  h+='<textarea class="wkbox avfree" id="wkdraft" spellcheck="false">'+esc(_wkDraft||'Hit Generate to build this week\'s update.')+'</textarea>';
+  h+='</div>';
+  return h;
+}
 /* ===== Availability tab ===== */
 function canEditAvail(name){ return isAdmin()||(!!state.me&&name===state.me&&!lockedForMe(name)); }
 function toggleAvail(name,slot,want){
@@ -727,17 +1117,123 @@ function toggleAvail(name,slot,want){
   const on=(want===undefined)?(i<0):want;
   if(on&&i<0) arr.push(slot);
   if(!on&&i>=0) arr.splice(i,1);
-  (_availDirty[state.evsel]=_availDirty[state.evsel]||{})[name]=1; _avMsg='';
+  (_availDirty[state.evsel]=_availDirty[state.evsel]||{})[name]=1; _avMsg=''; _avErr=false;
   applyAvailToDrivers(); save(); return true;
 }
 function setAllAvail(name,on){
   if(!canEditAvail(name)) return false;
   const store=state.availStore[state.evsel]=state.availStore[state.evsel]||{};
   store[name]= on ? Array.from({length:evSlots()},(_,i)=>i) : [];
-  (_availDirty[state.evsel]=_availDirty[state.evsel]||{})[name]=1; _avMsg='';
+  (_availDirty[state.evsel]=_availDirty[state.evsel]||{})[name]=1; _avMsg=''; _avErr=false;
   applyAvailToDrivers(); save(); return true;
 }
 function prefsFor(name){ const p=((state.prefStore||{})[state.evsel]||{})[name]; return {time:(p&&p.time)||'any', cond:(p&&p.cond)||'any', cls:(p&&p.cls)||''}; }
+/* Change the block size for the selected event and RESCALE every stored tick through real
+   minute windows, because a slot index means nothing without the size it was recorded at —
+   reinterpreting 2h ticks as 30min ticks would silently shrink everyone's availability. */
+function avSetBlock(next){
+  if(!state.evsel || !avBlockOk(next) || +next===AV_BLOCK) return;
+  const ev=calEvent(state.evsel); if(!ev) return;
+  const oldB=AV_BLOCK, store=state.availStore[state.evsel]||{};
+  const coarser=(+next>oldB);
+  let before=0, after=0;
+  Object.keys(store).forEach(function(nm){
+    const win=slotsToWindows(store[nm], oldB, EV_WIN_MIN);
+    before+=win.reduce(function(a,w){return a+(w[1]-w[0]);},0);
+    store[nm]=windowsToSlots(win, EV_WIN_MIN, +next, coarser);
+    after+=slotsToWindows(store[nm], +next, EV_WIN_MIN).reduce(function(a,w){return a+(w[1]-w[0]);},0);
+    (_availDirty[state.evsel]=_availDirty[state.evsel]||{})[nm]=1;   // rescaled ticks must be pushed
+  });
+  state.evTiming=state.evTiming||{};
+  state.evTiming[state.evsel]=Object.assign({}, state.evTiming[state.evsel]||{}, {avBlock:+next});
+  applyEventTiming(ev);
+  const n=Object.keys(store).length;
+  const lost=Math.round((before-after)/6)/10;
+  _avMsg=n?('Block size now '+fmtBlockLen(+next)+' — '+n+' driver'+(n>1?'s':'')+' rescaled'
+            +(lost>0?', '+lost+'h trimmed where blocks no longer line up':'')+'. Hit Submit to save.')
+          :('Block size now '+fmtBlockLen(+next)+'.');
+  _avErr=false; save(); renderContent();
+}
+function fmtBlockLen(m){ return m%60===0 ? (m/60)+'h' : (m<60? m+'min' : Math.floor(m/60)+'h '+(m%60)+'min'); }
+/* last-submission stamps from the server ({ev:{name:{at,n}}}), so a returning driver is told
+   they are already in instead of having to decode their own grid */
+let AV_SEEN={};
+function avSeenFor(nm){
+  const s=((AV_SEEN||{})[state.evsel]||{})[nm];
+  if(!s||!s.at) return null;
+  return {n:s.n||0, ago:relTime(s.at)};
+}
+function relTime(sqlish){
+  /* WP current_time('mysql') is "YYYY-MM-DD HH:MM:SS" in the SITE's zone, with no offset to
+     anchor it. Close enough for "3 days ago"; never used for anything that has to be exact. */
+  const t=Date.parse(String(sqlish).replace(' ','T'));
+  if(isNaN(t)) return 'earlier';
+  const mins=Math.round((Date.now()-t)/60000);
+  if(mins<2) return 'just now';
+  if(mins<60) return mins+' minutes ago';
+  const hrs=Math.round(mins/60); if(hrs<24) return hrs+' hour'+(hrs===1?'':'s')+' ago';
+  const days=Math.round(hrs/24); return days+' day'+(days===1?'':'s')+' ago';
+}
+/* ---- bulk pickers: 72 individual taps was the single biggest cost of submitting ---- */
+function avApplyBulk(nm, want, test){
+  if(!canEditAvail(nm)) return;
+  const a=state.availStore[state.evsel]=state.availStore[state.evsel]||{};
+  const cur=new Set(a[nm]||[]); const n=evSlots();
+  for(let i=0;i<n;i++){ if(!test(i)) continue; if(want) cur.add(i); else cur.delete(i); }
+  a[nm]=Array.from(cur).sort(function(x,y){return x-y;});
+  (_availDirty[state.evsel]=_availDirty[state.evsel]||{})[nm]=1; _avMsg=''; _avErr=false;
+  save(); renderContent();
+}
+/* local hour-of-day, so "evenings" means evenings where the driver lives, not UTC evenings */
+function localHour(ms){
+  try{ return +new Date(ms).toLocaleString('en-AU',{timeZone:tzZone(),hour:'2-digit',hourCycle:'h23'}); }
+  catch(e){ return new Date(ms).getHours(); }
+}
+function localDayHourKey(ms){
+  try{ return new Date(ms).toLocaleString('en-AU',{timeZone:tzZone(),weekday:'short',hour:'2-digit',hourCycle:'h23'}); }
+  catch(e){ const d=new Date(ms); return d.getDay()+'|'+d.getHours(); }
+}
+function slotHour(i){ return localHour(WIN_START_MS + i*AV_BLOCK*60000); }
+const AV_PERIODS={ morning:[6,12], afternoon:[12,17], evening:[17,23], night:[23,6] };
+function inPeriod(i,p){ const h=slotHour(i), r=AV_PERIODS[p]; return r[0]<r[1] ? (h>=r[0]&&h<r[1]) : (h>=r[0]||h<r[1]); }
+/* Copy the driver's ticks from the most recent OTHER event they filled in, matched on local
+   weekday + hour rather than slot index — different events have different windows, so index
+   copying would land the blocks in the wrong place entirely. */
+function avCopyPrevious(nm){
+  const prev=avPreviousEvent(nm); if(!prev) return;
+  const pat={}, pb=prev.block, pstart=prev.winStart;
+  (prev.slots||[]).forEach(function(i){
+    for(let m=0;m<pb;m+=30) pat[localDayHourKey(pstart + i*pb*60000 + m*60000)]=1;
+  });
+  const n=evSlots(), out=[];
+  for(let i=0;i<n;i++){
+    let hit=0, tot=0;
+    for(let m=0;m<AV_BLOCK;m+=30){ tot++; if(pat[localDayHourKey(WIN_START_MS + i*AV_BLOCK*60000 + m*60000)]) hit++; }
+    if(tot && hit/tot>=0.5) out.push(i);
+  }
+  const a=state.availStore[state.evsel]=state.availStore[state.evsel]||{};
+  a[nm]=out;
+  (_availDirty[state.evsel]=_availDirty[state.evsel]||{})[nm]=1;
+  _avMsg=out.length?('Copied your pattern from '+prev.name+' — '+out.length+' block'+(out.length>1?'s':'')+'. Check it, then Submit.')
+                   :('Nothing carried over from '+prev.name+' — those hours do not fall inside this event.');
+  _avErr=!out.length; save(); renderContent();
+}
+/* the newest event other than this one where the driver has ticks, with the sizing needed to read them */
+function avPreviousEvent(nm){
+  const cands=[];
+  Object.keys(state.availStore||{}).forEach(function(k){
+    if(k===state.evsel) return;
+    const slots=(state.availStore[k]||{})[nm]; if(!slots||!slots.length) return;
+    const ev=calEvent(k); if(!ev) return;
+    const ovr=(state.evTiming||{})[k]||{};
+    const winStart=ovr.winStart?Date.parse(ovr.winStart):(ev.winStart?Date.parse(ev.winStart):Date.parse(ev.s+'T00:00:00+10:00'));
+    const days=Math.round((Date.parse(ev.e+'T00:00:00Z')-Date.parse(ev.s+'T00:00:00Z'))/86400000)+1;
+    cands.push({key:k, name:ev.n, slots:slots, block:avBlockOk(ovr.avBlock)?ovr.avBlock:120,
+                winMin:ovr.winMin||ev.winMin||days*1440, winStart:winStart, sort:ev.s});
+  });
+  cands.sort(function(a,b){ return a.sort<b.sort?1:-1; });
+  return cands[0]||null;
+}
 function renderMyBlocks(a){
   const nm=state.me; const arr=a[nm]||[]; const n=evSlots(); const canEdit=canEditAvail(nm);
   const pr=prefsFor(nm);
@@ -747,7 +1243,16 @@ function renderMyBlocks(a){
   let h='<div class="importbox">';
   h+='<div class="myblocks-head"><span class="head" style="color:#fff;font-size:15px">'+(isAdmin()?'Editing · ':'Your blocks · ')+esc(nm.split(' ')[0])+(lockedForMe(nm)?' 🔒':'')+'</span>'
     +(canEdit?'<span class="myblocks-btns"><button class="btn btn-amber avfree" data-action="avtickall">Tick all</button><button class="btn btn-ghost avfree" data-action="avclear">Clear</button></span>':'')+'</div>';
-  h+='<div class="meta" style="margin:2px 0 4px">Tap every 2-hour block you can race ('+tzLabel()+' time), or use Tick all. Then Submit below.</div>';
+  h+='<div class="meta" style="margin:2px 0 4px">Tap every '+fmtBlockLen(AV_BLOCK)+' block you can race ('+tzLabel()+' time), or drag across a row. Then Submit.</div>';
+  const seen=avSeenFor(nm);
+  if(seen) h+='<div class="meta" style="margin:2px 0 6px;color:var(--green)">Already in — you submitted '+seen.n+' block'+(seen.n===1?'':'s')+' '+esc(seen.ago)+'.</div>';
+  if(canEdit){
+    const prev=avPreviousEvent(nm);
+    h+='<div class="quickrow"><span class="meta" style="width:56px">Quick add</span>'
+      +Object.keys(AV_PERIODS).map(function(p){ return '<button class="quickbtn avfree" data-bulk="period" data-p="'+p+'" data-name="'+esc(nm)+'">'+p.charAt(0).toUpperCase()+p.slice(1)+'s</button>'; }).join('')
+      +(prev?'<button class="quickbtn avfree" data-bulk="prev" data-name="'+esc(nm)+'" title="match the hours you gave for '+esc(prev.name)+'">Same as '+esc(prev.name.length>22?prev.name.slice(0,21)+'…':prev.name)+'</button>':'')
+      +'</div>';
+  }
   const hasWx=!!(state.evWeather&&state.evWeather[state.evsel]);
   h+='<div class="meta" style="margin:8px 0 3px;text-transform:uppercase;letter-spacing:.04em">Race preference</div>';
   const evcls=evClasses(calEvent(state.evsel));
@@ -757,7 +1262,10 @@ function renderMyBlocks(a){
   h+='<div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-bottom:4px"><span class="meta" style="width:56px">Time</span>'+seg('time',{start:'Start',finish:'Finish',any:'No pref'})+'</div>';
   h+='<div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-bottom:8px"><span class="meta" style="width:56px">Weather</span>'+seg('cond',{wet:'Wet',dry:'Dry',any:'Both'})+(hasWx?'':'<span class="meta" style="font-size:10px">· applies once weather is set for this event</span>')+'</div>';
   groups.forEach(function(g){
-    h+='<div class="blockday">'+g.day+'</div><div class="blockrow">';
+    h+='<div class="blockday">'+g.day
+      +(canEdit?' <button class="quickbtn avfree" data-bulk="day" data-day="'+esc(g.day)+'" data-name="'+esc(nm)+'" style="margin-left:8px;text-transform:none">all day</button>'
+                +' <button class="quickbtn avfree" data-bulk="dayoff" data-day="'+esc(g.day)+'" data-name="'+esc(nm)+'" style="text-transform:none">none</button>':'')
+      +'</div><div class="blockrow">';
     g.slots.forEach(function(i){
       const on=arr.indexOf(i)>=0;
       const lbl=fmtClock(i*AV_BLOCK).split(' ').slice(1).join(' ')+'–'+fmtClock(Math.min((i+1)*AV_BLOCK,EV_WIN_MIN)).split(' ').slice(1).join(' ');
@@ -801,13 +1309,13 @@ function renderAvail(){
       +roster.map(nm=>'<option value="'+esc(nm)+'"'+(nm===state.me?' selected':'')+'>'+esc(nm)+'</option>').join('')+'</select>'
       +(state.me?'':'<span class="meta">Pick your name to enter availability.</span>')+'</div>';
   }
-  const dirtyN=Object.keys(_availDirty[state.evsel]||{}).length;
-  html+='<div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap;margin-top:12px">'
-    +'<button class="btn btn-amber avfree" data-action="avsubmit">Submit availability</button>'
-    +(dirtyN?'<span class="meta" style="color:var(--amber)">Unsaved changes ('+dirtyN+' driver'+(dirtyN>1?'s':'')+') — hit Submit to save for the team.</span>'
-      :(_avMsg?'<span class="meta" style="color:'+(_avMsg.indexOf('failed')>=0?'var(--red)':'var(--green)')+'">'+esc(_avMsg)+'</span>'
-        :'<span class="meta">Tick your blocks, then Submit — everyone sees it from then on.</span>'))
-    +'</div>';
+  if(isAdmin()){
+    html+='<div class="quickrow" style="margin-top:12px"><span class="meta" style="width:56px">Block size</span>'
+      +AV_BLOCK_CHOICES.map(function(b){ return '<button class="quickbtn avfree'+(b===AV_BLOCK?' on':'')+'" data-action="avblock" data-b="'+b+'"'
+        +(b===AV_BLOCK?' style="border-color:var(--yellow);color:#fff"':'')+'>'+fmtBlockLen(b)+'</button>'; }).join('')
+      +'<span class="meta" style="font-size:10px">· existing ticks are rescaled, then need a Submit</span>'
+      +'<button class="quickbtn avfree" data-action="avprune" style="margin-left:auto" title="drop stored availability for events that finished over 90 days ago">Clear old events</button></div>';
+  }
   html+='</div>';
   // tile picker for the selected person (driver = themself; admin = the driver they chose)
   if(state.me) html+=renderMyBlocks(a);
@@ -851,6 +1359,20 @@ function renderAvail(){
     +'<div class="sumcard"><div class="v">'+covered+'/'+n+'</div><div class="k">blocks covered</div></div>'
     +'</div>';
   html+='<div class="meta" style="margin-top:10px">Availability here feeds the '+(isAdmin()?'Drivers ranking, Teams and Stints tabs directly.':'team plan — the admin builds teams and stints from it.')+'</div>';
+  /* Submit rides at the very end, as a direct child of the tab content. position:sticky only
+     holds an element inside its own containing block, so while this lived up in the header
+     panel it vanished the moment you scrolled down into the grid — which is the entire time
+     you are actually ticking blocks. Last child of the tallest box = pinned the whole way. */
+  const dirtyN=Object.keys(_availDirty[state.evsel]||{}).length;
+  html+='<div class="subbar">'
+    +'<button class="btn btn-amber avfree" data-action="avsubmit">Submit availability</button>'
+    /* the outcome message must not sit behind the dirty banner: a failed submit always leaves
+       the entry dirty, so making these exclusive meant a driver whose save was rejected only
+       ever saw "hit Submit" and never learned it had failed. Show both when both apply. */
+    +(_avMsg?'<span class="meta" style="color:'+(_avErr?'var(--red)':'var(--green)')+'">'+esc(_avMsg)+'</span>':'')
+    +(dirtyN?'<span class="meta" style="color:var(--amber)">Unsaved changes ('+dirtyN+' driver'+(dirtyN>1?'s':'')+') — hit Submit to save for the team.</span>'
+      :(_avMsg?'':'<span class="meta">Tick your blocks, then Submit — everyone sees it from then on.</span>'))
+    +'</div>';
   return html;
 }
 
@@ -1161,7 +1683,7 @@ function renderContent(){
   renderSummary(model);
   const el=document.getElementById('content');
   const _sx={}; el.querySelectorAll('.stintwrap[data-key]').forEach(w=>{ if(w.scrollLeft) _sx[w.dataset.key]=w.scrollLeft; });   // keep horizontal scroll across re-renders
-  el.innerHTML = state.tab==='event' ? renderEventTab() : state.tab==='availability' ? renderAvail() : state.tab==='teams' ? renderTeams(byId) : state.tab==='stints' ? renderStints(byId) : state.tab==='instructions' ? renderInstructions() : renderDrivers(model);
+  el.innerHTML = state.tab==='weekly' ? renderWeekly() : state.tab==='event' ? renderEventTab() : state.tab==='availability' ? renderAvail() : state.tab==='teams' ? renderTeams(byId) : state.tab==='stints' ? renderStints(byId) : state.tab==='instructions' ? renderInstructions() : renderDrivers(model);
   if(Object.keys(_sx).length) el.querySelectorAll('.stintwrap[data-key]').forEach(w=>{ const v=_sx[w.dataset.key]; if(v!=null) w.scrollLeft=v; });
 }
 
@@ -1201,7 +1723,48 @@ document.getElementById('load').addEventListener('click',()=>{
 });
 
 document.querySelectorAll('.tab').forEach(t=>t.addEventListener('click',()=>{ state.tab=t.dataset.tab; setActiveTab(); renderContent(); }));
-function setActiveTab(){ document.querySelectorAll('.tab').forEach(t=>t.classList.toggle('active',t.dataset.tab===state.tab)); }
+function setActiveTab(){
+  document.querySelectorAll('.tab').forEach(t=>t.classList.toggle('active',t.dataset.tab===state.tab));
+  if(state.tab==='stints') markStintsSeen();
+  paintTabBadges();
+  /* the tab in the URL, so "fill in your availability: <link>#availability" from Discord lands
+     on the right screen instead of the Instructions page */
+  try{ if(location.hash.slice(1)!==state.tab) history.replaceState(null,'','#'+state.tab); }catch(e){}
+}
+/* a tick once this driver has submitted for the selected event, and a dot on Stints when the
+   plan has moved since they last looked — the two things a driver actually needs to notice */
+function paintTabBadges(){
+  const submitted = !!(state.me && state.evsel && ((state.availStore[state.evsel]||{})[state.me]||[]).length
+                       && !((_availDirty[state.evsel]||{})[state.me]));
+  const changed = stintsChanged();
+  document.querySelectorAll('.tab').forEach(function(t){
+    const old=t.querySelector('.tabtick,.tabdot'); if(old) old.remove();
+    if(t.dataset.tab==='availability' && submitted){ const s=document.createElement('span'); s.className='tabtick'; s.textContent='✓'; s.title='you have submitted for this event'; t.appendChild(s); }
+    if(t.dataset.tab==='stints' && changed){ const s=document.createElement('span'); s.className='tabdot'; s.title='the stint plan changed since you last looked'; t.appendChild(s); }
+  });
+}
+function stintSeenKey(){ return 'edrTB_stintSeen_'+(state.evsel||''); }
+function stintFingerprint(){
+  /* PLAN_REV is declared by the WordPress layer only — never redeclare it here, the two
+     builds share one scope and a second declaration is a SyntaxError that kills the app */
+  const rev=(typeof PLAN_REV==='number')?PLAN_REV:0;
+  try{ return JSON.stringify(state.stintAssign||{}).length+':'+JSON.stringify(state.stintWin||{}).length+':'+rev; }
+  catch(e){ return ''; }
+}
+function stintsChanged(){
+  if(!state.evsel) return false;
+  try{ const seen=localStorage.getItem(stintSeenKey()); return !!seen && seen!==stintFingerprint(); }catch(e){ return false; }
+}
+function markStintsSeen(){ try{ localStorage.setItem(stintSeenKey(), stintFingerprint()); }catch(e){} }
+/* WP build overrides: asks the server to drop availability for long-past events */
+function pruneOldEvents(){}
+/* a tab named in the URL (#availability), but only if that tab exists in this build — the
+   WordPress build has Setup and the standalone does not */
+function tabFromHash(){
+  try{ const h=(location.hash||'').slice(1);
+    return (h && document.querySelector('.tab[data-tab="'+h+'"]')) ? h : '';
+  }catch(e){ return ''; }
+}
 
 document.getElementById('content').addEventListener('keydown',e=>{
   if(e.key==='Enter' && e.target.id==='iridbox'){ const b=document.querySelector('[data-action="iridgo"]'); if(b) b.click(); }
@@ -1247,6 +1810,35 @@ document.getElementById('content').addEventListener('change',e=>{
     else if(a==='wxrain'){ W.rainPct=e.target.value===''?null:Math.max(0,Math.min(100,+e.target.value)); }
     save(); renderContent(); }
 });
+/* ---- drag to paint a run of blocks ----------------------------------------------------
+   Mouse and pen only. On touch this would fight the page scroll, and the grid is several
+   screens tall on a phone, so touch keeps tap-to-toggle and gets the quick-pick buttons
+   instead. Cells are repainted directly during the drag and the tree is only re-rendered
+   on release — re-rendering mid-drag would rip the elements out from under the pointer. */
+let _dragOn=false, _dragMode=false, _dragName='', _dragDid=false;
+function _dragCellAt(x,y){
+  const el=document.elementFromPoint(x,y);
+  return (el&&el.closest)?el.closest('button[data-avtoggle]'):null;
+}
+document.addEventListener('pointerdown',function(e){
+  if(e.pointerType==='touch') return;
+  const c=e.target.closest&&e.target.closest('button[data-avtoggle]');
+  if(!c) return;
+  _dragOn=true; _dragDid=false; _dragName=c.dataset.name;
+  _dragMode=!c.classList.contains('on');    // paint whatever the first cell is not
+});
+document.addEventListener('pointermove',function(e){
+  if(!_dragOn) return;
+  const c=_dragCellAt(e.clientX,e.clientY);
+  if(!c || c.dataset.name!==_dragName) return;
+  if(c.classList.contains('on')===_dragMode) return;
+  if(toggleAvail(_dragName,+c.dataset.slot,_dragMode)){ c.classList.toggle('on',_dragMode); _dragDid=true; }
+});
+document.addEventListener('pointerup',function(){
+  if(_dragOn && _dragDid) renderContent();
+  _dragOn=false;
+});
+
 document.getElementById('content').addEventListener('click',e=>{
   const delcev=e.target.closest&&e.target.closest('[data-action="delcustomev"]');
   if(delcev){ if(isAdmin()){ deleteCustomEvent(delcev.dataset.ev); renderContent(); } return; }
@@ -1259,14 +1851,50 @@ document.getElementById('content').addEventListener('click',e=>{
   if(calRow){ selectEvent(calRow.dataset.ev); return; }
   const filt=e.target.closest&&e.target.closest('[data-action="calfilter"]');
   if(filt){ _calFilter=filt.dataset.val; renderContent(); return; }
+  if(e.target.dataset.action==='calall'){ _calAll=!_calAll; renderContent(); return; }
   if(e.target.dataset.action==='gotoevent'){ state.tab='event'; setActiveTab(); renderContent(); return; }
   if(e.target.dataset.action==='gotoavail'){ state.tab='availability'; setActiveTab(); renderContent(); return; }
   const bcell=e.target.closest&&e.target.closest('button[data-avtoggle]');
-  if(bcell){ if(toggleAvail(bcell.dataset.name,+bcell.dataset.slot)) renderContent(); return; }
+  if(bcell){ if(_dragDid){ _dragDid=false; return; }   // a drag already applied this run; don't undo its last cell
+    if(toggleAvail(bcell.dataset.name,+bcell.dataset.slot)) renderContent(); return; }
+  const bulk=e.target.closest&&e.target.closest('[data-bulk]');
+  if(bulk){
+    const nm=bulk.dataset.name, kind=bulk.dataset.bulk;
+    if(kind==='prev') avCopyPrevious(nm);
+    else if(kind==='period') avApplyBulk(nm, true, function(i){ return inPeriod(i, bulk.dataset.p); });
+    else if(kind==='day')    avApplyBulk(nm, true, function(i){ return fmtDay(i*AV_BLOCK)===bulk.dataset.day; });
+    else if(kind==='dayoff') avApplyBulk(nm, false, function(i){ return fmtDay(i*AV_BLOCK)===bulk.dataset.day; });
+    return;
+  }
+  if(e.target.dataset.action==='wkgen'){
+    if(!isAdmin()) return;
+    _wkDraft=weeklyDraft(weeklyFacts()); _wkMsg='Draft built.'; save(); renderContent(); return;
+  }
+  if(e.target.dataset.action==='wkcopy'){
+    if(!isAdmin()) return;
+    const ta=document.getElementById('wkdraft');
+    const txt=(ta&&ta.value)||'';
+    if(!txt.trim()){ _wkMsg='Generate it first.'; renderContent(); return; }
+    /* copy whatever is in the box, edits included — the admin may well have tweaked it */
+    const done=function(ok){ _wkMsg=ok?'Copied.':'Could not copy — select the text and copy manually.'; renderContent(); };
+    if(navigator.clipboard&&navigator.clipboard.writeText) navigator.clipboard.writeText(txt).then(function(){done(true);},function(){done(false);});
+    else { try{ ta.select(); document.execCommand('copy'); done(true); }catch(_e){ done(false); } }
+    return;
+  }
+  if(e.target.dataset.action==='wkser'){
+    if(!isAdmin()) return;
+    const w=weeklyState(); w.series[e.target.dataset.n]=e.target.checked; save(); return;   // no re-render: keeps the scroll position while ticking a long list
+  }
+  if(e.target.dataset.action==='wkflare'){
+    if(!isAdmin()) return;
+    weeklyState().flare=e.target.checked; save(); return;
+  }
+  if(e.target.dataset.action==='avblock'){ if(isAdmin()) avSetBlock(+e.target.dataset.b); return; }
+  if(e.target.dataset.action==='avprune'){ if(isAdmin()) pruneOldEvents(); return; }
   const pb=e.target.closest&&e.target.closest('[data-prefset]');
   if(pb){ const nm=pb.dataset.name; if(!canEditAvail(nm)) return; const axis=pb.dataset.prefset, val=pb.dataset.val;
     const st=(state.prefStore[state.evsel]=state.prefStore[state.evsel]||{}); const p=(st[nm]=st[nm]||{time:'any',cond:'any'}); p[axis]=val;
-    (_availDirty[state.evsel]=_availDirty[state.evsel]||{})[nm]=1; _avMsg=''; save(); renderContent(); return; }
+    (_availDirty[state.evsel]=_availDirty[state.evsel]||{})[nm]=1; _avMsg=''; _avErr=false; save(); renderContent(); return; }
   if(e.target.dataset.action==='iridgo'){ const inp=document.getElementById('iridbox'); const v=((inp&&inp.value)||'').replace(/\D/g,'');
     if(!v){ _iridMsg='Type your iRacing customer ID first.'; renderContent(); return; }
     const nm=ROSTER_IDS[v];
@@ -1290,15 +1918,15 @@ document.getElementById('content').addEventListener('click',e=>{
     const evk=state.evsel; if(!evk) return;
     const dirty=Object.keys(_availDirty[evk]||{});
     const names=dirty.length?dirty:(isAdmin()?Object.keys(state.availStore[evk]||{}):(state.me?[state.me]:[]));
-    if(!names.length){ _avMsg='Nothing to submit — pick your name and tick your blocks first.'; renderContent(); return; }
+    if(!names.length){ _avMsg='Nothing to submit — pick your name and tick your blocks first.'; _avErr=true; renderContent(); return; }
     Promise.all(names.map(function(n){ return Promise.resolve(persistAvail(evk,n)); }))
       .then(function(){
         _availDirty[evk]={};
         names.forEach(function(n){ markOwned(n); if(!isAdmin() && LOCKED_NAMES.indexOf(n)<0) LOCKED_NAMES.push(n); });
-        _avMsg='Submitted — availability saved for the team. Your entry is now locked to this device.';
+        _avMsg='Submitted — availability saved for the team. You can update it any time, from any device.'; _avErr=false;
         save(); renderContent();
       })
-      .catch(function(err){ _avMsg=(err&&err.message&&/locked/i.test(err.message))?err.message:'Save failed — check your connection and hit Submit again.'; renderContent(); });
+      .catch(function(err){ _avMsg=(err&&err.fromServer&&err.message)?err.message:'Save failed — check your connection and hit Submit again.'; _avErr=true; renderContent(); });   /* fromServer: the server refused (bad event, store full) and retrying will not help — show why */
     return;
   }
   if(e.target.dataset.action==='avrelease'){
@@ -1385,6 +2013,7 @@ if(!load()){ seed(SAMPLE); } else { refreshFromSample(); seedSpaAvail(); }
 if(state.evsel){ const _ev=calEvent(state.evsel); if(_ev){ const _r=state.stint.race; applyEventTiming(_ev); if(_r>0) state.stint.race=_r; } }  // rebuild timing globals from the restored event (don't trust persisted globals)
 relabelStarts();  // start labels in the viewer's timezone
 if(!isAdmin()) state.tab='instructions';   // drivers always land on the guide
+{ const _h=tabFromHash(); if(_h) state.tab=_h; }   // ...unless the link named a tab
 applyAvailToDrivers();
 syncControls();
 if(!Object.keys(state.teams||{}).length){ generate(); }
