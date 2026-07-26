@@ -128,10 +128,17 @@ function edr_ir_weeks_from($data, $from_ts, $to_ts, $classes = array()) {
             $sd = isset($wk['start_date']) ? strtotime((string) $wk['start_date'] . ' 00:00:00 UTC') : false;
             if ($sd === false || $sd < $from_ts || $sd >= $to_ts) continue;
             $tr = isset($wk['track']) && is_array($wk['track']) ? $wk['track'] : array();
-            $times = array();
+            /* Two shapes here. A fixed-schedule round (endurance, specials) lists explicit
+               session_times. A repeating sprint instead gives a start time and a repeat
+               interval, which is what "races on the :00 and :30" comes from. Capture both. */
+            $times = array(); $repeat = 0; $first = '';
             foreach ((isset($wk['race_time_descriptors']) && is_array($wk['race_time_descriptors'])) ? $wk['race_time_descriptors'] : array() as $d) {
-                if (!empty($d['session_times']) && is_array($d['session_times'])) { $times = $d['session_times']; break; }
+                if (!is_array($d)) continue;
+                if (!$times && !empty($d['session_times']) && is_array($d['session_times'])) $times = $d['session_times'];
+                if (!$repeat && !empty($d['repeat_minutes'])) $repeat = intval($d['repeat_minutes']);
+                if ($first === '' && !empty($d['start_time'])) $first = (string) $d['start_time'];
             }
+            if ($first === '' && $times) $first = (string) $times[0];
             /* a multi-class week can restrict which classes actually run — prefer that over
                the season-wide list so a GT3-only week does not get announced as GTP too */
             $wkCars = $cars;
@@ -150,6 +157,8 @@ function edr_ir_weeks_from($data, $from_ts, $to_ts, $classes = array()) {
                 'start_date' => isset($wk['start_date']) ? $wk['start_date'] : '',
                 'race_min'   => isset($wk['race_time_limit']) ? intval($wk['race_time_limit']) : 0,
                 'sessions'   => array_values($times),
+                'repeat'     => $repeat,
+                'first'      => $first,
                 'cars'       => array_values($wkCars),
                 'rounds'     => $rounds,
                 'team'       => $teamEv,
