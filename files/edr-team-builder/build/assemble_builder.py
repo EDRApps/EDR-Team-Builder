@@ -181,6 +181,21 @@ function persistAvail(evk,name){
 /* Kick the results sweep and watch for it to finish. It is a search per driver plus a fetch
    per subsession against a rate-limited proxy, so this can take minutes — the button returns
    at once and we poll the cached copy. */
+function snapshotRatings(){
+  _wkMsg='Reading ratings from Garage 61…'; _wkErr=false; renderContent();
+  fetch(API+'ratings',{method:'POST',headers:_hdrs(true),body:'{}'})
+    .then(function(r){ return r.json().catch(function(){return {};}).then(function(j){
+      if(!r.ok) throw new Error((j&&j.message)||'ratings snapshot failed'); return j; }); })
+    .then(function(j){
+      RATINGS=j.movement||RATINGS;
+      const n=(j.snapshot&&j.snapshot.drivers)||0;
+      _wkMsg = (RATINGS&&RATINGS.ready)
+        ? ('Snapshot taken for '+n+' drivers — movement available against '+RATINGS.from+'.')
+        : ('Snapshot taken for '+n+' drivers. Movement needs a second week to compare against.');
+      _wkErr=false; renderContent();
+    })
+    .catch(function(err){ _wkMsg=(err&&err.message)||'ratings snapshot failed'; _wkErr=true; renderContent(); });
+}
 function refreshRecap(){
   RECAP_RUNNING=true; RECAP_ERR=''; renderContent();
   fetch(API+'recap/refresh',{method:'POST',headers:_hdrs(true),body:'{}'})
@@ -193,7 +208,7 @@ function pollRecap(n){
   if(n>60){ RECAP_RUNNING=false; RECAP_ERR='The results pull is taking longer than expected — reopen the tab shortly.'; renderContent(); return; }
   setTimeout(function(){
     apiGET('recap').then(function(rc){
-      if(rc){ RECAP=rc.recap||RECAP; RECAP_ERR=rc.error||''; RECAP_RUNNING=!!rc.running; }
+      if(rc){ RECAP=rc.recap||RECAP; RECAP_ERR=rc.error||''; RECAP_RUNNING=!!rc.running; RECAP_PROG=rc.progress||null; if(rc.progress) renderContent(); }
       if(rc && rc.running) return pollRecap(n+1);
       RECAP_RUNNING=false; renderContent();
     }).catch(function(){ pollRecap(n+1); });
@@ -577,7 +592,8 @@ async function bootSetup(){
   if(ok && state.drivers.length && !Object.keys(state.teams||{}).length) generate();
   renderContent();
   if(isAdmin()){
-    try{ var rc=await apiGET('recap'); if(rc){ RECAP=rc.recap||null; RECAP_RUNNING=!!rc.running; RECAP_ERR=rc.error||''; } }catch(e){}
+    try{ var rc=await apiGET('recap'); if(rc){ RECAP=rc.recap||null; RECAP_RUNNING=!!rc.running; RECAP_ERR=rc.error||''; RECAP_PROG=rc.progress||null; } }catch(e){}
+    try{ RATINGS=await apiGET('ratings'); }catch(e){}
     try{ TRACKS=await apiGET('tracks'); }catch(e){ TRACKS=[]; } if(!Array.isArray(TRACKS)) TRACKS=[];
     preselectNearest();
     if(state.tab==='setup') renderContent();

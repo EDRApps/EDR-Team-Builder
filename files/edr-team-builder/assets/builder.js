@@ -888,7 +888,7 @@ function weeklyFacts(){
       series:label, cat:seed?seed.cat:'', starts:seed?seed.st:0, who:who,
       cars:(r.cars&&r.cars.length)?r.cars:[],   // live car classes for the round, from iRacing
       track:r.track||'', raceMin:r.race_min||0, sessions:r.sessions||[],
-      when:raceTimePattern(r), times:sessionTimeList(r,4),
+      when:raceTimePattern(r), times:sessionTimeList(r,4), firstRaw:r.firstRaw||'', repeatRaw:r.repeat||0,
       matched:!!r.track, note:trackNoteFor(r.track), flare:driverNoteFor(who, usedDrivers),
       startDate:r.start_date
     });
@@ -960,12 +960,25 @@ function teamRunners(key, seed){
 /* Last week's results, pulled from the iRacing proxy by a background sweep and cached
    server-side (WORDPRESS ONLY — the standalone has no proxy, so this stays empty and the
    recap section is simply omitted). */
-let RECAP=null, RECAP_RUNNING=false, RECAP_ERR='';
+let RECAP=null, RECAP_RUNNING=false, RECAP_ERR='', RECAP_PROG=null;
+/* Weekly iRating/Safety Rating movement, diffed from two Garage 61 snapshots. Two HTTP calls
+   rather than the multi-minute iRacing sweep, so the ratings awards never wait on it. */
+let RATINGS=null;
 function sgn(n){ return (n>0?'+':'')+n; }
+/* Two shapes reach here: the sweep gives pre-formatted licence strings ("B 3.10"), the
+   snapshot diff gives numbers plus a licence class. Render whichever we got. */
+function fmtSr(d){
+  if(typeof d.srStart==='string' && d.srStart) return d.srStart+' → '+d.srEnd;
+  const lab=d.srLabel?d.srLabel+' ':'';
+  return lab+Number(d.srStart).toFixed(2)+' → '+lab+Number(d.srEnd).toFixed(2)
+       +' ('+(d.srDelta>0?'+':'')+Number(d.srDelta).toFixed(2)+')';
+}
 /* The awards. Deliberately computed from the same driver rows rather than pre-baked server
    side, so adding an award never needs a re-sweep of the API. */
 function recapAwards(r){
-  if(!r || !r.drivers || !r.drivers.length) return null;
+  const mv=(RATINGS&&RATINGS.ready&&RATINGS.movers&&RATINGS.movers.length)?RATINGS.movers:null;
+  if((!r || !r.drivers || !r.drivers.length) && !mv) return null;
+  if(!r || !r.drivers) r={drivers:[]};
   const ds=r.drivers.slice();
   const raced=ds.filter(function(d){ return d.races>0; });
   if(!raced.length) return null;
@@ -976,12 +989,26 @@ function recapAwards(r){
                      .sort(function(a,b){ return (a.inc/a.races)-(b.inc/b.races); });
   const winners=raced.filter(function(d){ return d.wins>0; })
                      .sort(function(a,b){ return b.wins-a.wins || b.podiums-a.podiums; });
+  /* Ratings from the snapshot diff when we have it: it covers everyone on the roster, not
+     just whoever appeared in the races the sweep managed to fetch. The two sources hold
+     different halves of the picture though — the diff has no race counts and the sweep has no
+     roster-wide ratings — so fold the sweep's counts onto each mover by name. Without this the
+     top three read "undefined races". */
+  const byName={}; raced.forEach(function(d){ byName[nameKey(d.name)]=d; });
+  const merged = mv ? mv.map(function(m){
+    const hit=byName[nameKey(m.name)];
+    return hit ? Object.assign({}, m, {races:hit.races, wins:hit.wins, podiums:hit.podiums, inc:hit.inc}) : m;
+  }) : null;
+  const rIr = merged ? merged.slice().sort(function(a,b){ return b.irDelta-a.irDelta; }) : byIr;
+  const rSr = merged ? merged.slice().sort(function(a,b){ return b.srDelta-a.srDelta; }) : bySr;
+  const srTxt=function(d){ return d.srLabel? (d.srLabel+' '+(d.srEnd!==undefined?d.srEnd:'')) : (d.srStart+' → '+d.srEnd); };
   return {
-    top3:      byIr.filter(function(d){ return d.irDelta>0; }).slice(0,3),
-    improved:  (byIr[0] && byIr[0].irDelta>0) ? byIr[0] : null,
-    lost:      (byIr[byIr.length-1] && byIr[byIr.length-1].irDelta<0) ? byIr[byIr.length-1] : null,
-    srUp:      (bySr[0] && bySr[0].srDelta>0) ? bySr[0] : null,
-    srDown:    (bySr[bySr.length-1] && bySr[bySr.length-1].srDelta<0) ? bySr[bySr.length-1] : null,
+    ratingsLive: !!mv,
+    top3:      rIr.filter(function(d){ return d.irDelta>0; }).slice(0,3),
+    improved:  (rIr[0] && rIr[0].irDelta>0) ? rIr[0] : null,
+    lost:      (rIr[rIr.length-1] && rIr[rIr.length-1].irDelta<0) ? rIr[rIr.length-1] : null,
+    srUp:      (rSr[0] && rSr[0].srDelta>0) ? rSr[0] : null,
+    srDown:    (rSr[rSr.length-1] && rSr[rSr.length-1].srDelta<0) ? rSr[rSr.length-1] : null,
     busiest:   byRaces[0]||null,
     cleanest:  byClean[0]||null,
     winners:   winners.slice(0,3),
@@ -991,7 +1018,11 @@ function recapAwards(r){
 }
 function recapAgeLabel(){
   if(RECAP_ERR) return RECAP_ERR;
-  if(RECAP_RUNNING) return 'a search per driver plus a fetch per race — this takes a few minutes';
+  if(RECAP_RUNNING){
+    const p=RECAP_PROG;
+    if(p && p.total) return (p.stage==='drivers'?'searching drivers':'fetching races')+' — '+p.done+' of '+p.total;
+    return 'starting the results pull…';
+  }
   if(!RECAP||!RECAP.at) return 'no results pulled yet — the recap section is left out until you do';
   const d=RECAP.drivers?RECAP.drivers.length:0;
   return 'last pulled '+relTime(new Date(RECAP.at*1000).toISOString().replace('T',' ').slice(0,19))
@@ -1069,23 +1100,26 @@ function weeklyDraft(f){
   const aw=recapAwards(RECAP);
   if(aw){
     L.push('## Last week');
-    L.push('**'+aw.drivers+'** driver'+(aw.drivers===1?'':'s')+' started **'+aw.starts+'** official race'+(aw.starts===1?'':'s')+'.');
+    if(aw.starts) L.push('**'+aw.drivers+'** driver'+(aw.drivers===1?'':'s')+' started **'+aw.starts+'** official race'+(aw.starts===1?'':'s')+'.');
     L.push('');
     if(aw.top3.length){
       L.push('**Top three on iRating**');
       aw.top3.forEach(function(d,i){
-        L.push((i+1)+'. **'+d.name+'** `'+sgn(d.irDelta)+'`'+(d.irEnd?' → '+d.irEnd:'')
-               +' — '+d.races+' race'+(d.races===1?'':'s')
-               +(d.wins?', '+d.wins+' win'+(d.wins===1?'':'s'):'')
-               +(!d.wins&&d.podiums?', '+d.podiums+' podium'+(d.podiums===1?'':'s'):''));
+        let ln=(i+1)+'. **'+d.name+'** `'+sgn(d.irDelta)+'`'+(d.irEnd?' → '+d.irEnd:'');
+        if(d.races){                       // race counts only exist if the results sweep ran
+          ln+=' — '+d.races+' race'+(d.races===1?'':'s')
+             +(d.wins?', '+d.wins+' win'+(d.wins===1?'':'s'):'')
+             +(!d.wins&&d.podiums?', '+d.podiums+' podium'+(d.podiums===1?'':'s'):'');
+        }
+        L.push(ln);
       });
       L.push('');
     }
     const bits=[];
     if(aw.improved) bits.push('**Most improved** — '+aw.improved.name+' `'+sgn(aw.improved.irDelta)+'`');
     if(aw.lost)     bits.push('**Took one for the team** — '+aw.lost.name+' `'+sgn(aw.lost.irDelta)+'`, it happens');
-    if(aw.srUp)     bits.push('**Safety rating climb** — '+aw.srUp.name+' '+aw.srUp.srStart+' → '+aw.srUp.srEnd);
-    if(aw.srDown)   bits.push('**Safety rating slide** — '+aw.srDown.name+' '+aw.srDown.srStart+' → '+aw.srDown.srEnd);
+    if(aw.srUp)     bits.push('**Safety rating climb** — '+aw.srUp.name+' '+fmtSr(aw.srUp));
+    if(aw.srDown)   bits.push('**Safety rating slide** — '+aw.srDown.name+' '+fmtSr(aw.srDown));
     if(aw.winners.length) bits.push('**Wins** — '+aw.winners.map(function(d){ return d.name+' ('+d.wins+')'; }).join(', '));
     if(aw.busiest && aw.busiest.races>1) bits.push('**Busiest** — '+aw.busiest.name+', '+aw.busiest.races+' starts');
     if(aw.cleanest) bits.push('**Cleanest** — '+aw.cleanest.name+', '+(Math.round((aw.cleanest.inc/aw.cleanest.races)*10)/10)+'x per race');
@@ -1195,8 +1229,11 @@ function renderWeekly(){
   h+='<div class="quickrow">'
     +'<button class="quickbtn avfree" data-action="wkrecap"'+(RECAP_RUNNING?' disabled':'')+'>'
       +(RECAP_RUNNING?'Pulling last week…':'Pull last week\'s results')+'</button>'
+    +'<button class="quickbtn avfree" data-action="wksnap" title="reads iRating and safety rating from Garage 61 — seconds, not minutes">Snapshot ratings</button>'
     +'<span class="meta" style="font-size:10.5px;color:'+(RECAP_ERR?'var(--red)':'var(--dim)')+'">'+esc(recapAgeLabel())+'</span>'
     +'</div>';
+  if(RATINGS&&RATINGS.ready) h+='<div class="meta" style="font-size:10.5px">Ratings movement '+esc(RATINGS.from)+' → '+esc(RATINGS.to)+', '+((RATINGS.movers||[]).length)+' driver(s) moved. This is what the iRating and safety rating awards use.</div>';
+  else if(RATINGS) h+='<div class="meta" style="font-size:10.5px">Ratings: '+((RATINGS.have||0))+' snapshot(s) stored — a second week is needed before movement can be shown.</div>';
   h+='</div>';
 
   h+='<div class="importbox"><div class="meta" style="text-transform:uppercase;letter-spacing:.04em;margin-bottom:2px">Series racing next week</div>';
@@ -1247,6 +1284,21 @@ function renderWeekly(){
   }
   h+='</div>';
 
+  /* If a series comes back with no start-time pattern the write-up just omits it silently,
+     which is impossible to diagnose from the outside — the schedule field names vary. Say
+     which ones are missing and what the API actually sent for them. */
+  const noTime=(f.sprints||[]).filter(function(x){ return x.matched && !x.when && !x.times; });
+  if(noTime.length){
+    h+='<div class="importbox"><div class="meta" style="text-transform:uppercase;letter-spacing:.04em;margin-bottom:2px">No start time for '+noTime.length+' series</div>';
+    h+='<div class="meta" style="font-size:10.5px">The schedule gave no usable start or repeat for these. What arrived:</div>';
+    h+='<div class="wkser">';
+    noTime.slice(0,12).forEach(function(x){
+      h+='<label style="cursor:default"><span>'+esc(x.series)
+        +'<span class="st"> · first='+esc(x.firstRaw||'(none)')+' · repeat='+esc(String(x.repeatRaw||0))
+        +' · sessions='+((x.sessions&&x.sessions.length)||0)+'</span></span></label>';
+    });
+    h+='</div></div>';
+  }
   h+='<div class="importbox"><div class="meta" style="text-transform:uppercase;letter-spacing:.04em;margin-bottom:6px">The draft</div>';
   h+='<textarea class="wkbox avfree" id="wkdraft" spellcheck="false">'+esc(_wkDraft||'Hit Generate to build this week\'s update.')+'</textarea>';
   h+='</div>';
@@ -1942,6 +1994,7 @@ function pruneOldEvents(){}
    access to. Left as a no-op so the button is inert rather than throwing. */
 function cacheDraft(text){ return Promise.resolve(); }   /* WP build overrides: stores the draft for the scheduled Discord post */
 function postDraftToDiscord(){ _wkMsg='Posting to Discord needs the WordPress build.'; _wkErr=true; renderContent(); }
+function snapshotRatings(){ _wkMsg='Ratings snapshots need the WordPress build.'; _wkErr=true; renderContent(); }
 function refreshRecap(){ RECAP_ERR='Last week\'s results need the iRacing proxy — WordPress build only.'; renderContent(); }
 /* a tab named in the URL (#availability), but only if that tab exists in this build — the
    WordPress build has Setup and the standalone does not */
@@ -2078,6 +2131,7 @@ document.getElementById('content').addEventListener('click',e=>{
   }
   if(e.target.dataset.action==='wkcat'){ if(isAdmin()){ _wkCat=e.target.dataset.c; renderContent(); } return; }
   if(e.target.dataset.action==='wkpost'){ if(isAdmin()) postDraftToDiscord(); return; }
+  if(e.target.dataset.action==='wksnap'){ if(isAdmin()) snapshotRatings(); return; }
   if(e.target.dataset.action==='wkrecap'){ if(isAdmin()) refreshRecap(); return; }
   if(e.target.dataset.action==='wkser'){
     if(!isAdmin()) return;
@@ -2257,6 +2311,21 @@ function persistAvail(evk,name){
 /* Kick the results sweep and watch for it to finish. It is a search per driver plus a fetch
    per subsession against a rate-limited proxy, so this can take minutes — the button returns
    at once and we poll the cached copy. */
+function snapshotRatings(){
+  _wkMsg='Reading ratings from Garage 61…'; _wkErr=false; renderContent();
+  fetch(API+'ratings',{method:'POST',headers:_hdrs(true),body:'{}'})
+    .then(function(r){ return r.json().catch(function(){return {};}).then(function(j){
+      if(!r.ok) throw new Error((j&&j.message)||'ratings snapshot failed'); return j; }); })
+    .then(function(j){
+      RATINGS=j.movement||RATINGS;
+      const n=(j.snapshot&&j.snapshot.drivers)||0;
+      _wkMsg = (RATINGS&&RATINGS.ready)
+        ? ('Snapshot taken for '+n+' drivers — movement available against '+RATINGS.from+'.')
+        : ('Snapshot taken for '+n+' drivers. Movement needs a second week to compare against.');
+      _wkErr=false; renderContent();
+    })
+    .catch(function(err){ _wkMsg=(err&&err.message)||'ratings snapshot failed'; _wkErr=true; renderContent(); });
+}
 function refreshRecap(){
   RECAP_RUNNING=true; RECAP_ERR=''; renderContent();
   fetch(API+'recap/refresh',{method:'POST',headers:_hdrs(true),body:'{}'})
@@ -2269,7 +2338,7 @@ function pollRecap(n){
   if(n>60){ RECAP_RUNNING=false; RECAP_ERR='The results pull is taking longer than expected — reopen the tab shortly.'; renderContent(); return; }
   setTimeout(function(){
     apiGET('recap').then(function(rc){
-      if(rc){ RECAP=rc.recap||RECAP; RECAP_ERR=rc.error||''; RECAP_RUNNING=!!rc.running; }
+      if(rc){ RECAP=rc.recap||RECAP; RECAP_ERR=rc.error||''; RECAP_RUNNING=!!rc.running; RECAP_PROG=rc.progress||null; if(rc.progress) renderContent(); }
       if(rc && rc.running) return pollRecap(n+1);
       RECAP_RUNNING=false; renderContent();
     }).catch(function(){ pollRecap(n+1); });
@@ -2653,7 +2722,8 @@ async function bootSetup(){
   if(ok && state.drivers.length && !Object.keys(state.teams||{}).length) generate();
   renderContent();
   if(isAdmin()){
-    try{ var rc=await apiGET('recap'); if(rc){ RECAP=rc.recap||null; RECAP_RUNNING=!!rc.running; RECAP_ERR=rc.error||''; } }catch(e){}
+    try{ var rc=await apiGET('recap'); if(rc){ RECAP=rc.recap||null; RECAP_RUNNING=!!rc.running; RECAP_ERR=rc.error||''; RECAP_PROG=rc.progress||null; } }catch(e){}
+    try{ RATINGS=await apiGET('ratings'); }catch(e){}
     try{ TRACKS=await apiGET('tracks'); }catch(e){ TRACKS=[]; } if(!Array.isArray(TRACKS)) TRACKS=[];
     preselectNearest();
     if(state.tab==='setup') renderContent();
