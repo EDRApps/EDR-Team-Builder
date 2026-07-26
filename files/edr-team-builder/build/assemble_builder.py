@@ -199,6 +199,27 @@ function pollRecap(n){
     }).catch(function(){ pollRecap(n+1); });
   }, 5000);
 }
+/* Keep the server's copy of the draft in step with what the admin sees. The scheduled
+   Discord post has no browser to render with, so whatever was last generated here IS what
+   gets posted — see cacheDraft callers. */
+function cacheDraft(text){
+  if(!text||!text.trim()) return Promise.resolve();
+  return fetch(API+'weekly/draft',{method:'POST',headers:_hdrs(true),body:JSON.stringify({text:text})})
+    .then(function(){}).catch(function(){});
+}
+function postDraftToDiscord(){
+  var ta=document.getElementById('wkdraft');
+  var text=(ta&&ta.value)||'';
+  if(!text.trim()){ _wkMsg='Generate it first.'; _wkErr=true; renderContent(); return; }
+  _wkMsg='Posting…'; _wkErr=false; renderContent();
+  cacheDraft(text).then(function(){          // post exactly what is on screen, edits included
+    return fetch(API+'weekly/post',{method:'POST',headers:_hdrs(true),body:'{}'})
+      .then(function(r){ return r.json().catch(function(){return {};}).then(function(j){
+        if(!r.ok) throw new Error((j&&j.message)||'Discord post failed'); return j; }); });
+  }).then(function(j){
+    _wkMsg='Posted to Discord'+(j&&j.messages>1?(' in '+j.messages+' messages'):'')+'.'; _wkErr=false; renderContent();
+  }).catch(function(err){ _wkMsg=(err&&err.message)||'Discord post failed'; _wkErr=true; renderContent(); });
+}
 function pruneOldEvents(){
   var days=90;
   fetch(API+'avail/prune',{method:'POST',headers:_hdrs(true),body:JSON.stringify({days:days})})

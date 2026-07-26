@@ -2,7 +2,7 @@
 /**
  * Plugin Name: EDR Team Builder
  * Description: Endurotech Racing endurance team + stint planner. Pulls Garage 61 pace and official iRacing session times, collects driver availability in-house, and builds Pro/Casual teams and stint rotations. Add the [edr_team_builder] shortcode to a page.
- * Version: 2.4.18
+ * Version: 2.4.19
  * Author: Endurotech Racing
  * License: GPL-2.0-or-later
  */
@@ -11,7 +11,7 @@ if (!defined('ABSPATH')) exit; // no direct access
 
 define('EDR_TB_DIR', plugin_dir_path(__FILE__));
 define('EDR_TB_URL', plugin_dir_url(__FILE__));
-define('EDR_TB_VER', '2.4.18');
+define('EDR_TB_VER', '2.4.19');
 
 require_once EDR_TB_DIR . 'includes/garage61.php';
 require_once EDR_TB_DIR . 'includes/iracing.php';
@@ -27,6 +27,7 @@ function edr_tb_settings() {
         'edit_pass'   => '',
         'iracing_url' => '',
         'iracing_key' => '',
+        'discord_webhook' => '',
     ));
 }
 
@@ -114,6 +115,7 @@ add_action('admin_init', function () {
             'edit_pass'   => sanitize_text_field($in['edit_pass'] ?? ''),
             'iracing_url' => esc_url_raw($in['iracing_url'] ?? ''),
             'iracing_key' => sanitize_text_field($in['iracing_key'] ?? ''),
+            'discord_webhook' => esc_url_raw($in['discord_webhook'] ?? ''),
         );
     });
 });
@@ -142,6 +144,9 @@ function edr_tb_settings_page() {
           <tr><th scope="row">iRacing proxy key</th>
             <td><input type="text" name="edr_tb_settings[iracing_key]" value="<?php echo esc_attr($s['iracing_key']); ?>" class="regular-text" autocomplete="off">
             <p class="description">Bearer key for the proxy. If the builder later reports the iRacing session expired, the proxy owner needs to re-authenticate the bot.</p></td></tr>
+          <tr><th scope="row">Discord webhook (weekly update)</th>
+            <td><input type="text" name="edr_tb_settings[discord_webhook]" value="<?php echo esc_attr($s['discord_webhook']); ?>" class="regular-text" autocomplete="off" placeholder="https://discord.com/api/webhooks/...">
+            <p class="description">Where the weekly write-up gets posted. Use a <strong>private drafting channel</strong> &mdash; what is posted is a draft to edit, not a finished announcement. Leave blank to disable posting.</p></td></tr>
         </table>
         <?php submit_button(); ?>
       </form>
@@ -189,6 +194,15 @@ add_action('rest_api_init', function () {
     ));
     register_rest_route('edr/v1', '/recap/refresh', array(
         'methods' => 'POST', 'permission_callback' => 'edr_tb_req_can_edit', 'callback' => 'edr_tb_rest_recap_refresh',
+    ));
+    // the weekly write-up: the browser renders it, the server keeps the latest copy so a
+    // scheduled job can post it without needing a browser
+    register_rest_route('edr/v1', '/weekly/draft', array(
+        array('methods' => 'GET',  'permission_callback' => 'edr_tb_req_can_edit', 'callback' => 'edr_tb_rest_draft_get'),
+        array('methods' => 'POST', 'permission_callback' => 'edr_tb_req_can_edit', 'callback' => 'edr_tb_rest_draft_set'),
+    ));
+    register_rest_route('edr/v1', '/weekly/post', array(
+        'methods' => 'POST', 'permission_callback' => 'edr_tb_req_can_edit', 'callback' => 'edr_tb_rest_draft_post',
     ));
     // heartbeat: a few bytes, polled every ~20s by every open tab. Public, like /plan and /avail.
     register_rest_route('edr/v1', '/rev', array(
@@ -285,6 +299,100 @@ function edr_tb_rest_auth(WP_REST_Request $req) {
  * mean either configuring server cron or having it fire erratically. Using the heartbeat means
  * the pull is considered exactly when someone is looking at the tool, which is when it matters.
  */
+function edr_tb_rest_draft_get() {
+    $d = (array) get_option('edr_tb_weekly_draft', array());
+    return rest_ensure_response(array(
+        'text' => isset($d['text']) ? (string) $d['text'] : '',
+        'at'   => isset($d['at']) ? intval($d['at']) : 0,
+    ));
+}
+
+function edr_tb_rest_draft_set(WP_REST_Request $req) {
+    $text = (string) $req->get_param('text');
+    if (trim($text) === '') return new WP_Error('empty', 'Nothing to store.', array('status' => 400));
+    $text = substr($text, 0, 20000);
+    update_option('edr_tb_weekly_draft', array('text' => $text, 'at' => time()), false);
+    return rest_ensure_response(array('ok' => true, 'at' => time()));
+}
+
+/** Discord hard-limits a message to 2000 characters; split on blank lines so sections stay whole. */
+function edr_tb_discord_chunks($text, $limit = 1900) {
+    $paras = preg_split("/
+{2,}/", str_replace("
+
+", "
+", $text));
+    $out = array(); $cur = '';
+    foreach ($paras as $p) {
+        $p = rtrim($p);
+        if ($p === '') continue;
+        if (strlen($p) > $limit) {                       // one huge block: fall back to line splitting
+            foreach (explode("
+", $p) as $line) {
+                /* a single line can still exceed the limit if it has no newlines at all, and
+                   Discord 400s the whole post rather than truncating — so chop it hard */
+                $pieces = (strlen($line) > $limit) ? str_split($line, $limit) : array($line);
+                foreach ($pieces as $piece) {
+                    if (strlen($cur) + strlen($piece) + 1 > $limit) { $out[] = $cur; $cur = ''; }
+                    $cur .= ($cur === '' ? '' : "
+") . $piece;
+                }
+            }
+            continue;
+        }
+        if (strlen($cur) + strlen($p) + 2 > $limit) { $out[] = $cur; $cur = ''; }
+        $cur .= ($cur === '' ? '' : "
+
+") . $p;
+    }
+    if (trim($cur) !== '') $out[] = $cur;
+    return $out;
+}
+
+/**
+ * Post the stored draft to Discord. Refuses a stale one outright: a scheduled job firing against
+ * a three-week-old draft would announce the wrong week to the whole team, which is worse than
+ * posting nothing.
+ */
+function edr_tb_rest_draft_post(WP_REST_Request $req) {
+    $s = edr_tb_settings();
+    if (empty($s['discord_webhook'])) {
+        return new WP_Error('no_webhook', 'Set the Discord webhook in plugin Settings first.', array('status' => 400));
+    }
+    $d = (array) get_option('edr_tb_weekly_draft', array());
+    $text = isset($d['text']) ? trim((string) $d['text']) : '';
+    if ($text === '') {
+        return new WP_Error('no_draft', 'No weekly draft stored yet — open the Weekly tab and hit Generate.', array('status' => 409));
+    }
+    $ageDays = (time() - intval($d['at'])) / DAY_IN_SECONDS;
+    $maxAge  = $req->get_param('max_age_days');
+    $maxAge  = ($maxAge === null) ? 8 : max(1, intval($maxAge));
+    if ($ageDays > $maxAge) {
+        return new WP_Error('stale_draft', sprintf('The stored draft is %d days old — refusing to post it. Regenerate it on the Weekly tab.', (int) $ageDays), array('status' => 409));
+    }
+
+    $chunks = edr_tb_discord_chunks($text);
+    $sent = 0;
+    foreach ($chunks as $i => $chunk) {
+        $res = wp_remote_post($s['discord_webhook'], array(
+            'timeout' => 20,
+            'headers' => array('Content-Type' => 'application/json'),
+            'body'    => wp_json_encode(array('content' => $chunk, 'allowed_mentions' => array('parse' => array()))),
+        ));
+        if (is_wp_error($res)) {
+            return new WP_Error('discord', 'Discord post failed: ' . $res->get_error_message() . ' (sent ' . $sent . ' of ' . count($chunks) . ')', array('status' => 502));
+        }
+        $code = wp_remote_retrieve_response_code($res);
+        if ($code < 200 || $code >= 300) {
+            return new WP_Error('discord', 'Discord returned HTTP ' . $code . ' (sent ' . $sent . ' of ' . count($chunks) . ')', array('status' => 502));
+        }
+        $sent++;
+        if ($i < count($chunks) - 1) sleep(1);   // stay clear of the webhook rate limit
+    }
+    update_option('edr_tb_weekly_posted', time(), false);
+    return rest_ensure_response(array('ok' => true, 'messages' => $sent, 'draft_age_days' => round($ageDays, 1)));
+}
+
 function edr_tb_rest_recap() {
     $r = get_option('edr_tb_recap', null);
     return rest_ensure_response(array(

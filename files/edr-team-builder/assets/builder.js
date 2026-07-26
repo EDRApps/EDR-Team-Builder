@@ -763,7 +763,7 @@ function renderEventTab(){
    the voice is not something PHP can invent, so the draft is a skeleton an admin finishes.
    When the Claude API step is wired in it consumes weeklyFacts() and replaces weeklyDraft()
    only — nothing else has to move. */
-let _wkMsg='', _wkDraft='';
+let _wkMsg='', _wkDraft='', _wkErr=false;
 function weeklyState(){
   if(!state.weekly) state.weekly={series:{}, track:{}, driver:{}, flare:true, seeded:false};
   const w=state.weekly;
@@ -994,69 +994,75 @@ function fmtRaceLen(m){
   return m+' min';
 }
 function weeklyDraft(f){
+  /* Markdown, because the draft is posted straight into Discord — which renders #/##
+     headings, bold and block quotes — and still reads fine as plain text if it is pasted
+     anywhere else. Keep lines short: Discord wraps narrow on mobile. */
   const L=[];
-  L.push('This week in iRacing');
-  L.push('Week of '+f.week.from+' to '+f.week.to+'.');
+  L.push('# This week in iRacing');
+  L.push('-# Week of '+f.week.from+' to '+f.week.to+' · times in '+f.tz);
   L.push('');
+
   /* Recap first: people read the week they just had before the week they are about to have. */
   const aw=recapAwards(RECAP);
   if(aw){
-    L.push('LAST WEEK');
-    L.push(aw.drivers+' driver'+(aw.drivers===1?'':'s')+' started '+aw.starts+' official race'+(aw.starts===1?'':'s')+'.');
+    L.push('## Last week');
+    L.push('**'+aw.drivers+'** driver'+(aw.drivers===1?'':'s')+' started **'+aw.starts+'** official race'+(aw.starts===1?'':'s')+'.');
+    L.push('');
     if(aw.top3.length){
-      L.push('Top three on iRating:');
+      L.push('**Top three on iRating**');
       aw.top3.forEach(function(d,i){
-        L.push('  '+(i+1)+'. '+d.name+' '+sgn(d.irDelta)+(d.irEnd?' (now '+d.irEnd+')':'')
+        L.push((i+1)+'. **'+d.name+'** `'+sgn(d.irDelta)+'`'+(d.irEnd?' → '+d.irEnd:'')
                +' — '+d.races+' race'+(d.races===1?'':'s')
                +(d.wins?', '+d.wins+' win'+(d.wins===1?'':'s'):'')
                +(!d.wins&&d.podiums?', '+d.podiums+' podium'+(d.podiums===1?'':'s'):''));
       });
+      L.push('');
     }
-    if(aw.improved) L.push('Most improved: '+aw.improved.name+' '+sgn(aw.improved.irDelta)+' iRating.');
-    if(aw.lost)     L.push('Took one for the team: '+aw.lost.name+' '+sgn(aw.lost.irDelta)+' iRating. It happens.');
-    if(aw.srUp)     L.push('Safety rating climb: '+aw.srUp.name+' '+aw.srUp.srStart+' to '+aw.srUp.srEnd+'.');
-    if(aw.srDown)   L.push('Safety rating slide: '+aw.srDown.name+' '+aw.srDown.srStart+' to '+aw.srDown.srEnd+'.');
-    if(aw.winners.length){
-      L.push('Wins: '+aw.winners.map(function(d){ return d.name+' ('+d.wins+')'; }).join(', ')+'.');
-    }
-    if(aw.busiest && aw.busiest.races>1) L.push('Busiest: '+aw.busiest.name+', '+aw.busiest.races+' starts.');
-    if(aw.cleanest) L.push('Cleanest: '+aw.cleanest.name+', '+(Math.round((aw.cleanest.inc/aw.cleanest.races)*10)/10)+'x per race.');
+    const bits=[];
+    if(aw.improved) bits.push('**Most improved** — '+aw.improved.name+' `'+sgn(aw.improved.irDelta)+'`');
+    if(aw.lost)     bits.push('**Took one for the team** — '+aw.lost.name+' `'+sgn(aw.lost.irDelta)+'`, it happens');
+    if(aw.srUp)     bits.push('**Safety rating climb** — '+aw.srUp.name+' '+aw.srUp.srStart+' → '+aw.srUp.srEnd);
+    if(aw.srDown)   bits.push('**Safety rating slide** — '+aw.srDown.name+' '+aw.srDown.srStart+' → '+aw.srDown.srEnd);
+    if(aw.winners.length) bits.push('**Wins** — '+aw.winners.map(function(d){ return d.name+' ('+d.wins+')'; }).join(', '));
+    if(aw.busiest && aw.busiest.races>1) bits.push('**Busiest** — '+aw.busiest.name+', '+aw.busiest.races+' starts');
+    if(aw.cleanest) bits.push('**Cleanest** — '+aw.cleanest.name+', '+(Math.round((aw.cleanest.inc/aw.cleanest.races)*10)/10)+'x per race');
+    bits.forEach(function(b){ L.push('- '+b); });
     L.push('');
   }
-  L.push('SPECIAL EVENTS — NEXT FOUR WEEKS');
-  if(!f.specials.length) L.push('- nothing on the EDR calendar in the next four weeks.');
-  f.specials.forEach(function(e){
-    const when=e.live?'LIVE NOW':('in '+e.inDays+' day'+(e.inDays===1?'':'s'));
-    L.push('- '+e.name+' — '+e.track+(e.dur?' · '+e.dur+'h':'')+' · '+e.dates+' ('+when+')'
-           +(e.target?' · EDR target':''));
-    if(e.cars) L.push('  '+e.cars);
-    if(e.note) L.push('  '+e.note+'.');
-  });
-  L.push('');
 
-  L.push('ENDURANCE — ON NEXT WEEK');
-  if(!f.enduros.length) L.push('- no endurance rounds next week.');
+  L.push('## Special events — next four weeks');
+  if(!f.specials.length) L.push('-# Nothing on the EDR calendar in the next four weeks.');
+  f.specials.forEach(function(e){
+    const when=e.live?'**live now**':('in '+e.inDays+' day'+(e.inDays===1?'':'s'));
+    L.push('**'+e.name+'** — '+e.track+(e.dur?' · '+e.dur+'h':'')+' · '+e.dates+' · '+when
+           +(e.target?' · *EDR target*':''));
+    if(e.cars) L.push('-# '+e.cars);
+    if(e.note) L.push('> '+cap(e.note)+'.');
+    L.push('');
+  });
+
+  L.push('## Endurance — on next week');
+  if(!f.enduros.length) L.push('-# No endurance rounds next week.');
   f.enduros.forEach(function(e){
-    let line='- '+e.series+' — '+(e.track||'track TBC');
+    let line='**'+e.series+'** — '+(e.track||'track TBC');
     if(e.cars&&e.cars.length) line+=' · '+e.cars.join(' / ');
     if(e.raceMin) line+=' · '+fmtRaceLen(e.raceMin);
-    if(e.team) line+=' · team event';
+    if(e.team) line+=' · *team event*';
     L.push(line);
-    if(e.note) L.push('  '+cap(e.note)+'.');
+    if(e.note) L.push('> '+cap(e.note)+'.');
+    L.push('');   // blank line between entries: keeps the quotes off the next heading, and
+                  // gives the Discord chunker a clean place to split
   });
-  L.push('');
-  L.push('SPRINTS');
+
+  L.push('## Sprints');
   if(!f.haveIracing){
-    L.push('(no live iRacing schedule — connect the proxy in plugin Settings)');
+    L.push('-# No live iRacing schedule — connect the proxy in plugin Settings.');
   } else if(!f.sprints.length){
-    L.push('(no rounds next week for the series you have ticked)');
+    L.push('-# No rounds next week for the series you have ticked.');
   }
   f.sprints.forEach(function(s){
-    if(!s.matched){ L.push('- '+s.series+' — track TBC.'); return; }
-    let line='- '+s.series+' is going to '+s.track;
-    /* what they are driving matters as much as where — a line without it reads like a
-       fixture list. Classes come from the live iRacing schedule, so a multi-class round
-       lists every class actually running that week. */
+    if(!s.matched){ L.push('**'+s.series+'** — track TBC'); L.push(''); return; }
+    let line='**'+s.series+'** → '+s.track;
     /* "in the Toyota GR86" reads well for a one-make series; "in the GTP / LMP2 / GT3" does
        not, so a multi-class round gets the classes in the bracket with the race length */
     const multi=(s.cars||[]).length>1;
@@ -1065,14 +1071,13 @@ function weeklyDraft(f){
     if(multi) bits.push(s.cars.join(' / '));
     if(s.raceMin) bits.push(fmtRaceLen(s.raceMin));
     if(bits.length) line+=' ('+bits.join(', ')+')';
-    line+='.';
     L.push(line);
-    if(s.note) L.push('  '+cap(s.note)+'.');
-    if(s.flare) L.push('  One for '+s.flare.name+' — '+s.flare.note+'.');
+    if(s.note) L.push('> '+cap(s.note)+'.');
+    if(s.flare) L.push('-# One for '+s.flare.name+' — '+s.flare.note+'.');
     L.push('');
   });
-  L.push('---');
-  L.push('Times shown in '+f.tz+'. Draft generated by the Team Builder; add your own flare before posting.');
+
+  L.push('-# Draft from the Team Builder — edit it before it goes anywhere public.');
   return L.join('\n');
 }
 /* The pick list is next week's actual rounds, not a fixed menu. Series the team has history in
@@ -1106,8 +1111,9 @@ function renderWeekly(){
   h+='<div class="quickrow" style="margin-top:10px">'
     +'<button class="btn btn-amber avfree" data-action="wkgen">Generate the update</button>'
     +'<button class="quickbtn avfree" data-action="wkcopy">Copy to clipboard</button>'
+    +'<button class="quickbtn avfree" data-action="wkpost" title="post the box below to the Discord drafting channel">Post to Discord</button>'
     +'<label class="meta" style="display:flex;gap:6px;align-items:center;margin-left:8px"><input type="checkbox" data-action="wkflare"'+(w.flare?' checked':'')+'> driver mentions</label>'
-    +(_wkMsg?'<span class="meta" style="color:var(--green)">'+esc(_wkMsg)+'</span>':'')
+    +(_wkMsg?'<span class="meta" style="color:'+(_wkErr?'var(--red)':'var(--green)')+'">'+esc(_wkMsg)+'</span>':'')
     +'</div>';
   /* Last week's results are a separate, slow pull, so they get their own control and their
      own freshness line rather than being hidden behind Generate. */
@@ -1828,6 +1834,8 @@ function markStintsSeen(){ try{ localStorage.setItem(stintSeenKey(), stintFinger
 function pruneOldEvents(){}
 /* WP build overrides: the results sweep needs the iRacing proxy, which the standalone has no
    access to. Left as a no-op so the button is inert rather than throwing. */
+function cacheDraft(text){ return Promise.resolve(); }   /* WP build overrides: stores the draft for the scheduled Discord post */
+function postDraftToDiscord(){ _wkMsg='Posting to Discord needs the WordPress build.'; _wkErr=true; renderContent(); }
 function refreshRecap(){ RECAP_ERR='Last week\'s results need the iRacing proxy — WordPress build only.'; renderContent(); }
 /* a tab named in the URL (#availability), but only if that tab exists in this build — the
    WordPress build has Setup and the standalone does not */
@@ -1939,7 +1947,7 @@ document.getElementById('content').addEventListener('click',e=>{
   }
   if(e.target.dataset.action==='wkgen'){
     if(!isAdmin()) return;
-    _wkDraft=weeklyDraft(weeklyFacts()); _wkMsg='Draft built.'; save(); renderContent(); return;
+    _wkDraft=weeklyDraft(weeklyFacts()); _wkMsg='Draft built.'; _wkErr=false; cacheDraft(_wkDraft); save(); renderContent(); return;
   }
   if(e.target.dataset.action==='wkcopy'){
     if(!isAdmin()) return;
@@ -1952,6 +1960,7 @@ document.getElementById('content').addEventListener('click',e=>{
     else { try{ ta.select(); document.execCommand('copy'); done(true); }catch(_e){ done(false); } }
     return;
   }
+  if(e.target.dataset.action==='wkpost'){ if(isAdmin()) postDraftToDiscord(); return; }
   if(e.target.dataset.action==='wkrecap'){ if(isAdmin()) refreshRecap(); return; }
   if(e.target.dataset.action==='wkser'){
     if(!isAdmin()) return;
@@ -2148,6 +2157,27 @@ function pollRecap(n){
       RECAP_RUNNING=false; renderContent();
     }).catch(function(){ pollRecap(n+1); });
   }, 5000);
+}
+/* Keep the server's copy of the draft in step with what the admin sees. The scheduled
+   Discord post has no browser to render with, so whatever was last generated here IS what
+   gets posted — see cacheDraft callers. */
+function cacheDraft(text){
+  if(!text||!text.trim()) return Promise.resolve();
+  return fetch(API+'weekly/draft',{method:'POST',headers:_hdrs(true),body:JSON.stringify({text:text})})
+    .then(function(){}).catch(function(){});
+}
+function postDraftToDiscord(){
+  var ta=document.getElementById('wkdraft');
+  var text=(ta&&ta.value)||'';
+  if(!text.trim()){ _wkMsg='Generate it first.'; _wkErr=true; renderContent(); return; }
+  _wkMsg='Posting…'; _wkErr=false; renderContent();
+  cacheDraft(text).then(function(){          // post exactly what is on screen, edits included
+    return fetch(API+'weekly/post',{method:'POST',headers:_hdrs(true),body:'{}'})
+      .then(function(r){ return r.json().catch(function(){return {};}).then(function(j){
+        if(!r.ok) throw new Error((j&&j.message)||'Discord post failed'); return j; }); });
+  }).then(function(j){
+    _wkMsg='Posted to Discord'+(j&&j.messages>1?(' in '+j.messages+' messages'):'')+'.'; _wkErr=false; renderContent();
+  }).catch(function(err){ _wkMsg=(err&&err.message)||'Discord post failed'; _wkErr=true; renderContent(); });
 }
 function pruneOldEvents(){
   var days=90;
