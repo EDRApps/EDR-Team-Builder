@@ -181,7 +181,17 @@ Garage 61 roster and nothing else; the browser folds in the in-house availabilit
   Season 3 onward by project convention — keep that window when changing the pace query.
 - **Driver display names** are built from Garage 61 `firstName+lastName` (`edr_g61_roster()`);
   the API's `name` field is empty or a digit-suffixed iRacing name ("Sam Millar2") that never
-  matches the roster. The Garage 61 key in Settings must be **team-scoped** (a personal key
+  matches the roster. That suffix is iRacing's collision marker, and it duplicated a real
+  driver in production (cust 906888 appeared as both "Sam Millar" and "Sam Millar2"), because
+  a member with a full profile on one EDR team can have only a bare `name` on the other.
+  Three defences, all needed: `edr_g61_strip_ir_suffix()` removes the suffix wherever a name is
+  derived; `edr_g61_all_members()` collapses on **iRacing customer ID** and prefers the name
+  from the real profile fields; and the client's `nameKey()` strips it too, so data already
+  stored under the suffixed spelling folds onto the right driver. `applyAvailToDrivers()` takes
+  the **union** of blocks across colliding spellings — it used to assign inside the loop, so
+  whichever spelling came last silently overwrote the other driver's availability.
+  Use a capture group, never lookbehind, in the client regex: Safari before 16.4 throws on
+  lookbehind at parse time, which kills the whole bundle on older iPhones. The Garage 61 key in Settings must be **team-scoped** (a personal key
   returns only the owner's laps) and the team slug falls back to `edr-endurotech` when blank —
   both misconfigurations produce the "import only returns one driver" symptom.
 - **Availability is strictly per event** and **the event pool rule** applies: with an event
