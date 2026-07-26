@@ -1209,7 +1209,14 @@ function raceTimePattern(r){
     return 'on the '+andList(outs);
   }
   if(rep===60) return 'on the :'+pad2(m0)+', every hour';
-  if(rep%60===0) return 'on the :'+pad2(m0)+', every '+(rep/60)+' hours';
+  /* A two-hourly series always starts on the same hour parity, and "every 2 hours" leaves you
+     working out which two. Say it: "on the :00, even hours". Parity is taken from the local
+     hour, so a viewer on a half-hour offset zone still gets their own clock. */
+  if(rep===120) return 'on the :'+pad2(m0)+', '+((localHour(first)%2===0)?'even':'odd')+' hours';
+  if(rep%60===0){
+    const h=localHour(first), every=rep/60;
+    return 'every '+every+' hours from '+pad2(h)+':'+pad2(m0);
+  }
   return 'every '+rep+' min from :'+pad2(m0);
 }
 /* Explicit session starts, for the fixed-schedule rounds where there is no repeat — the
