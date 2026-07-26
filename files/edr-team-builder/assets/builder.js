@@ -273,18 +273,18 @@ const WEEKLY_SERIES=[
   {n:"IMSA iRacing Series",cat:"SPORTS CAR",st:215,on:true,who:["Sam Millar","Roland Fokkens","Andrew Espenes","Thomaz Hernandes"]},
   {n:"GT Sprint Series by Simucube",cat:"SPORTS CAR",st:172,on:true,who:["Sam Millar","Joseph Tavora","Roland Fokkens","Brock Hellmech"]},
   {n:"Ring Meister by LVRY",cat:"SPORTS CAR",st:121,on:true,who:["David Piljek","John Nyhouse","Roland Fokkens","Zachary Martin"]},
-  {n:"iRacing Porsche Cup - Fixed by CONSPIT",cat:"SPORTS CAR",st:119,on:true,who:["Ian Gee","Jake Lennox-Bradley","John Nyhouse","Aden Lennox-Bradley"]},
+  {n:"iRacing Porsche Cup - Fixed by CONSPIT",cat:"SPORTS CAR",st:119,on:true,who:["Jake Lennox-Bradley","John Nyhouse","Aden Lennox-Bradley"]},
   {n:"Ford Mustang Challenge by Skip Barber",cat:"SPORTS CAR",st:102,on:true,who:["Dominic Bou-Samra","Michael Cullen","Thomaz Hernandes","John Nyhouse"]},
-  {n:"iRacing Porsche Cup by CONSPIT",cat:"SPORTS CAR",st:100,on:true,who:["Ian Gee","Thomaz Hernandes","Jake Lennox-Bradley","John Nyhouse"]},
+  {n:"iRacing Porsche Cup by CONSPIT",cat:"SPORTS CAR",st:100,on:true,who:["Thomaz Hernandes","Jake Lennox-Bradley","John Nyhouse"]},
   {n:"GT3 Challenge Fixed by Fanatec",cat:"SPORTS CAR",st:85,on:true,who:["Sam Millar","Roland Fokkens","Aaron Werth","Joseph Tavora"]},
   {n:"IMSA iRacing Series - Fixed",cat:"SPORTS CAR",st:76,on:true,who:["Sam Millar","Roland Fokkens","Andrew Espenes","Brock Hellmech"]},
   {n:"iRacing GT3 Regional Tour - Asia Pacific",cat:"SPORTS CAR",st:76,on:true,who:["Brock Hellmech","Aaron Werth","Joseph Tavora","Michael Cullen"]},
-  {n:"Global Mazda MX-5 Cup by Fanatec",cat:"SPORTS CAR",st:71,on:true,who:["Ian Gee","Aaron Werth","Zachary Martin","matt blee"]},
-  {n:"Toyota GR86 Cup by SIMAGIC",cat:"SPORTS CAR",st:64,on:true,who:["Ian Gee","Aaron Werth","Chris w","Zachary Martin"]},
+  {n:"Global Mazda MX-5 Cup by Fanatec",cat:"SPORTS CAR",st:71,on:true,who:["Aaron Werth","Zachary Martin","matt blee"]},
+  {n:"Toyota GR86 Cup by SIMAGIC",cat:"SPORTS CAR",st:64,on:true,who:["Aaron Werth","Chris w","Zachary Martin"]},
   {n:"iRacing GT3 Regional Tour - Americas",cat:"SPORTS CAR",st:62,on:true,who:["Fred Zufelt","Aaron Werth","Dominic Bou-Samra","Bernardo Hickmann"]},
-  {n:"Sports Car Challenge by Falken Tyre",cat:"SPORTS CAR",st:40,on:false,who:["Sam Millar","Ian Gee","Dominic Bou-Samra","Zachary Martin"]},
-  {n:"BMW M2 Cup by Nitro Concepts",cat:"SPORTS CAR",st:38,on:false,who:["Ian Gee","Jake Lennox-Bradley","John Nyhouse","Aaron Werth"]},
-  {n:"Production Car Challenge by Sim-Lab",cat:"SPORTS CAR",st:33,on:false,who:["Dominic Bou-Samra","Zachary Martin","Ian Gee","Michael Cullen"]},
+  {n:"Sports Car Challenge by Falken Tyre",cat:"SPORTS CAR",st:40,on:false,who:["Sam Millar","Dominic Bou-Samra","Zachary Martin"]},
+  {n:"BMW M2 Cup by Nitro Concepts",cat:"SPORTS CAR",st:38,on:false,who:["Jake Lennox-Bradley","John Nyhouse","Aaron Werth"]},
+  {n:"Production Car Challenge by Sim-Lab",cat:"SPORTS CAR",st:33,on:false,who:["Dominic Bou-Samra","Zachary Martin","Michael Cullen"]},
   {n:"Nurburgring Endurance Championship",cat:"SPORTS CAR",st:32,on:false,who:["Aden Lennox-Bradley","Jake Lennox-Bradley","Erik van der Bijl","John Nyhouse"]},
   {n:"Spec Racer Ford Challenge",cat:"SPORTS CAR",st:31,on:false,who:["John Nyhouse","Fred Zufelt","Zachary Martin"]},
   {n:"Formula 1600 Rookie Series by Asetek Racing",cat:"FORMULA CAR",st:27,on:false,who:["Fred Zufelt","Aaron Werth","John Nyhouse"]},
@@ -293,14 +293,13 @@ const WEEKLY_SERIES=[
   {n:"13th Week Mini Stock Cup",cat:"OVAL",st:22,on:false,who:["Sam Millar","Brock Hellmech","John Nyhouse"]},
   {n:"24 Hours of Spa Presented by Falken Tyre",cat:"SPORTS CAR",st:22,on:false,who:["Aaron Werth","Brock Hellmech","Luke Hay","Matthew Halden"]},
   {n:"Global Endurance Tour",cat:"SPORTS CAR",st:21,on:false,who:["Sam Millar","Ben Hagstrom","Erik van der Bijl","John Nyhouse"]},
-  {n:"Advanced Mazda MX-5 Cup by Heusinkveld",cat:"SPORTS CAR",st:20,on:false,who:["Dominic Bou-Samra","Michael Cullen","Luke Hay","Ian Gee"]},
+  {n:"Advanced Mazda MX-5 Cup by Heusinkveld",cat:"SPORTS CAR",st:20,on:false,who:["Dominic Bou-Samra","Michael Cullen","Luke Hay"]},
   {n:"BMW M2 Cup",cat:"SPORTS CAR",st:19,on:false,who:["Luke Hay","Aaron Werth"]},
   {n:"12 Hours of Sebring",cat:"SPORTS CAR",st:18,on:false,who:["Brock Hellmech","Sam Millar","Aden Lennox-Bradley","Andrew Espenes"]},
   {n:"FIA F4 Esports Regional Tour - Asia Pacific",cat:"FORMULA CAR",st:18,on:false,who:["Aaron Werth","Thomas McEwan","Brock Hellmech","Ben Hagstrom"]},
   {n:"6 Hours of the Glen",cat:"SPORTS CAR",st:17,on:false,who:["Sam Mackenzie","Sam Millar","Thomaz Hernandes","Chris w"]},
   {n:"13th Week GT3 Challenge - Fixed",cat:"SPORTS CAR",st:16,on:false,who:["Brock Hellmech","Sam Millar","Bernardo Hickmann","John Nyhouse"]},
-  {n:"GT4 Challenge by Falken Tyre",cat:"SPORTS CAR",st:16,on:false,who:["John Nyhouse","Dominic Bou-Samra","Ian Gee","Aaron Werth"]},
-];
+  {n:"GT4 Challenge by Falken Tyre",cat:"SPORTS CAR",st:16,on:false,who:["John Nyhouse","Dominic Bou-Samra","Aaron Werth"]}];
 function isTarget(ev){ return !!ev.special || (ev.cat==='endurance' && (ev.dur||0)>=3); }
 function evKey(ev){ return ev.n+'|'+ev.s; }
 function calendar(){ const at={}, out=[]; CAL_EVENTS.concat(state.customEvents||[], state.irEvents||[]).forEach(e=>{ const k=evKey(e); if(at[k]!==undefined) out[at[k]]=e; else { at[k]=out.length; out.push(e); } }); return out; }  // seed + custom + imported, deduped by key (later wins)
@@ -350,7 +349,6 @@ const DRIVER_NOTES={
   'David Piljek':'Nordschleife obsessive',
   'Jarrod Williams':'the quartermaster — setups appear when needed',
   'Zachary Martin':'lights up about anything with carburettors',
-  'Ian Gee':'Cup car and MX-5 regular',
   'Roland Fokkens':'IMSA mainstay',
   'Sam Mackenzie':'endurance specialist',
   'Andrew Espenes':'quietly racks up the starts',
@@ -809,6 +807,38 @@ function driverNoteFor(names, used){
 function isoDay(d){
   return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
 }
+/* Race length is the honest split between an endurance round and a sprint: the endurance
+   series run 90 minutes and up, the sprints 12 to 45. Series names are not reliable — plenty
+   of sprint series have "Challenge" or a track famous for enduros in the name. */
+const ENDURO_MIN=90;
+/* iRacing season names carry the season on the end ("IMSA Endurance Series - 2026 Season 3").
+   Fine as a key, ugly in a write-up. */
+function prettySeriesName(n){
+  return String(n||'').replace(/\s*[-–]\s*20\d\d\s*season\s*\d?.*$/i,'').replace(/\s*[-–]\s*20\d\d\s*$/,'').trim();
+}
+/* Does this name look like a recurring series rather than a one-off major? Used only to keep
+   synced iRacing series out of the specials list; the live `rounds` count is preferred where
+   we have it. */
+function isRecurringSeries(n){
+  return /series|challenge|championship|tour|cup|league/i.test(String(n||''));
+}
+function isTeamSeries(n){
+  return /\bnec\b|nurburgring endurance|nürburgring endurance|endurance championship/i.test(String(n||''));
+}
+/* Is this calendar event and this live round the same race? Track and date, loosely — enough
+   to stop "Creventic Round 3 — 12H Barcelona" and "Creventic Endurance Series" both printing. */
+function sameRace(ev, r){
+  /* fold accents first: the calendar says "Nürburgring" and iRacing says "Nurburgring", and
+     stripping non-alphanumerics alone leaves "nrburgring" vs "nurburgring" — never equal */
+  const nk=function(s){ return String(s||'').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'').replace(/[^a-z0-9]/g,''); };
+  const a=nk(ev.track), b=nk(r.track);
+  if(!a||!b) return false;
+  const trackHit = a.indexOf(b.slice(0,10))>=0 || b.indexOf(a.slice(0,10))>=0;
+  if(!trackHit) return false;
+  const d1=Date.parse(ev.s+'T00:00:00Z'), d2=Date.parse((r.start_date||'')+'T00:00:00Z');
+  if(isNaN(d1)||isNaN(d2)) return false;
+  return Math.abs(d1-d2) <= 4*86400000;
+}
 function nextWeekWindow(){
   const start=weekStartOf(isoDay(new Date()));   // weekStartOf takes a date STRING, not a Date
   start.setDate(start.getDate()+7);
@@ -840,11 +870,13 @@ function weeklyFacts(){
   rounds.forEach(function(r){
     const k=seriesKey(r.series);
     if(!picked[k]) return;
+    if((r.race_min||0) >= ENDURO_MIN || r.team) return;   // handled in the endurance section
     const seed=known[k]||null;                       // team history for this series, if we have it
     const label=picked[k].label;
     const who=teamRunners(k, seed);
     sprints.push({
       series:label, cat:seed?seed.cat:'', starts:seed?seed.st:0, who:who,
+      cars:(r.cars&&r.cars.length)?r.cars:[],   // live car classes for the round, from iRacing
       track:r.track||'', raceMin:r.race_min||0, sessions:r.sessions||[],
       matched:!!r.track, note:trackNoteFor(r.track), flare:driverNoteFor(who, usedDrivers),
       startDate:r.start_date
@@ -852,26 +884,46 @@ function weeklyFacts(){
   });
   sprints.sort(function(a,b){ return (b.starts||0)-(a.starts||0) || a.series.localeCompare(b.series); });
 
-  /* Upcoming endurance + specials come from the season calendar, not iRacing, because that is
-     where the team's own targets live. Anything that has already finished by the time next week
-     starts is dropped — the write-up is a look forward, and a race that ended on Sunday has no
-     business leading it. Four weeks of look-ahead from the start of next week. */
-  const soon=calendar().filter(function(ev){
-    if(ev.cat!=='endurance' && !ev.special) return false;
-    const ends=ev.e||ev.s;
-    if(ends < win.from) return false;                       // over before next week begins
-    return ev.s <= isoDay(new Date(Date.parse(win.from+'T00:00:00')+28*86400000));
+  /* Specials: the one-off majors and anything the team has flagged as a target, four weeks
+     out from the start of next week. These come from the season calendar rather than iRacing
+     because that is where EDR's own entries and round numbering live. */
+  const horizon=isoDay(new Date(Date.parse(win.from+'T00:00:00')+28*86400000));
+  const specials=calendar().filter(function(ev){
+    if(ev.cat!=='endurance' && !ev.special && !isTarget(ev)) return false;
+    if((ev.e||ev.s) < win.from) return false;          // finished before next week begins
+    if(ev.s > horizon) return false;
+    /* A recurring series synced in from iRacing is not a "special" — it belongs in the
+       endurance list below, once, rather than filling this section with one row per future
+       week. That is what turned the first draft into twenty-two lines of GT3. */
+    return !(ev.src==='iracing' && isRecurringSeries(ev.n));
   }).sort(function(a,b){ return a.s.localeCompare(b.s); });
+
+  /* Regular scheduled endurance — the weekly and fortnightly series, from the live schedule,
+     next week's round only. Split from sprints on race length, which is the honest signal:
+     these run 90 minutes and up, the sprints are 12 to 45. */
+  const enduros=[];
+  rounds.forEach(function(r){
+    if((r.race_min||0) < ENDURO_MIN && !r.team) return;   // team events count regardless of length
+    const label=prettySeriesName(r.series);
+    if(specials.some(function(ev){ return sameRace(ev, r); })) return;   // already led with it above
+    enduros.push({
+      series:label, track:r.track||'', raceMin:r.race_min||0, cars:r.cars||[],
+      recurring:(r.rounds||0)>3, note:trackNoteFor(r.track), startDate:r.start_date,
+      team:isTeamSeries(label)
+    });
+  });
+  enduros.sort(function(a,b){ return (a.startDate||'').localeCompare(b.startDate||'') || a.series.localeCompare(b.series); });
 
   return {
     generated:new Date().toISOString(),
     tz:tzLabel(),
-    big:soon.map(function(ev){
+    specials:specials.map(function(ev){
       const st=statusFor(ev);
-      return {name:ev.n, track:ev.track, cars:ev.cars, dur:ev.dur||0, dates:fmtDates(ev.s,ev.e),
+      return {name:prettySeriesName(ev.n), track:ev.track, cars:ev.cars, dur:ev.dur||0, dates:fmtDates(ev.s,ev.e),
               live:st.state==='live', inDays:st.state==='live'?0:+st.label||0,
               target:isTarget(ev), note:trackNoteFor(ev.track)};
     }),
+    enduros:enduros,
     week:{from:win.from, to:win.to},
     sprints:sprints,
     rounds:rounds.length,
@@ -892,26 +944,41 @@ function teamRunners(key, seed){
   if(live && live[key] && live[key].length) return live[key].map(function(x){ return x.name||x; });
   return seed?seed.who:[];
 }
+function cap(s){ s=String(s||''); return s.charAt(0).toUpperCase()+s.slice(1); }
+/* "3h" reads better than "180 min" for an enduro, "20 min" better than "0.33h" for a sprint */
+function fmtRaceLen(m){
+  if(!m) return '';
+  if(m>=90 && m%60===0) return (m/60)+'h';
+  if(m>=90) return Math.floor(m/60)+'h '+(m%60)+'m';
+  return m+' min';
+}
 function weeklyDraft(f){
   const L=[];
   L.push('This week in iRacing');
   L.push('Week of '+f.week.from+' to '+f.week.to+'.');
   L.push('');
-  if(f.big.length){
-    L.push('ENDURANCE & SPECIALS');
-    f.big.forEach(function(e){
-      const when=e.live?'LIVE NOW':('in '+e.inDays+' day'+(e.inDays===1?'':'s'));
-      L.push('- '+e.name+' — '+e.track+(e.dur?' · '+e.dur+'h':'')+' · '+e.dates+' ('+when+')'
-             +(e.target?' · EDR target':''));
-      if(e.cars) L.push('  '+e.cars);
-      if(e.note) L.push('  '+e.note+'.');
-      L.push('');
-    });
-  } else {
-    L.push('ENDURANCE & SPECIALS');
-    L.push('- nothing on the EDR calendar in the next four weeks.');
-    L.push('');
-  }
+  L.push('SPECIAL EVENTS — NEXT FOUR WEEKS');
+  if(!f.specials.length) L.push('- nothing on the EDR calendar in the next four weeks.');
+  f.specials.forEach(function(e){
+    const when=e.live?'LIVE NOW':('in '+e.inDays+' day'+(e.inDays===1?'':'s'));
+    L.push('- '+e.name+' — '+e.track+(e.dur?' · '+e.dur+'h':'')+' · '+e.dates+' ('+when+')'
+           +(e.target?' · EDR target':''));
+    if(e.cars) L.push('  '+e.cars);
+    if(e.note) L.push('  '+e.note+'.');
+  });
+  L.push('');
+
+  L.push('ENDURANCE — ON NEXT WEEK');
+  if(!f.enduros.length) L.push('- no endurance rounds next week.');
+  f.enduros.forEach(function(e){
+    let line='- '+e.series+' — '+(e.track||'track TBC');
+    if(e.cars&&e.cars.length) line+=' · '+e.cars.join(' / ');
+    if(e.raceMin) line+=' · '+fmtRaceLen(e.raceMin);
+    if(e.team) line+=' · team event';
+    L.push(line);
+    if(e.note) L.push('  '+cap(e.note)+'.');
+  });
+  L.push('');
   L.push('SPRINTS');
   if(!f.haveIracing){
     L.push('(no live iRacing schedule — connect the proxy in plugin Settings)');
@@ -921,10 +988,20 @@ function weeklyDraft(f){
   f.sprints.forEach(function(s){
     if(!s.matched){ L.push('- '+s.series+' — track TBC.'); return; }
     let line='- '+s.series+' is going to '+s.track;
-    if(s.raceMin) line+=' ('+s.raceMin+' min)';
+    /* what they are driving matters as much as where — a line without it reads like a
+       fixture list. Classes come from the live iRacing schedule, so a multi-class round
+       lists every class actually running that week. */
+    /* "in the Toyota GR86" reads well for a one-make series; "in the GTP / LMP2 / GT3" does
+       not, so a multi-class round gets the classes in the bracket with the race length */
+    const multi=(s.cars||[]).length>1;
+    if(s.cars&&s.cars.length===1) line+=' in the '+s.cars[0];
+    const bits=[];
+    if(multi) bits.push(s.cars.join(' / '));
+    if(s.raceMin) bits.push(fmtRaceLen(s.raceMin));
+    if(bits.length) line+=' ('+bits.join(', ')+')';
     line+='.';
     L.push(line);
-    if(s.note) L.push('  '+s.note.charAt(0).toUpperCase()+s.note.slice(1)+'.');
+    if(s.note) L.push('  '+cap(s.note)+'.');
     if(s.flare) L.push('  One for '+s.flare.name+' — '+s.flare.note+'.');
     L.push('');
   });
@@ -946,7 +1023,7 @@ function weeklyPickList(){
     const seed=known[k]||null;
     const label=seed?seed.n:String(r.series||'').replace(/\s*[-–]\s*20\d\d\s*season\s*\d.*$/i,'');
     const on=(w.series[label]!==undefined) ? !!w.series[label] : !!(seed&&seed.on);
-    rows.push({key:k, label:label, track:r.track, starts:seed?seed.st:0, on:on});
+    rows.push({key:k, label:label, track:r.track, cars:(r.cars||[]).join(' / '), starts:seed?seed.st:0, on:on});
   });
   rows.sort(function(a,b){ return (b.starts||0)-(a.starts||0) || a.label.localeCompare(b.label); });
   return rows;
@@ -979,7 +1056,7 @@ function renderWeekly(){
     h+='<div class="wkser">';
     rows.forEach(function(r){
       h+='<label><input type="checkbox" class="avfree" data-action="wkser" data-n="'+esc(r.label)+'"'+(r.on?' checked':'')+'>'
-        +'<span>'+esc(r.label)+'<span class="st"> · '+esc(r.track||'track TBC')+(r.starts?' · '+r.starts+' team starts':' · new to the team')+'</span></span></label>';
+        +'<span>'+esc(r.label)+'<span class="st"> · '+esc(r.track||'track TBC')+(r.cars?' · '+esc(r.cars):'')+(r.starts?' · '+r.starts+' team starts':' · new to the team')+'</span></span></label>';
     });
     h+='</div>';
   }

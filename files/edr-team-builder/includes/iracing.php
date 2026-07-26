@@ -42,13 +42,72 @@ function edr_ir_get($base, $key, $path) {
  *
  * Each item: {series, track, start_date, race_min, sessions:[iso...]}.
  */
-function edr_ir_weeks_from($data, $from_ts, $to_ts) {
+/**
+ * car_class_id => display name, from /data/carclass/get.
+ *
+ * The seasons payload only carries class IDs, so without this a write-up can say where a
+ * series is racing but not what it is racing — which is most of what makes the line worth
+ * reading ("the cup car is at Barcelona", not "series 12 is at Barcelona").
+ */
+/**
+ * Readable track label. iRacing's config_name often repeats the tail of track_name, and naive
+ * concatenation produced "St. Petersburg Grand Prix Grand Prix" and
+ * "Circuit des 24 Heures du Mans 24 Heures du Mans" in the weekly write-up.
+ */
+function edr_ir_track_label($tr) {
+    if (!is_array($tr)) return '';
+    $name = trim((string) (isset($tr['track_name']) ? $tr['track_name'] : ''));
+    $cfg  = trim((string) (isset($tr['config_name']) ? $tr['config_name'] : ''));
+    if ($cfg === '' || $name === '' || strcasecmp($cfg, $name) === 0) return $name;
+    if (stripos($name, $cfg) !== false) return $name;   // config already contained in the name
+    return trim($name . ' ' . $cfg);
+}
+
+function edr_ir_car_classes($base, $key) {
+    $data = edr_ir_get($base, $key, '/data/carclass/get');
+    if (is_wp_error($data) || !is_array($data)) return array();
+    $rows = isset($data['car_classes']) && is_array($data['car_classes']) ? $data['car_classes'] : $data;
+    $map = array();
+    foreach ($rows as $c) {
+        if (!is_array($c) || !isset($c['car_class_id'])) continue;
+        // short_name is the one people actually say out loud ("GT3" over "GT3 Class")
+        $n = '';
+        foreach (array('short_name', 'name') as $k) {
+            if (!empty($c[$k])) { $n = trim((string) $c[$k]); break; }
+        }
+        if ($n !== '') $map[(string) intval($c['car_class_id'])] = $n;
+    }
+    return $map;
+}
+
+/** Class names for a season, from whichever shape the payload happens to use. */
+function edr_ir_season_cars($s, $classes) {
+    $out = array();
+    foreach ((isset($s['car_class_ids']) && is_array($s['car_class_ids'])) ? $s['car_class_ids'] : array() as $id) {
+        $k = (string) intval($id);
+        if (isset($classes[$k]) && !in_array($classes[$k], $out, true)) $out[] = $classes[$k];
+    }
+    if (!$out) {   // some seasons expose car_types instead of resolvable class ids
+        foreach ((isset($s['car_types']) && is_array($s['car_types'])) ? $s['car_types'] : array() as $t) {
+            $v = is_array($t) ? (isset($t['car_type']) ? $t['car_type'] : '') : (string) $t;
+            $v = trim((string) $v);
+            if ($v !== '' && !in_array($v, $out, true)) $out[] = strtoupper($v);
+        }
+    }
+    return $out;
+}
+
+function edr_ir_weeks_from($data, $from_ts, $to_ts, $classes = array()) {
     if (!is_array($data)) return array();
     $out = array();
     foreach ($data as $s) {
         if (empty($s['official'])) continue;
         $name = isset($s['season_name']) ? $s['season_name'] : '';
+        $cars = edr_ir_season_cars($s, $classes);
         $scheds = isset($s['schedules']) && is_array($s['schedules']) ? $s['schedules'] : array();
+        $rounds = count($scheds);   // recurring series vs one-off special
+        // a team event is worth calling out whatever its length — this is the API's own flag
+        $teamEv = (isset($s['max_team_drivers']) && intval($s['max_team_drivers']) > 1);
         foreach ($scheds as $wk) {
             $sd = isset($wk['start_date']) ? strtotime((string) $wk['start_date'] . ' 00:00:00 UTC') : false;
             if ($sd === false || $sd < $from_ts || $sd >= $to_ts) continue;
@@ -57,12 +116,27 @@ function edr_ir_weeks_from($data, $from_ts, $to_ts) {
             foreach ((isset($wk['race_time_descriptors']) && is_array($wk['race_time_descriptors'])) ? $wk['race_time_descriptors'] : array() as $d) {
                 if (!empty($d['session_times']) && is_array($d['session_times'])) { $times = $d['session_times']; break; }
             }
+            /* a multi-class week can restrict which classes actually run — prefer that over
+               the season-wide list so a GT3-only week does not get announced as GTP too */
+            $wkCars = $cars;
+            $restrict = array();
+            foreach ((isset($wk['car_restrictions']) && is_array($wk['car_restrictions'])) ? $wk['car_restrictions'] : array() as $cr) {
+                if (is_array($cr) && !empty($cr['car_class_id'])) {
+                    $k = (string) intval($cr['car_class_id']);
+                    if (isset($classes[$k]) && !in_array($classes[$k], $restrict, true)) $restrict[] = $classes[$k];
+                }
+            }
+            if ($restrict) $wkCars = $restrict;
+
             $out[] = array(
                 'series'     => $name,
-                'track'      => trim((isset($tr['track_name']) ? $tr['track_name'] : '') . ' ' . (isset($tr['config_name']) ? $tr['config_name'] : '')),
+                'track'      => edr_ir_track_label($tr),
                 'start_date' => isset($wk['start_date']) ? $wk['start_date'] : '',
                 'race_min'   => isset($wk['race_time_limit']) ? intval($wk['race_time_limit']) : 0,
                 'sessions'   => array_values($times),
+                'cars'       => array_values($wkCars),
+                'rounds'     => $rounds,
+                'team'       => $teamEv,
             );
         }
     }
@@ -73,9 +147,11 @@ function edr_ir_weeks_from($data, $from_ts, $to_ts) {
 function edr_ir_all($base, $key, $from_ts, $to_ts) {
     $data = edr_ir_get($base, $key, '/data/series/seasons?include_series=1');
     if (is_wp_error($data)) return $data;
+    // second call, but the whole /iracing response is cached 12h so it is one lookup a day
+    $classes = edr_ir_car_classes($base, $key);
     return array(
-        'seasons' => edr_ir_seasons_from($data),
-        'weeks'   => edr_ir_weeks_from($data, $from_ts, $to_ts),
+        'seasons' => edr_ir_seasons_from($data, $classes),
+        'weeks'   => edr_ir_weeks_from($data, $from_ts, $to_ts, $classes),
     );
 }
 
@@ -85,11 +161,12 @@ function edr_ir_seasons($base, $key) {
     return edr_ir_seasons_from($data);
 }
 
-function edr_ir_seasons_from($data) {
+function edr_ir_seasons_from($data, $classes = array()) {
     if (!is_array($data)) return array();
     $out = array();
     foreach ($data as $s) {
         if (empty($s['official'])) continue;
+        $seasonCars = edr_ir_season_cars($s, $classes);
         $scheds = isset($s['schedules']) && is_array($s['schedules']) ? $s['schedules'] : array();
         foreach ($scheds as $wk) {
             $rtd = isset($wk['race_time_descriptors']) && is_array($wk['race_time_descriptors']) ? $wk['race_time_descriptors'] : array();
@@ -103,11 +180,12 @@ function edr_ir_seasons_from($data) {
                 'season_id'  => isset($s['season_id']) ? intval($s['season_id']) : 0,
                 'series_id'  => isset($s['series_id']) ? intval($s['series_id']) : 0,
                 'name'       => isset($s['season_name']) ? $s['season_name'] : '',
-                'track'      => trim((isset($tr['track_name']) ? $tr['track_name'] : '') . ' ' . (isset($tr['config_name']) ? $tr['config_name'] : '')),
+                'track'      => edr_ir_track_label($tr),
                 'start_date' => isset($wk['start_date']) ? $wk['start_date'] : '',
                 'race_min'   => isset($wk['race_time_limit']) ? intval($wk['race_time_limit']) : 0,
                 'sessions'   => array_values($times),
                 'weather'    => isset($wk['weather']) ? $wk['weather'] : null,
+                'cars'       => $seasonCars,
             );
             // no break: seasons like Creventic carry several rounds (Mugello, Spa, …) —
             // emit every week that has session_times so each round is matchable
