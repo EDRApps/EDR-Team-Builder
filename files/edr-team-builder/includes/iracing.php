@@ -97,6 +97,26 @@ function edr_ir_season_cars($s, $classes) {
     return $out;
 }
 
+
+/**
+ * Absolute ISO timestamp from whatever the schedule gave us.
+ *
+ * race_time_descriptors carry the repeating start as a bare time of day ("13:00:00"), which is
+ * only meaningful against the week's start_date. Full datetimes and already-ISO session times
+ * pass straight through. Returns '' when there is nothing usable, so callers can tell.
+ */
+function edr_ir_abs_time($raw, $day) {
+    $raw = trim((string) $raw);
+    if ($raw === '') return '';
+    if (preg_match('/^\d{1,2}:\d{2}(:\d{2})?$/', $raw)) {          // bare time of day
+        if ($day === '') return '';
+        $t = strtotime($day . ' ' . $raw . ' UTC');
+        return ($t === false) ? '' : gmdate('Y-m-d\TH:i:s\Z', $t);
+    }
+    $t = strtotime($raw);                                            // full datetime of some form
+    return ($t === false) ? '' : gmdate('Y-m-d\TH:i:s\Z', $t);
+}
+
 function edr_ir_weeks_from($data, $from_ts, $to_ts, $classes = array()) {
     if (!is_array($data)) return array();
     $out = array();
@@ -129,16 +149,26 @@ function edr_ir_weeks_from($data, $from_ts, $to_ts, $classes = array()) {
             if ($sd === false || $sd < $from_ts || $sd >= $to_ts) continue;
             $tr = isset($wk['track']) && is_array($wk['track']) ? $wk['track'] : array();
             /* Two shapes here. A fixed-schedule round (endurance, specials) lists explicit
-               session_times. A repeating sprint instead gives a start time and a repeat
-               interval, which is what "races on the :00 and :30" comes from. Capture both. */
-            $times = array(); $repeat = 0; $first = '';
+               session_times. A repeating sprint instead gives a first start plus an interval,
+               which is what "on the :00, even hours" comes from.
+               The repeating shape is the awkward one: the start arrives as a bare TIME OF DAY
+               (first_session_time, "13:00:00") that only means something combined with the
+               week's start_date. Probing only for a full datetime found nothing, so every
+               sprint came back with no pattern at all. Probe the known spellings of both and
+               keep the raw values so the tab can say what actually arrived. */
+            $times = array(); $repeat = 0; $first = ''; $rawFirst = '';
             foreach ((isset($wk['race_time_descriptors']) && is_array($wk['race_time_descriptors'])) ? $wk['race_time_descriptors'] : array() as $d) {
                 if (!is_array($d)) continue;
                 if (!$times && !empty($d['session_times']) && is_array($d['session_times'])) $times = $d['session_times'];
-                if (!$repeat && !empty($d['repeat_minutes'])) $repeat = intval($d['repeat_minutes']);
-                if ($first === '' && !empty($d['start_time'])) $first = (string) $d['start_time'];
+                foreach (array('repeat_minutes', 'repeatMinutes', 'repeat_mins') as $rk) {
+                    if (!$repeat && !empty($d[$rk])) { $repeat = intval($d[$rk]); break; }
+                }
+                foreach (array('first_session_time', 'firstSessionTime', 'start_time', 'startTime') as $fk) {
+                    if ($rawFirst === '' && !empty($d[$fk])) { $rawFirst = (string) $d[$fk]; break; }
+                }
             }
-            if ($first === '' && $times) $first = (string) $times[0];
+            if ($rawFirst === '' && $times) $rawFirst = (string) $times[0];
+            $first = edr_ir_abs_time($rawFirst, isset($wk['start_date']) ? (string) $wk['start_date'] : '');
             /* a multi-class week can restrict which classes actually run — prefer that over
                the season-wide list so a GT3-only week does not get announced as GTP too */
             $wkCars = $cars;
@@ -159,6 +189,7 @@ function edr_ir_weeks_from($data, $from_ts, $to_ts, $classes = array()) {
                 'sessions'   => array_values($times),
                 'repeat'     => $repeat,
                 'first'      => $first,
+                'firstRaw'   => $rawFirst,   // what the API actually sent, for diagnosing a blank pattern
                 'cars'       => array_values($wkCars),
                 'rounds'     => $rounds,
                 'team'       => $teamEv,

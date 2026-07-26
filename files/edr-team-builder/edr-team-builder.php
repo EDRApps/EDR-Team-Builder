@@ -2,7 +2,7 @@
 /**
  * Plugin Name: EDR Team Builder
  * Description: Endurotech Racing endurance team + stint planner. Pulls Garage 61 pace and official iRacing session times, collects driver availability in-house, and builds Pro/Casual teams and stint rotations. Add the [edr_team_builder] shortcode to a page.
- * Version: 2.4.21
+ * Version: 2.4.22
  * Author: Endurotech Racing
  * License: GPL-2.0-or-later
  */
@@ -11,7 +11,7 @@ if (!defined('ABSPATH')) exit; // no direct access
 
 define('EDR_TB_DIR', plugin_dir_path(__FILE__));
 define('EDR_TB_URL', plugin_dir_url(__FILE__));
-define('EDR_TB_VER', '2.4.21');
+define('EDR_TB_VER', '2.4.22');
 
 require_once EDR_TB_DIR . 'includes/garage61.php';
 require_once EDR_TB_DIR . 'includes/iracing.php';
@@ -191,6 +191,11 @@ add_action('rest_api_init', function () {
     // an expensive proxy sweep, so both sides are edit-gated)
     register_rest_route('edr/v1', '/recap', array(
         'methods' => 'GET', 'permission_callback' => 'edr_tb_req_can_edit', 'callback' => 'edr_tb_rest_recap',
+    ));
+    // cheap weekly ratings snapshot + diff — GET reads the movement, POST takes a new snapshot
+    register_rest_route('edr/v1', '/ratings', array(
+        array('methods' => 'GET',  'permission_callback' => 'edr_tb_req_can_edit', 'callback' => 'edr_tb_rest_ratings'),
+        array('methods' => 'POST', 'permission_callback' => 'edr_tb_req_can_edit', 'callback' => 'edr_tb_rest_ratings'),
     ));
     register_rest_route('edr/v1', '/recap/refresh', array(
         'methods' => 'POST', 'permission_callback' => 'edr_tb_req_can_edit', 'callback' => 'edr_tb_rest_recap_refresh',
@@ -393,12 +398,79 @@ function edr_tb_rest_draft_post(WP_REST_Request $req) {
     return rest_ensure_response(array('ok' => true, 'messages' => $sent, 'draft_age_days' => round($ageDays, 1)));
 }
 
+/**
+ * Weekly ratings snapshot + diff.
+ *
+ * Two Garage 61 calls, seconds not minutes. Every snapshot is stored under its ISO week, so the
+ * movement for a week is just this week's numbers minus last week's. This is what actually
+ * answers "most improved" and "safety rating changes" — the iRacing results sweep is only
+ * needed for wins and podiums, and should not be what those awards wait on.
+ */
+function edr_tb_snapshot_ratings() {
+    $s = edr_tb_settings();
+    if (empty($s['g61_token'])) return new WP_Error('no_token', 'Garage 61 token not set.', array('status' => 400));
+    $now = edr_g61_member_ratings_full($s['g61_token']);
+    if (is_wp_error($now)) return $now;
+    if (!$now) return new WP_Error('empty', 'Garage 61 returned no member ratings.', array('status' => 502));
+
+    $snaps = (array) get_option('edr_tb_rating_snaps', array());
+    $week  = gmdate('o-\WW');                       // ISO year-week, so one snapshot per week
+    $snaps[$week] = array('at' => time(), 'r' => $now);
+    // keep a quarter of history; this option is read on every diff
+    if (count($snaps) > 14) { ksort($snaps); $snaps = array_slice($snaps, -14, null, true); }
+    update_option('edr_tb_rating_snaps', $snaps, false);
+    return array('week' => $week, 'drivers' => count($now));
+}
+
+/** Movement between the two most recent snapshots. */
+function edr_tb_rating_movement() {
+    $snaps = (array) get_option('edr_tb_rating_snaps', array());
+    if (count($snaps) < 2) return array('ready' => false, 'have' => count($snaps), 'movers' => array());
+    ksort($snaps);
+    $keys = array_keys($snaps);
+    $prev = $snaps[$keys[count($keys) - 2]];
+    $curr = $snaps[$keys[count($keys) - 1]];
+    $movers = array();
+    foreach ((array) $curr['r'] as $k => $c) {
+        if (!isset($prev['r'][$k])) continue;          // joined since the last snapshot
+        $p = $prev['r'][$k];
+        $dIr = intval($c['ir']) - intval($p['ir']);
+        $dSr = round(floatval($c['sr']) - floatval($p['sr']), 2);
+        if ($dIr === 0 && abs($dSr) < 0.01) continue;  // nothing moved
+        $movers[] = array(
+            'name' => $c['name'], 'irDelta' => $dIr, 'irEnd' => intval($c['ir']),
+            'srDelta' => $dSr, 'srStart' => floatval($p['sr']), 'srEnd' => floatval($c['sr']),
+            'srLabel' => (string) $c['srLabel'],
+        );
+    }
+    usort($movers, function ($a, $b) { return $b['irDelta'] - $a['irDelta']; });
+    return array('ready' => true, 'from' => $keys[count($keys) - 2], 'to' => $keys[count($keys) - 1], 'movers' => $movers);
+}
+
+function edr_tb_rest_ratings(WP_REST_Request $req) {
+    if ($req->get_method() === 'POST') {
+        $r = edr_tb_snapshot_ratings();
+        if (is_wp_error($r)) return $r;
+        return rest_ensure_response(array('ok' => true, 'snapshot' => $r, 'movement' => edr_tb_rating_movement()));
+    }
+    return rest_ensure_response(edr_tb_rating_movement());
+}
+
 function edr_tb_rest_recap() {
     $r = get_option('edr_tb_recap', null);
+    $prog = (array) get_option('edr_tb_recap_progress', array());
+    $running = (bool) get_transient('edr_tb_recap_running');
+    /* A job whose heartbeat stopped more than three minutes ago is dead — the host killed the
+       loopback request. Say so instead of leaving the tab polling a spinner until the flag
+       expires twenty minutes later. */
+    $stalled = $running && !empty($prog['at']) && (time() - intval($prog['at']) > 180);
+    if ($stalled) { delete_transient('edr_tb_recap_running'); $running = false; }
     return rest_ensure_response(array(
-        'recap'   => $r ?: null,
-        'running' => (bool) get_transient('edr_tb_recap_running'),
-        'error'   => (string) get_option('edr_tb_recap_err', ''),
+        'recap'    => $r ?: null,
+        'running'  => $running,
+        'progress' => $prog ?: null,
+        'stalled'  => $stalled,
+        'error'    => $stalled ? 'The results pull stopped partway through — the host cut it off. Try again, or rely on the ratings snapshot.' : (string) get_option('edr_tb_recap_err', ''),
     ));
 }
 

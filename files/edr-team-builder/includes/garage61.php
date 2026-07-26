@@ -197,6 +197,58 @@ function edr_g61_member_ratings($token) {
     return $map;
 }
 
+
+/**
+ * Current iRating and Safety Rating for every member, from the team membership we already pull.
+ *
+ * This is the cheap path to "most improved" and "safety rating changes": Garage 61 carries both
+ * on each account, so a dated snapshot each week and a diff against the last one gives the
+ * movement for two HTTP calls — instead of a search per driver plus a fetch per race against
+ * the rate-limited iRacing proxy. The results sweep is still what wins and podiums need, but
+ * the ratings do not depend on it.
+ *
+ * Returns namekey => {name, ir, sr, srLabel}.
+ */
+function edr_g61_member_ratings_full($token) {
+    $teams = edr_g61_get_json('/teams', $token);
+    if (is_wp_error($teams)) return $teams;
+    $list = isset($teams['items']) && is_array($teams['items']) ? $teams['items'] : (is_array($teams) ? $teams : array());
+    $out = array();
+    foreach ($list as $t) {
+        if (!is_array($t) || empty($t['slug'])) continue;
+        $detail = edr_g61_get_json('/teams/' . rawurlencode($t['slug']), $token);
+        if (is_wp_error($detail) || !is_array($detail)) continue;
+        $members = array();
+        foreach (array('members', 'drivers', 'users') as $k) {
+            if (!empty($detail[$k]) && is_array($detail[$k])) { $members = $detail[$k]; break; }
+        }
+        foreach ($members as $m) {
+            if (!is_array($m)) continue;
+            list($n, ) = edr_g61_person_name($m);
+            if ($n === '') continue;
+            $ir = 0; $sr = 0; $srLabel = '';
+            foreach ((isset($m['accounts']) && is_array($m['accounts'])) ? $m['accounts'] : array() as $ac) {
+                if (!is_array($ac) || empty($ac['ratings']) || !is_array($ac['ratings'])) continue;
+                foreach ($ac['ratings'] as $r) {
+                    if (!is_array($r) || !isset($r['category']) || $r['category'] !== 'sports_car') continue;
+                    $type = isset($r['type']) ? $r['type'] : '';
+                    if ($type === 'irating' && isset($r['rating'])) $ir = max($ir, intval($r['rating']));
+                    if ($type === 'safety_rating' && isset($r['rating'])) {
+                        $sr = max($sr, floatval($r['rating']));
+                        if (!empty($r['license'])) $srLabel = (string) $r['license'];
+                        elseif (!empty($r['licenseClass'])) $srLabel = (string) $r['licenseClass'];
+                    }
+                }
+            }
+            $k2 = edr_tb_namekey($n);
+            if (!isset($out[$k2]) || $ir > $out[$k2]['ir']) {
+                $out[$k2] = array('name' => $n, 'ir' => $ir, 'sr' => round($sr, 2), 'srLabel' => $srLabel);
+            }
+        }
+    }
+    return $out;
+}
+
 /* Returns [{name: <g61 slug or name>, cars: {carName: {laps, medianLap, cleanPct}}, irating}] */
 function edr_g61_roster($token, $trackIds, $teamSlug) {
     $ratings = edr_g61_member_ratings($token);

@@ -19,6 +19,20 @@ if (!defined('ABSPATH')) exit;
 define('EDR_TB_RECAP_PACE', 450000);   // microseconds between proxy calls — ~0.45s, below the limiter
 define('EDR_TB_RECAP_MAX_SUBS', 400);  // hard ceiling on subsession fetches for one run
 
+/**
+ * Progress heartbeat.
+ *
+ * The sweep is minutes long and the loopback request running it can be killed by the host
+ * mid-way. Without a heartbeat that failure is invisible: the running flag just sits there
+ * until it expires and the tab polls an opaque spinner the whole time. Every step stamps
+ * where it got to, so the UI can show real numbers and spot a job that has stopped moving.
+ */
+function edr_tb_recap_progress($stage, $done = 0, $total = 0) {
+    update_option('edr_tb_recap_progress', array(
+        'stage' => $stage, 'done' => intval($done), 'total' => intval($total), 'at' => time(),
+    ), false);
+}
+
 /** Sub-level integer -> readable licence, e.g. 4217 => "B 2.17". */
 function edr_tb_sr_label($sub) {
     $sub = intval($sub);
@@ -89,6 +103,8 @@ function edr_tb_recap_build($base, $key, $members, $from, $to) {
     // 1) which subsessions the squad raced — one search per driver
     $subs = array();
     $byCust = array();
+    $n = 0; $nMembers = count($members);
+    edr_tb_recap_progress('drivers', 0, $nMembers);
     foreach ($members as $cust => $name) {
         $found = edr_tb_recap_search($base, $key, $cust, $from, $to);
         if (is_wp_error($found)) return $found;                 // proxy down or expired: fail loudly
@@ -98,15 +114,19 @@ function edr_tb_recap_build($base, $key, $members, $from, $to) {
             'irDelta' => 0, 'irEnd' => null, 'srStart' => null, 'srEnd' => null, 'best' => null,
         );
         usleep(EDR_TB_RECAP_PACE);
+        edr_tb_recap_progress('drivers', ++$n, $nMembers);
     }
     if (!$subs) return array('at' => time(), 'from' => $from, 'to' => $to, 'drivers' => array(), 'races' => 0);
 
     // 2) each subsession once — team enduros overlap heavily, so dedupe first
     $ids = array_slice(array_keys($subs), 0, EDR_TB_RECAP_MAX_SUBS);
     $dropped = count($subs) - count($ids);
+    $r = 0; $nRaces = count($ids);
+    edr_tb_recap_progress('races', 0, $nRaces);
     foreach ($ids as $sid) {
         $sub = edr_ir_get($base, $key, '/data/results/get?subsession_id=' . intval($sid));
         usleep(EDR_TB_RECAP_PACE);
+        edr_tb_recap_progress('races', ++$r, $nRaces);
         if (is_wp_error($sub) || !is_array($sub)) continue;      // skip a bad one, keep the run
         foreach (edr_tb_recap_rows($sub) as $r) {
             $cust = isset($r['cust_id']) ? (string) intval($r['cust_id']) : '';

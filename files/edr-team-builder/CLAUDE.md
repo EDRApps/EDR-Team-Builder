@@ -163,6 +163,23 @@ Conventions this code depends on, all easy to get wrong:
 The awards are computed **client-side** from the cached driver rows, so adding a new one never
 needs another sweep of the API.
 
+### Ratings movement without the sweep
+
+iRating and Safety Rating movement do **not** need the results sweep, and should never wait on
+it. Garage 61 already carries both on each member account, so `POST /ratings` stores a dated
+snapshot (`edr_tb_rating_snaps`, keyed by ISO week) and `GET /ratings` diffs the two most recent
+— two HTTP calls, seconds. That covers the whole roster, not just whoever turned up in the races
+the sweep managed to fetch.
+
+The sweep is now only needed for **wins, podiums, incidents and race counts**. `recapAwards()`
+prefers the snapshot diff for ratings and folds the sweep's counts onto each mover by name;
+a driver present in one source and not the other degrades to whichever half exists.
+
+The sweep also reports progress (`edr_tb_recap_progress`, stamped every driver and every race)
+and `GET /recap` treats a heartbeat older than three minutes as a dead job — the host killing
+the loopback request mid-sweep is the normal failure, and without this the tab polls an opaque
+spinner until the running flag expires twenty minutes later.
+
 **Pace is never auto-applied.** The warm cache only makes the *next* import instant; it does not
 rewrite `state.drivers` behind anyone's back. Silently re-running the split could reshuffle a
 line-up an admin had already settled — the same class of surprise the plan's 409 guard exists to
