@@ -888,6 +888,7 @@ function weeklyFacts(){
       series:label, cat:seed?seed.cat:'', starts:seed?seed.st:0, who:who,
       cars:(r.cars&&r.cars.length)?r.cars:[],   // live car classes for the round, from iRacing
       track:r.track||'', raceMin:r.race_min||0, sessions:r.sessions||[],
+      when:raceTimePattern(r), times:sessionTimeList(r,4),
       matched:!!r.track, note:trackNoteFor(r.track), flare:driverNoteFor(who, usedDrivers),
       startDate:r.start_date
     });
@@ -919,6 +920,7 @@ function weeklyFacts(){
     if(specials.some(function(ev){ return sameRace(ev, r); })) return;   // already led with it above
     enduros.push({
       series:label, track:r.track||'', raceMin:r.race_min||0, cars:r.cars||[],
+      when:raceTimePattern(r), times:sessionTimeList(r,6),
       recurring:(r.rounds||0)>3, note:trackNoteFor(r.track), startDate:r.start_date,
       team:isTeamSeries(label)
     });
@@ -996,6 +998,49 @@ function recapAgeLabel(){
        +' · '+d+' driver'+(d===1?'':'s')+', '+(RECAP.races||0)+' race'+((RECAP.races||0)===1?'':'s')
        +((RECAP.dropped)?' · '+RECAP.dropped+' not fetched (run capped)':'');
 }
+/* When a repeating series actually goes green, as minutes past the hour — the thing people
+   need in order to plan an evening ("on the :00 and :30"). Computed in the viewer's own
+   timezone, because zones on a half-hour offset (Adelaide, India) shift the minute. */
+function localMinute(ms){
+  try{ return +new Date(ms).toLocaleString('en-AU',{timeZone:tzZone(),minute:'2-digit'}); }
+  catch(e){ return new Date(ms).getMinutes(); }
+}
+function pad2(n){ return (n<10?'0':'')+n; }
+/* "a, b and c" — chaining "and" four times reads like a child's list */
+function andList(a){
+  if(!a||!a.length) return '';
+  if(a.length===1) return a[0];
+  return a.slice(0,-1).join(', ')+' and '+a[a.length-1];
+}
+function raceTimePattern(r){
+  const first=Date.parse(r.first||(r.sessions&&r.sessions[0])||'');
+  const rep=+(r.repeat||0);
+  if(isNaN(first)||!rep) return '';
+  const m0=localMinute(first);
+  if(rep<60 && 60%rep===0){                      // several a hour: list every offset
+    const outs=[];
+    for(let m=m0%rep, n=0; n<60/rep; n++, m+=rep) outs.push(':'+pad2(m%60));
+    return 'on the '+andList(outs);
+  }
+  if(rep===60) return 'on the :'+pad2(m0)+', every hour';
+  if(rep%60===0) return 'on the :'+pad2(m0)+', every '+(rep/60)+' hours';
+  return 'every '+rep+' min from :'+pad2(m0);
+}
+/* Explicit session starts, for the fixed-schedule rounds where there is no repeat — the
+   endurance and special events, where the actual green flag is the whole point. */
+function sessionTimeList(r, max){
+  const ss=(r.sessions||[]).slice();
+  if(!ss.length) return '';
+  const seen={}, out=[];
+  ss.forEach(function(t){
+    const ms=Date.parse(t); if(isNaN(ms)) return;
+    const lbl=new Date(ms).toLocaleString('en-AU',{timeZone:tzZone(),weekday:'short',hour:'2-digit',minute:'2-digit',hour12:false});
+    if(seen[lbl]) return; seen[lbl]=1; out.push(lbl);
+  });
+  if(!out.length) return '';
+  const cap=max||6;
+  return out.length>cap ? out.slice(0,cap).join(', ')+' (+'+(out.length-cap)+' more)' : out.join(', ');
+}
 function cap(s){ s=String(s||''); return s.charAt(0).toUpperCase()+s.slice(1); }
 /* "3h" reads better than "180 min" for an enduro, "20 min" better than "0.33h" for a sprint */
 function fmtRaceLen(m){
@@ -1063,6 +1108,8 @@ function weeklyDraft(f){
     if(e.raceMin) line+=' · '+fmtRaceLen(e.raceMin);
     if(e.team) line+=' · *team event*';
     L.push(line);
+    if(e.times)     L.push('-# Sessions: '+e.times);
+    else if(e.when) L.push('-# Races '+e.when);
     if(e.note) L.push('> '+cap(e.note)+'.');
     L.push('');   // blank line between entries: keeps the quotes off the next heading, and
                   // gives the Discord chunker a clean place to split
@@ -1085,6 +1132,8 @@ function weeklyDraft(f){
     if(multi) bits.push(s.cars.join(' / '));
     if(s.raceMin) bits.push(fmtRaceLen(s.raceMin));
     if(bits.length) line+=' ('+bits.join(', ')+')';
+    if(s.when) line+=' — '+s.when;
+    else if(s.times) line+=' — '+s.times;
     L.push(line);
     if(s.note) L.push('> '+cap(s.note)+'.');
     if(s.flare) L.push('-# One for '+s.flare.name+' — '+s.flare.note+'.');
