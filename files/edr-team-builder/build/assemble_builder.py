@@ -198,7 +198,7 @@ function releaseLock(name){
   }).catch(function(){});
 }
 let lastTrackIds=[], _saveT=null;
-function serializePlan(){ return {drivers:state.drivers,w:state.w,proPct:state.proPct,teams:state.teams,stint:state.stint,stintAssign:state.stintAssign,stintWin:state.stintWin,stintSig:state.stintSig,overrides:overrides,meta:IMPORT_META,winStart:WIN_START_MS,startOffsets:START_OFFSETS,startLabels:START_LABELS,matches:lastMatches,trackIds:lastTrackIds,evsel:state.evsel,evWinMin:EV_WIN_MIN,evTiming:state.evTiming,teamsLocked:state.teamsLocked,stintsLocked:state.stintsLocked,teamNames:state.teamNames,fuelCfg:state.fuelCfg,customEvents:state.customEvents,irEvents:state.irEvents,evWeather:state.evWeather,swapNote:state.swapNote}; }
+function serializePlan(){ return {drivers:state.drivers,w:state.w,proPct:state.proPct,teams:state.teams,stint:state.stint,stintAssign:state.stintAssign,stintWin:state.stintWin,stintSig:state.stintSig,overrides:overrides,meta:IMPORT_META,winStart:WIN_START_MS,startOffsets:START_OFFSETS,startLabels:START_LABELS,matches:lastMatches,trackIds:lastTrackIds,evsel:state.evsel,evWinMin:EV_WIN_MIN,evTiming:state.evTiming,teamsLocked:state.teamsLocked,stintsLocked:state.stintsLocked,teamNames:state.teamNames,fuelCfg:state.fuelCfg,customEvents:state.customEvents,irEvents:state.irEvents,evWeather:state.evWeather,swapNote:state.swapNote,excluded:state.excluded}; }
 var _postBusy=false, _postAgain=false;
 function _flushPlan(){
   if(_postBusy){ _postAgain=true; return; }              // serialize: the retry below re-posts the LATEST state with the updated rev
@@ -235,7 +235,11 @@ function _adoptPlan(p, keepEvsel){
   if(p.overrides)overrides=p.overrides; if(p.meta)IMPORT_META=p.meta; if(p.winStart)WIN_START_MS=p.winStart;
   if(p.startOffsets&&Object.keys(p.startOffsets).length)START_OFFSETS=p.startOffsets; if(p.startLabels&&Object.keys(p.startLabels).length)START_LABELS=p.startLabels;
   if(p.evsel)state.evsel=p.evsel; if(p.evWinMin)EV_WIN_MIN=p.evWinMin; if(p.evTiming)state.evTiming=p.evTiming; state.teamsLocked=!!p.teamsLocked; state.stintsLocked=!!p.stintsLocked;
-  state.teamNames=p.teamNames||{}; if(p.fuelCfg)state.fuelCfg=p.fuelCfg; state.customEvents=p.customEvents||[]; state.irEvents=p.irEvents||[]; state.evWeather=p.evWeather||{}; state.swapNote=p.swapNote||'';
+  state.teamNames=p.teamNames||{}; if(p.fuelCfg)state.fuelCfg=p.fuelCfg; state.customEvents=p.customEvents||[]; state.irEvents=p.irEvents||[]; state.evWeather=p.evWeather||{}; state.swapNote=p.swapNote||''; state.excluded=p.excluded||{};
+  /* a plan saved before the name-suffix fix still holds both spellings of one driver, and
+     this restores state.drivers verbatim — collapse them here or the duplicate survives
+     every reload until somebody happens to run an import */
+  dedupeDrivers();
   /* Race preferences live in edr_tb_prefs, written by the drivers themselves through /avail.
      The plan used to carry a second copy, which meant an admin autosave could ship a stale
      snapshot of everyone's preferences; /avail happened to be applied afterwards so it never
@@ -405,12 +409,14 @@ function applyImport(payload){
   var drivers=[], id=1;
   var prevByKey={}; (state.drivers||[]).forEach(function(d){ prevByKey[nameKey(d.name)]=d; });   // keep admin-locked car choices across G61 imports
   (payload.roster||[]).forEach(function(r){
+    if(isExcluded(r.name)) return;   // removed by an admin: Garage 61 must not put them back
     var prev=prevByKey[nameKey(r.name)];
     var locked=!!(prev&&prev.carLock);
     var keep=(locked&&prev.assignedCar&&r.cars&&r.cars[prev.assignedCar])?prev.assignedCar:null;
     drivers.push({id:id++, name:r.name, cars:r.cars, assignedCar:keep||lastCar(r.cars), avail:null, irating:(typeof r.irating==='number'?r.irating:(prev?prev.irating:null)), carLock:locked});
   });
   state.drivers=drivers; state.stintAssign={}; state.stintSig=''; state.stintWin={};
+  dedupeDrivers();
   applyAvailToDrivers();  // in-house per-event availability is the single source of truth
   generate(); save();
 }

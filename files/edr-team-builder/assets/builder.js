@@ -497,6 +497,54 @@ function slotsToAvail(slots){
   const starts=Object.keys(START_OFFSETS).filter(k=>windows.some(w=>w[0]<=START_OFFSETS[k]&&w[1]>=START_OFFSETS[k]+race)).map(Number);
   return {hours:Math.round(total/6)/10, pct:EV_WIN_MIN?Math.round(total/EV_WIN_MIN*100):0, starts, windows};
 }
+/* ---- driver identity housekeeping -----------------------------------------------------
+   Drivers the team does not want in the builder at all: someone who left, a duplicate the
+   APIs keep re-creating, a test entry. Held as name keys so a re-import cannot resurrect
+   them, and reversible — nothing is destroyed, they are just filtered out. */
+function excludedMap(){ state.excluded=state.excluded||{}; return state.excluded; }
+function isExcluded(name){ return !!excludedMap()[nameKey(name)]; }
+function excludeDriver(name){
+  if(!isAdmin()||!name) return;
+  excludedMap()[nameKey(name)]=name;                       // keep a display name for the undo list
+  state.drivers=(state.drivers||[]).filter(function(d){ return nameKey(d.name)!==nameKey(name); });
+  /* drop them from any car they were assigned to, or Teams/Stints keep rendering a ghost */
+  Object.keys(state.teams||{}).forEach(function(cls){
+    ['pro','casual'].forEach(function(tier){
+      (state.teams[cls][tier]||[]).forEach(function(car,i){
+        state.teams[cls][tier][i]=(car||[]).filter(function(n){ return nameKey(n)!==nameKey(name); });
+      });
+    });
+  });
+  Object.keys(state.stintAssign||{}).forEach(function(k){
+    if(nameKey(state.stintAssign[k]||'')===nameKey(name)) delete state.stintAssign[k];
+  });
+  applyAvailToDrivers(); save(); renderContent();
+}
+function restoreDriver(key){
+  if(!isAdmin()) return;
+  delete excludedMap()[key];
+  applyAvailToDrivers(); save(); renderContent();
+}
+/* Collapse driver rows that are really the same person. Needed because a plan saved before the
+   name-suffix fix still holds both spellings, and loadPlan() restores state.drivers verbatim —
+   so without this the duplicate survives every reload until someone runs an import. */
+function dedupeDrivers(){
+  const byKey={}, out=[];
+  (state.drivers||[]).forEach(function(d){
+    const k=nameKey(d.name), prev=byKey[k];
+    if(!prev){ byKey[k]=d; out.push(d); return; }
+    // prefer the unsuffixed spelling, and keep whichever row actually has pace data
+    if(/\d$/.test(prev.name) && !/\d$/.test(d.name)) prev.name=d.name;
+    const pc=Object.keys(prev.cars||{}).length, dc=Object.keys(d.cars||{}).length;
+    if(dc>pc) prev.cars=d.cars;
+    if(!prev.assignedCar && d.assignedCar) prev.assignedCar=d.assignedCar;
+    if(prev.irating==null && d.irating!=null) prev.irating=d.irating;
+    if(!prev.carLock && d.carLock) prev.carLock=d.carLock;
+  });
+  const removed=(state.drivers||[]).length-out.length;
+  state.drivers=out;
+  return removed;
+}
 function applyAvailToDrivers(){
   if(!state.evsel) return;
   const a=state.availStore[state.evsel]||{};
@@ -511,6 +559,7 @@ function applyAvailToDrivers(){
   const merged={};
   Object.keys(a).forEach(n=>{
     if(!(a[n]&&a[n].length)) return;   // no blocks ticked -> not a pool member (avoids hours:0 phantom drivers)
+    if(isExcluded(n)) return;          // removed by an admin: never re-add them from stored availability
     const k=nameKey(n);
     if(!merged[k]) merged[k]={name:n, slots:{}};
     else if(/\d$/.test(merged[k].name) && !/\d$/.test(n)) merged[k].name=n;   // prefer the unsuffixed spelling
@@ -585,7 +634,7 @@ function nameKey(n){
 }
 function availRoster(){
   const out=[], seen={};
-  const add=n=>{ const k=nameKey(n); if(k&&!seen[k]){ seen[k]=1; out.push(n); } };
+  const add=n=>{ const k=nameKey(n); if(k&&!seen[k]&&!isExcluded(n)){ seen[k]=1; out.push(n); } };
   state.drivers.forEach(d=>add(d.name));
   TEAM_ROSTER.forEach(add);
   Object.keys(state.availStore[state.evsel]||{}).forEach(add);
@@ -1293,7 +1342,42 @@ function renderDrivers(model){
     });
     html+='</div></div>';
   });
+  html+=renderDriverAdmin();
   return html;
+}
+/* Admin-only roster management. The builder pulls its driver list from Garage 61 and from
+   whoever submits availability, so it will happily surface people who have left, test
+   accounts, or a duplicate the APIs keep re-creating. Removing writes a name key to
+   state.excluded, which survives re-imports — deleting the row alone would not, because the
+   next import or availability submission puts them straight back. */
+function renderDriverAdmin(){
+  if(!isAdmin()) return '';
+  const ex=excludedMap(), keys=Object.keys(ex);
+  let h='<div class="importbox" style="margin-top:16px">';
+  h+='<div class="meta" style="text-transform:uppercase;letter-spacing:.04em;margin-bottom:2px">Manage drivers</div>';
+  h+='<div class="meta" style="font-size:10.5px;margin-bottom:8px">Remove anyone who should not be in the team builder. They stay out through imports and availability submissions, and nothing is deleted — you can put them back below.</div>';
+  const list=(state.drivers||[]).slice().sort(function(a,b){ return a.name.localeCompare(b.name); });
+  if(!list.length) h+='<div class="meta">No drivers in the pool yet.</div>';
+  else {
+    h+='<div class="wkser">';
+    list.forEach(function(d){
+      const laps=Object.keys(d.cars||{}).reduce(function(t,c){ return t+((d.cars[c]&&d.cars[c].laps)||0); },0);
+      const hrs=(d.avail&&d.avail.hours)||0;
+      h+='<label style="justify-content:space-between"><span>'+esc(d.name)
+        +'<span class="st"> · '+laps+' laps'+(hrs?' · '+hrs+'h avail':'')+'</span></span>'
+        +'<button class="quickbtn avfree" data-action="drvremove" data-n="'+esc(d.name)+'" title="remove from the team builder" style="color:var(--red);border-color:rgba(255,90,90,.4)">remove</button></label>';
+    });
+    h+='</div>';
+  }
+  if(keys.length){
+    h+='<div class="meta" style="text-transform:uppercase;letter-spacing:.04em;margin:12px 0 4px">Removed</div><div class="quickrow">';
+    keys.forEach(function(k){
+      h+='<button class="quickbtn avfree" data-action="drvrestore" data-k="'+esc(k)+'" title="put this driver back">'+esc(ex[k]||k)+' ✕</button>';
+    });
+    h+='</div>';
+  }
+  h+='</div>';
+  return h;
 }
 
 // ---- stint planning ----
@@ -1723,6 +1807,8 @@ document.getElementById('content').addEventListener('click',e=>{
     if(!isAdmin()) return;
     weeklyState().flare=e.target.checked; save(); return;
   }
+  if(e.target.dataset.action==='drvremove'){ excludeDriver(e.target.dataset.n); return; }
+  if(e.target.dataset.action==='drvrestore'){ restoreDriver(e.target.dataset.k); return; }
   if(e.target.dataset.action==='avblock'){ if(isAdmin()) avSetBlock(+e.target.dataset.b); return; }
   if(e.target.dataset.action==='avprune'){ if(isAdmin()) pruneOldEvents(); return; }
   const pb=e.target.closest&&e.target.closest('[data-prefset]');
@@ -1908,7 +1994,7 @@ function releaseLock(name){
   }).catch(function(){});
 }
 let lastTrackIds=[], _saveT=null;
-function serializePlan(){ return {drivers:state.drivers,w:state.w,proPct:state.proPct,teams:state.teams,stint:state.stint,stintAssign:state.stintAssign,stintWin:state.stintWin,stintSig:state.stintSig,overrides:overrides,meta:IMPORT_META,winStart:WIN_START_MS,startOffsets:START_OFFSETS,startLabels:START_LABELS,matches:lastMatches,trackIds:lastTrackIds,evsel:state.evsel,evWinMin:EV_WIN_MIN,evTiming:state.evTiming,teamsLocked:state.teamsLocked,stintsLocked:state.stintsLocked,teamNames:state.teamNames,fuelCfg:state.fuelCfg,customEvents:state.customEvents,irEvents:state.irEvents,evWeather:state.evWeather,swapNote:state.swapNote}; }
+function serializePlan(){ return {drivers:state.drivers,w:state.w,proPct:state.proPct,teams:state.teams,stint:state.stint,stintAssign:state.stintAssign,stintWin:state.stintWin,stintSig:state.stintSig,overrides:overrides,meta:IMPORT_META,winStart:WIN_START_MS,startOffsets:START_OFFSETS,startLabels:START_LABELS,matches:lastMatches,trackIds:lastTrackIds,evsel:state.evsel,evWinMin:EV_WIN_MIN,evTiming:state.evTiming,teamsLocked:state.teamsLocked,stintsLocked:state.stintsLocked,teamNames:state.teamNames,fuelCfg:state.fuelCfg,customEvents:state.customEvents,irEvents:state.irEvents,evWeather:state.evWeather,swapNote:state.swapNote,excluded:state.excluded}; }
 var _postBusy=false, _postAgain=false;
 function _flushPlan(){
   if(_postBusy){ _postAgain=true; return; }              // serialize: the retry below re-posts the LATEST state with the updated rev
@@ -1945,7 +2031,11 @@ function _adoptPlan(p, keepEvsel){
   if(p.overrides)overrides=p.overrides; if(p.meta)IMPORT_META=p.meta; if(p.winStart)WIN_START_MS=p.winStart;
   if(p.startOffsets&&Object.keys(p.startOffsets).length)START_OFFSETS=p.startOffsets; if(p.startLabels&&Object.keys(p.startLabels).length)START_LABELS=p.startLabels;
   if(p.evsel)state.evsel=p.evsel; if(p.evWinMin)EV_WIN_MIN=p.evWinMin; if(p.evTiming)state.evTiming=p.evTiming; state.teamsLocked=!!p.teamsLocked; state.stintsLocked=!!p.stintsLocked;
-  state.teamNames=p.teamNames||{}; if(p.fuelCfg)state.fuelCfg=p.fuelCfg; state.customEvents=p.customEvents||[]; state.irEvents=p.irEvents||[]; state.evWeather=p.evWeather||{}; state.swapNote=p.swapNote||'';
+  state.teamNames=p.teamNames||{}; if(p.fuelCfg)state.fuelCfg=p.fuelCfg; state.customEvents=p.customEvents||[]; state.irEvents=p.irEvents||[]; state.evWeather=p.evWeather||{}; state.swapNote=p.swapNote||''; state.excluded=p.excluded||{};
+  /* a plan saved before the name-suffix fix still holds both spellings of one driver, and
+     this restores state.drivers verbatim — collapse them here or the duplicate survives
+     every reload until somebody happens to run an import */
+  dedupeDrivers();
   /* Race preferences live in edr_tb_prefs, written by the drivers themselves through /avail.
      The plan used to carry a second copy, which meant an admin autosave could ship a stale
      snapshot of everyone's preferences; /avail happened to be applied afterwards so it never
@@ -2115,12 +2205,14 @@ function applyImport(payload){
   var drivers=[], id=1;
   var prevByKey={}; (state.drivers||[]).forEach(function(d){ prevByKey[nameKey(d.name)]=d; });   // keep admin-locked car choices across G61 imports
   (payload.roster||[]).forEach(function(r){
+    if(isExcluded(r.name)) return;   // removed by an admin: Garage 61 must not put them back
     var prev=prevByKey[nameKey(r.name)];
     var locked=!!(prev&&prev.carLock);
     var keep=(locked&&prev.assignedCar&&r.cars&&r.cars[prev.assignedCar])?prev.assignedCar:null;
     drivers.push({id:id++, name:r.name, cars:r.cars, assignedCar:keep||lastCar(r.cars), avail:null, irating:(typeof r.irating==='number'?r.irating:(prev?prev.irating:null)), carLock:locked});
   });
   state.drivers=drivers; state.stintAssign={}; state.stintSig=''; state.stintWin={};
+  dedupeDrivers();
   applyAvailToDrivers();  // in-house per-event availability is the single source of truth
   generate(); save();
 }
