@@ -2,7 +2,7 @@
 /**
  * Plugin Name: EDR Team Builder
  * Description: Endurotech Racing endurance team + stint planner. Pulls Garage 61 pace and official iRacing session times, collects driver availability in-house, and builds Pro/Casual teams and stint rotations. Add the [edr_team_builder] shortcode to a page.
- * Version: 2.4.13
+ * Version: 2.4.14
  * Author: Endurotech Racing
  * License: GPL-2.0-or-later
  */
@@ -11,7 +11,7 @@ if (!defined('ABSPATH')) exit; // no direct access
 
 define('EDR_TB_DIR', plugin_dir_path(__FILE__));
 define('EDR_TB_URL', plugin_dir_url(__FILE__));
-define('EDR_TB_VER', '2.4.13');
+define('EDR_TB_VER', '2.4.14');
 
 require_once EDR_TB_DIR . 'includes/garage61.php';
 require_once EDR_TB_DIR . 'includes/iracing.php';
@@ -233,7 +233,7 @@ function edr_tb_rest_roster(WP_REST_Request $req) {
     // one refresh per 10 minutes so mistyped IDs can't hammer Garage 61)
     $lookup = preg_replace('/\D/', '', (string) $req->get_param('lookup'));
     if ($lookup !== '') {
-        $cache = get_transient('edr_tb_roster2');
+        $cache = get_transient('edr_tb_roster3');
         if (is_array($cache) && isset($cache['ids'][$lookup])) {
             return rest_ensure_response(array('name' => $cache['ids'][$lookup]));
         }
@@ -241,7 +241,7 @@ function edr_tb_rest_roster(WP_REST_Request $req) {
             set_transient('edr_tb_roster_recheck', 1, 10 * MINUTE_IN_SECONDS);
             $members = edr_g61_all_members($s['g61_token']);
             if (!is_wp_error($members)) {
-                set_transient('edr_tb_roster2', $members, 6 * HOUR_IN_SECONDS);
+                set_transient('edr_tb_roster3', $members, 6 * HOUR_IN_SECONDS);
                 $cache = $members;
             }
         }
@@ -250,12 +250,12 @@ function edr_tb_rest_roster(WP_REST_Request $req) {
 
     $fresh = $req->get_param('fresh') && edr_tb_req_can_edit($req);
     if (!$fresh) {
-        $cache = get_transient('edr_tb_roster2');   // new key: shape changed to {names, ids} in 2.4.7
+        $cache = get_transient('edr_tb_roster3');   // key bumped in 2.4.14: names are now de-duplicated, so a cached roster must not survive the upgrade
         if ($cache) return rest_ensure_response($cache);
     }
     $members = edr_g61_all_members($s['g61_token']);
     if (is_wp_error($members)) return $members;
-    set_transient('edr_tb_roster2', $members, 6 * HOUR_IN_SECONDS);
+    set_transient('edr_tb_roster3', $members, 6 * HOUR_IN_SECONDS);
     return rest_ensure_response($members);
 }
 

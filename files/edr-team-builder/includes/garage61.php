@@ -38,15 +38,55 @@ function edr_g61_get_json($path, $token) {
     return json_decode(wp_remote_retrieve_body($res), true);
 }
 
+/**
+ * iRacing appends a number to a display name when it collides with an existing one, so the
+ * same human reaches us as both "Sam Millar" (from firstName+lastName) and "Sam Millar2"
+ * (from the raw `name` field). Keyed by name, that is two drivers.
+ *
+ * Only strip when a letter immediately precedes the digits, so a name that legitimately ends
+ * in a number is left alone.
+ */
+function edr_g61_strip_ir_suffix($n) {
+    $out = preg_replace('/(?<=\p{L})\d{1,3}$/u', '', trim((string) $n));
+    return ($out === null || $out === '') ? trim((string) $n) : $out;
+}
+
+/** Display name for a member record, plus whether it came from the real profile fields. */
+function edr_g61_person_name($m) {
+    $first = isset($m['firstName']) ? trim((string) $m['firstName']) : '';
+    $last  = isset($m['lastName'])  ? trim((string) $m['lastName'])  : '';
+    if ($first !== '' || $last !== '') return array(trim($first . ' ' . $last), true);
+    $raw = '';
+    if (!empty($m['name'])) {
+        $raw = (string) $m['name'];
+    } elseif (!empty($m['driver']) && is_array($m['driver']) && !empty($m['driver']['name'])) {
+        $raw = (string) $m['driver']['name'];
+    }
+    return array(edr_g61_strip_ir_suffix($raw), false);
+}
+
+/** The member's iRacing customer ID — the only stable identity Garage 61 gives us. */
+function edr_g61_cust_id($m) {
+    foreach ((isset($m['accounts']) && is_array($m['accounts'])) ? $m['accounts'] : array() as $ac) {
+        if (is_array($ac) && (($ac['platform'] ?? '') === 'iracing') && !empty($ac['id'])) {
+            return (string) preg_replace('/\D/', '', (string) $ac['id']);
+        }
+    }
+    return '';
+}
+
 /* Unique member display names across EVERY Garage 61 team the token's account belongs to
    (all the EDR teams). Member shape varies a little between endpoints, so probe the
-   common keys defensively. */
+   common keys defensively. Collapsed on iRacing customer ID first, name second: a driver in
+   both EDR teams can have a full profile on one and a bare name on the other. */
 function edr_g61_all_members($token) {
     $teams = edr_g61_get_json('/teams', $token);
     if (is_wp_error($teams)) return $teams;
     $list = isset($teams['items']) && is_array($teams['items']) ? $teams['items'] : (is_array($teams) ? $teams : array());
     $names = array();
     $ids   = array();
+    $byId  = array();   // iRacing customer ID => best name seen for that person
+    $loose = array();   // members with no iRacing account on the record
     foreach ($list as $t) {
         if (!is_array($t) || empty($t['slug'])) continue;
         $detail = edr_g61_get_json('/teams/' . rawurlencode($t['slug']), $token);
@@ -57,24 +97,27 @@ function edr_g61_all_members($token) {
         }
         foreach ($members as $m) {
             if (!is_array($m)) continue;
-            $n = '';
-            if (!empty($m['firstName']) || !empty($m['lastName'])) {
-                $n = trim((isset($m['firstName']) ? $m['firstName'] : '') . ' ' . (isset($m['lastName']) ? $m['lastName'] : ''));
-            } elseif (!empty($m['name'])) {
-                $n = $m['name'];
-            } elseif (!empty($m['driver']) && is_array($m['driver']) && !empty($m['driver']['name'])) {
-                $n = $m['driver']['name'];
-            }
+            list($n, $strong) = edr_g61_person_name($m);
             if ($n === '') continue;
-            $names[$n] = true;
-            // iRacing customer IDs let drivers self-identify by number instead of picking a name
-            foreach ((isset($m['accounts']) && is_array($m['accounts'])) ? $m['accounts'] : array() as $ac) {
-                if (is_array($ac) && (($ac['platform'] ?? '') === 'iracing') && !empty($ac['id'])) {
-                    $ids[(string) preg_replace('/\D/', '', (string) $ac['id'])] = $n;
+            $cid = edr_g61_cust_id($m);
+            if ($cid !== '') {
+                // same person seen twice: keep the name off the real profile fields
+                if (!isset($byId[$cid]) || ($strong && empty($byId[$cid]['strong']))) {
+                    $byId[$cid] = array('name' => $n, 'strong' => $strong);
                 }
+            } else {
+                $loose[$n] = true;   // no iRacing account on the record; name is all we have
             }
         }
     }
+    foreach ($byId as $cid => $v) {
+        $names[$v['name']] = true;
+        $ids[$cid] = $v['name'];   // customer ID -> the one canonical name
+    }
+    // suffix-stripping above means "Sam Millar2" already reduced to "Sam Millar", so an
+    // accountless duplicate collapses onto the real entry here rather than adding a driver
+    foreach (array_keys($loose) as $n) { $names[$n] = true; }
+
     $out = array_keys($names);
     sort($out, SORT_NATURAL | SORT_FLAG_CASE);
     return array('names' => $out, 'ids' => $ids);
@@ -173,7 +216,9 @@ function edr_g61_roster($token, $trackIds, $teamSlug) {
         // field is usually empty, and when set it is the raw iRacing name with a digit
         // suffix ("Sam Millar2") that never matches the roster
         $name = trim((isset($drv['firstName']) ? $drv['firstName'] : '') . ' ' . (isset($drv['lastName']) ? $drv['lastName'] : ''));
-        if ($name === '') $name = !empty($drv['name']) ? $drv['name'] : (!empty($drv['slug']) ? $drv['slug'] : 'Unknown');
+        // same suffix problem on the laps side: without stripping it, one driver's laps split
+        // across "Sam Millar" and "Sam Millar2" and each half looks like a part-time driver
+        if ($name === '') $name = !empty($drv['name']) ? edr_g61_strip_ir_suffix($drv['name']) : (!empty($drv['slug']) ? $drv['slug'] : 'Unknown');
         $car  = isset($lap['car']) && !empty($lap['car']['name']) ? $lap['car']['name'] : 'Unknown car';
         if (!isset($bucket[$name])) $bucket[$name] = array();
         if (!isset($bucket[$name][$car])) $bucket[$name][$car] = array('clean' => array(), 'total' => 0, 'last' => '');
