@@ -40,6 +40,24 @@ jobs:
             exit 1
           fi
 
+      # Cheap and always worth doing: two Garage 61 calls that record this week's iRating and
+      # safety rating. The week-on-week movement in the recap is a diff of two of these, so the
+      # snapshot has to happen every week whether or not anybody opens the tab. Runs before the
+      # results sweep because it is the part the ratings awards actually depend on.
+      - name: Snapshot this week's ratings
+        env:
+          SITE: ${{ secrets.EDR_SITE_URL }}
+          PASS: ${{ secrets.EDR_ADMIN_PASS }}
+        run: |
+          api="${SITE%/}/wp-json/edr/v1"
+          code=$(curl -sS -o /tmp/ratings.json -w '%{http_code}' -X POST "$api/ratings" \
+            -H 'Content-Type: application/json' -H "X-EDR-Pass: $PASS" -d '{}')
+          echo "ratings -> HTTP $code"; cat /tmp/ratings.json; echo
+          if [ "$code" != "200" ]; then
+            # not fatal: a missed snapshot costs one week of movement, not the whole post
+            echo "::warning::Ratings snapshot failed; the recap will fall back to whatever movement is stored."
+          fi
+
       # The results sweep is a search per driver plus a fetch per race against a rate-limited
       # proxy, so it is kicked off and polled rather than waited on synchronously.
       - name: Refresh last week's results
