@@ -1,0 +1,84 @@
+name: Weekly update to Discord
+
+# Posts the weekly write-up into the Discord drafting channel every Sunday at 5pm Brisbane.
+#
+# GitHub's cron is UTC and Brisbane is UTC+10 with no daylight saving, so 07:00 UTC is 17:00
+# Brisbane all year round — no seasonal drift to correct for.
+#
+# This runs here rather than on WP-Cron deliberately: WP-Cron only fires when somebody visits
+# the site, and the builder page is private and quiet, so a "Sunday 5pm" job there would
+# realistically fire whenever the next admin happened to log in.
+
+on:
+  schedule:
+    - cron: '0 7 * * 0'      # Sunday 07:00 UTC = Sunday 17:00 Brisbane
+  workflow_dispatch:          # and a manual button for testing
+    inputs:
+      skip_recap:
+        description: 'Skip the results sweep and post the stored draft as-is'
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: weekly-update        # never let two runs post at once
+  cancel-in-progress: false
+
+jobs:
+  post:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check the secrets are present
+        env:
+          SITE: ${{ secrets.EDR_SITE_URL }}
+          PASS: ${{ secrets.EDR_ADMIN_PASS }}
+        run: |
+          if [ -z "$SITE" ] || [ -z "$PASS" ]; then
+            echo "::error::EDR_SITE_URL and EDR_ADMIN_PASS repository secrets are both required."
+            exit 1
+          fi
+
+      # The results sweep is a search per driver plus a fetch per race against a rate-limited
+      # proxy, so it is kicked off and polled rather than waited on synchronously.
+      - name: Refresh last week's results
+        if: ${{ !inputs.skip_recap }}
+        env:
+          SITE: ${{ secrets.EDR_SITE_URL }}
+          PASS: ${{ secrets.EDR_ADMIN_PASS }}
+        run: |
+          api="${SITE%/}/wp-json/edr/v1"
+          code=$(curl -sS -o /tmp/recap.json -w '%{http_code}' -X POST "$api/recap/refresh" \
+            -H 'Content-Type: application/json' -H "X-EDR-Pass: $PASS" -d '{}')
+          echo "refresh -> HTTP $code"; cat /tmp/recap.json; echo
+          if [ "$code" != "200" ]; then
+            echo "::warning::Could not start the results sweep; posting with whatever recap is cached."
+            exit 0
+          fi
+          # poll until the sweep finishes, up to ~10 minutes
+          for i in $(seq 1 60); do
+            sleep 10
+            running=$(curl -sS "$api/recap" -H "X-EDR-Pass: $PASS" | grep -o '"running":[a-z]*' | head -1)
+            echo "  [$i] $running"
+            case "$running" in *false*) echo "sweep finished"; exit 0 ;; esac
+          done
+          echo "::warning::Results sweep still running after 10 minutes; posting anyway."
+
+      - name: Post the weekly update to Discord
+        env:
+          SITE: ${{ secrets.EDR_SITE_URL }}
+          PASS: ${{ secrets.EDR_ADMIN_PASS }}
+        run: |
+          api="${SITE%/}/wp-json/edr/v1"
+          code=$(curl -sS -o /tmp/post.json -w '%{http_code}' -X POST "$api/weekly/post" \
+            -H 'Content-Type: application/json' -H "X-EDR-Pass: $PASS" -d '{}')
+          echo "post -> HTTP $code"; cat /tmp/post.json; echo
+          if [ "$code" != "200" ]; then
+            # a stale or missing draft is a 409 and is the expected "nobody generated it" case,
+            # so say what to do rather than just failing red
+            if grep -q 'stale_draft\|no_draft' /tmp/post.json; then
+              echo "::error::No current draft stored. Open the Weekly tab, hit Generate, then re-run this workflow."
+            fi
+            exit 1
+          fi
