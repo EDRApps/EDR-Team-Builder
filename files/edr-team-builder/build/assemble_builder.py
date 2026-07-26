@@ -368,7 +368,11 @@ function syncIrEvents(){  // F1: pull whatever endurance events the proxy expose
       if(claimed.indexOf(se)>=0){ have++; return; }
       var dur=se.race_min?Math.max(1,Math.round(se.race_min/60)):6;
       var isEnd=/endur|24|12\s*h|le mans|petit|creventic|global endurance|imsa|nurburg|bathurst|sebring|spa|daytona|suzuka|road america/i.test(se.name);
-      var ev={n:se.name, track:se.track||'', s:se.start_date, e:se.start_date, cars:'GT3', cat:isEnd?'endurance':'other', dur:dur, special:isEnd, src:'iracing', raceMin:se.race_min||0};
+      /* cars used to be hardcoded 'GT3' here, which is why every synced event in the weekly
+         write-up claimed to be a GT3 race. Use the season's real classes, and leave it blank
+         rather than guessing when the API did not give us any. */
+      var evCars=(se.cars&&se.cars.length)?se.cars.join(' // '):'';
+      var ev={n:prettySeriesName(se.name), track:se.track||'', s:se.start_date, e:se.start_date, cars:evCars, cat:isEnd?'endurance':'other', dur:dur, special:isEnd, src:'iracing', raceMin:se.race_min||0};
       if(existing[evKey(ev)]){ have++; return; }
       fresh.push(ev); if(se.weather) applyIrWeather(ev, se); added++;
     });
