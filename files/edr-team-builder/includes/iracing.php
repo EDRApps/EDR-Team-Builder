@@ -63,7 +63,14 @@ function edr_ir_track_label($tr) {
     return trim($name . ' ' . $cfg);
 }
 
-function edr_ir_car_classes($base, $key) {
+/**
+ * car_class_id => display name, plus (by reference) each class's member car ids.
+ *
+ * $members is what lets a week's raw car list be named as a class: schedules[].race_week_cars
+ * gives car ids only, and "GT3" reads better than the nine cars inside it.
+ */
+function edr_ir_car_classes($base, $key, &$members = null) {
+    $members = array();
     $data = edr_ir_get($base, $key, '/data/carclass/get');
     if (is_wp_error($data) || !is_array($data)) return array();
     $rows = isset($data['car_classes']) && is_array($data['car_classes']) ? $data['car_classes'] : $data;
@@ -75,7 +82,16 @@ function edr_ir_car_classes($base, $key) {
         foreach (array('short_name', 'name') as $k) {
             if (!empty($c[$k])) { $n = trim((string) $c[$k]); break; }
         }
-        if ($n !== '') $map[(string) intval($c['car_class_id'])] = $n;
+        if ($n === '') continue;
+        $k = (string) intval($c['car_class_id']);
+        $map[$k] = $n;
+        $ids = array();
+        foreach ((isset($c['cars_in_class']) && is_array($c['cars_in_class'])) ? $c['cars_in_class'] : array() as $cic) {
+            if (is_array($cic) && isset($cic['car_id'])) $ids[] = intval($cic['car_id']);
+        }
+        $ids = array_values(array_unique($ids));
+        sort($ids);
+        if ($ids) $members[$k] = $ids;
     }
     return $map;
 }
@@ -95,6 +111,74 @@ function edr_ir_season_cars($s, $classes) {
         }
     }
     return $out;
+}
+
+/**
+ * The cars actually running in one scheduled week.
+ *
+ * `schedules[].race_week_cars` is the per-week authority and the only field that moves in a
+ * rotating-car series. Reading only the season-level `car_class_ids` is what made Ring Meister
+ * announce the same car every week of the season: that list is every car the season may use,
+ * not this week's. Same field iracing-week-planner scrapes.
+ *
+ * Naming: prefer class names, because "GT3" beats the nine cars inside it. Take the season's
+ * own classes that sit wholly inside the week's car list, largest first, and only trust the
+ * result if between them they account for every car — otherwise the week is a rotation slice
+ * rather than a class, and the car's own name is the honest answer.
+ *
+ * Returns array($names, $perWeek). $perWeek false means the names are the season-wide fallback
+ * and the caller must not present them as this week's car.
+ */
+function edr_ir_week_cars($wk, $seasonIds, $seasonCars, $classes, $members) {
+    $ids = array(); $names = array();
+    foreach ((isset($wk['race_week_cars']) && is_array($wk['race_week_cars'])) ? $wk['race_week_cars'] : array() as $c) {
+        if (!is_array($c)) continue;
+        if (isset($c['car_id'])) $ids[] = intval($c['car_id']);
+        foreach (array('car_name_abbreviated', 'car_name', 'name') as $k) {
+            if (!empty($c[$k])) {
+                $n = trim((string) $c[$k]);
+                if ($n !== '' && !in_array($n, $names, true)) $names[] = $n;
+                break;
+            }
+        }
+    }
+
+    if ($ids) {
+        $want = array_values(array_unique($ids));
+        sort($want);
+        // candidate classes: the season's own, restricted to those fully present this week
+        $cand = array();
+        foreach ($seasonIds as $cid) {
+            $k = (string) intval($cid);
+            if (!isset($members[$k]) || !isset($classes[$k])) continue;
+            if (array_diff($members[$k], $want)) continue;
+            $cand[] = array('name' => $classes[$k], 'ids' => $members[$k]);
+        }
+        usort($cand, function ($a, $b) { return count($b['ids']) - count($a['ids']); });
+        $out = array(); $covered = array();
+        foreach ($cand as $cl) {
+            // a single-make class inside a class we have already named adds nothing to read
+            if (!array_diff($cl['ids'], $covered)) continue;
+            if (!in_array($cl['name'], $out, true)) $out[] = $cl['name'];
+            $covered = array_values(array_unique(array_merge($covered, $cl['ids'])));
+        }
+        sort($covered);
+        if ($out && $covered === $want) return array($out, true);
+    }
+
+    if ($names) return array($names, true);
+
+    /* car_restrictions predates race_week_cars and still narrows some weeks by class. */
+    $restrict = array();
+    foreach ((isset($wk['car_restrictions']) && is_array($wk['car_restrictions'])) ? $wk['car_restrictions'] : array() as $cr) {
+        if (is_array($cr) && !empty($cr['car_class_id'])) {
+            $k = (string) intval($cr['car_class_id']);
+            if (isset($classes[$k]) && !in_array($classes[$k], $restrict, true)) $restrict[] = $classes[$k];
+        }
+    }
+    if ($restrict) return array($restrict, true);
+
+    return array($seasonCars, false);
 }
 
 
@@ -117,13 +201,14 @@ function edr_ir_abs_time($raw, $day) {
     return ($t === false) ? '' : gmdate('Y-m-d\TH:i:s\Z', $t);
 }
 
-function edr_ir_weeks_from($data, $from_ts, $to_ts, $classes = array()) {
+function edr_ir_weeks_from($data, $from_ts, $to_ts, $classes = array(), $members = array()) {
     if (!is_array($data)) return array();
     $out = array();
     foreach ($data as $s) {
         if (empty($s['official'])) continue;
         $name = isset($s['season_name']) ? $s['season_name'] : '';
         $cars = edr_ir_season_cars($s, $classes);
+        $seasonIds = (isset($s['car_class_ids']) && is_array($s['car_class_ids'])) ? $s['car_class_ids'] : array();
         $scheds = isset($s['schedules']) && is_array($s['schedules']) ? $s['schedules'] : array();
         $rounds = count($scheds);   // recurring series vs one-off special
         // a team event is worth calling out whatever its length — this is the API's own flag
@@ -156,36 +241,44 @@ function edr_ir_weeks_from($data, $from_ts, $to_ts, $classes = array()) {
                week's start_date. Probing only for a full datetime found nothing, so every
                sprint came back with no pattern at all. Probe the known spellings of both and
                keep the raw values so the tab can say what actually arrived. */
+            /* One descriptor decides the whole pattern. Reading each field from whichever
+               descriptor happened to carry it first could describe a schedule that exists in
+               none of them — a repeat interval from the weekday entry with a first start from
+               the weekend one. Descriptor [0] is the pattern (iracing-week-planner reads only
+               that); look past it only when [0] carries neither shape. */
             $times = array(); $repeat = 0; $first = ''; $rawFirst = '';
+            $pick = null;
             foreach ((isset($wk['race_time_descriptors']) && is_array($wk['race_time_descriptors'])) ? $wk['race_time_descriptors'] : array() as $d) {
                 if (!is_array($d)) continue;
-                if (!$times && !empty($d['session_times']) && is_array($d['session_times'])) $times = $d['session_times'];
+                if ($pick === null) $pick = $d;
+                $usable = (!empty($d['session_times']) && is_array($d['session_times']))
+                       || !empty($d['repeat_minutes']) || !empty($d['repeatMinutes']) || !empty($d['repeat_mins']);
+                if ($usable) { $pick = $d; break; }
+            }
+            if (is_array($pick)) {
+                if (!empty($pick['session_times']) && is_array($pick['session_times'])) $times = $pick['session_times'];
                 foreach (array('repeat_minutes', 'repeatMinutes', 'repeat_mins') as $rk) {
-                    if (!$repeat && !empty($d[$rk])) { $repeat = intval($d[$rk]); break; }
+                    if (!empty($pick[$rk])) { $repeat = intval($pick[$rk]); break; }
                 }
                 foreach (array('first_session_time', 'firstSessionTime', 'start_time', 'startTime') as $fk) {
-                    if ($rawFirst === '' && !empty($d[$fk])) { $rawFirst = (string) $d[$fk]; break; }
+                    if (!empty($pick[$fk])) { $rawFirst = (string) $pick[$fk]; break; }
                 }
             }
             if ($rawFirst === '' && $times) $rawFirst = (string) $times[0];
             $first = edr_ir_abs_time($rawFirst, isset($wk['start_date']) ? (string) $wk['start_date'] : '');
-            /* a multi-class week can restrict which classes actually run — prefer that over
-               the season-wide list so a GT3-only week does not get announced as GTP too */
-            $wkCars = $cars;
-            $restrict = array();
-            foreach ((isset($wk['car_restrictions']) && is_array($wk['car_restrictions'])) ? $wk['car_restrictions'] : array() as $cr) {
-                if (is_array($cr) && !empty($cr['car_class_id'])) {
-                    $k = (string) intval($cr['car_class_id']);
-                    if (isset($classes[$k]) && !in_array($classes[$k], $restrict, true)) $restrict[] = $classes[$k];
-                }
-            }
-            if ($restrict) $wkCars = $restrict;
+            /* this week's cars, not the season's — see edr_ir_week_cars() */
+            list($wkCars, $perWeekCars) = edr_ir_week_cars($wk, $seasonIds, $cars, $classes, $members);
 
             $out[] = array(
                 'series'     => $name,
                 'track'      => edr_ir_track_label($tr),
                 'start_date' => isset($wk['start_date']) ? $wk['start_date'] : '',
                 'race_min'   => isset($wk['race_time_limit']) ? intval($wk['race_time_limit']) : 0,
+                // most ovals, the cup cars and Ring Meister are lap-limited, so the honest
+                // length is a lap count — reading only race_time_limit dropped it entirely
+                'race_laps'  => isset($wk['race_lap_limit']) ? intval($wk['race_lap_limit']) : 0,
+                'week_num'   => isset($wk['race_week_num']) ? intval($wk['race_week_num']) : -1,
+                'carsWeek'   => (bool) $perWeekCars,
                 'sessions'   => array_values($times),
                 'repeat'     => $repeat,
                 'first'      => $first,
@@ -205,10 +298,11 @@ function edr_ir_all($base, $key, $from_ts, $to_ts) {
     $data = edr_ir_get($base, $key, '/data/series/seasons?include_series=1');
     if (is_wp_error($data)) return $data;
     // second call, but the whole /iracing response is cached 12h so it is one lookup a day
-    $classes = edr_ir_car_classes($base, $key);
+    $members = array();
+    $classes = edr_ir_car_classes($base, $key, $members);
     return array(
         'seasons' => edr_ir_seasons_from($data, $classes),
-        'weeks'   => edr_ir_weeks_from($data, $from_ts, $to_ts, $classes),
+        'weeks'   => edr_ir_weeks_from($data, $from_ts, $to_ts, $classes, $members),
     );
 }
 

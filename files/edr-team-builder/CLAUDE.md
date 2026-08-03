@@ -128,6 +128,28 @@ Generates a pasteable "This week in iRacing" draft. Hidden from drivers by
 - **The Weekly tab chooses which race week** — `state.weekly.scope`, `'next'` (default) or
   `'this'`. `refreshRecap()` sends the matching recap window, so both halves of one draft always
   describe the same pair of weeks.
+- **The car for a round comes from `schedules[].race_week_cars`, never from the season.**
+  Season-level `car_class_ids` is every car the *season* may use, so for a rotating-car series it
+  never moves — reading only that made Ring Meister announce the same car every week of the
+  season, matching the current week by coincidence and every other week by accident. The per-week
+  array carries `car_id` + `car_name_abbreviated`. `edr_ir_week_cars()` names it as a class where
+  it can (greedy largest-first cover over the season's own classes, so a GT3 week reads "GT3" and
+  not its nine cars, and a nested single-make class is not listed beside the class containing it),
+  otherwise falls back to the cars' own names. Order of authority: `race_week_cars` →
+  `car_restrictions` (older, by class) → season-wide list. Only the last is a guess, and it sets
+  `carsWeek:false`, which puts **"please confirm car"** in the draft and a panel on the tab
+  instead of stating a car as fact. Verified against `iracing-week-planner`, which reads the same
+  field (`build/api/getSeason.js`).
+- **Race length is `race_time_limit` *or* `race_lap_limit`.** Lap-limited rounds — Ring Meister,
+  both cup cars, most ovals — carry no time limit at all, so reading only the minutes dropped the
+  length silently and made an hourly Nordschleife round look implausible when "2 laps" was there
+  all along. `fmtRaceDist()` prefers minutes and falls back to laps.
+- **One `race_time_descriptor` decides the whole pattern.** Taking each field from whichever
+  descriptor first carried it can describe a schedule that exists in none of them: a fixed
+  6-hour enduro inheriting `repeat_minutes` and a 4am start from the sibling descriptor. Read
+  descriptor `[0]` (as the reference planner does) and look past it only when `[0]` carries
+  neither `session_times` nor a repeat. A round with an interval but no start now honestly
+  reports no start time — the tab's "No start time for N series" panel is where that shows up.
 - **`weeks` is deliberately separate from `seasons`.** `edr_ir_seasons()` only emits weeks that
   carry `session_times`, because `irMatchFor()` scores across it; feed it every schedule week
   and it can settle on a sessionless one, at which point `applyIrTiming()` bails and the
