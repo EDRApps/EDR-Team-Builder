@@ -1335,7 +1335,15 @@ function renderWeekly(){
       +((typeof HIST_RUNNING!=='undefined'&&HIST_RUNNING)?'Pulling team history…':'Pull team history')+'</button>'
     +'<span class="meta" style="font-size:10.5px;color:'+((typeof HIST_ERR!=='undefined'&&HIST_ERR)?'var(--red)':'var(--dim)')+'">'+esc(histAgeLabel())+'</span>'
     +'</div>';
-  if(RATINGS&&RATINGS.ready) h+='<div class="meta" style="font-size:10.5px">Ratings movement '+esc(RATINGS.from)+' → '+esc(RATINGS.to)+', '+((RATINGS.movers||[]).length)+' driver(s) moved. This is what the iRating and safety rating awards use.</div>';
+  if(RATINGS&&RATINGS.ready){
+    h+='<div class="meta" style="font-size:10.5px">Ratings movement '+esc(RATINGS.from)+' → '+esc(RATINGS.to)+', '+((RATINGS.movers||[]).length)+' driver(s) moved. This is what the iRating and safety rating awards use.</div>';
+    /* Diagnostic: says whether a low mover count is coverage (few matched / few with a sports-car
+       rating) or genuinely quiet (many matched, nearly all unchanged). Only sports-car iRating is
+       snapshotted, so a driver who did not race that category shows no movement. */
+    if(RATINGS.diag){ const d=RATINGS.diag;
+      h+='<div class="meta" style="font-size:10px;color:var(--dim)">Snapshots: '+d.prevDrivers+' → '+d.currDrivers+' drivers, '+d.matched+' in both; '+d.currRated+' with a sports-car rating; '+d.zeroDelta+' unchanged. Only sports-car iRating/SR is tracked — anyone who did not race that category this week shows no movement.</div>';
+    }
+  }
   else if(RATINGS) h+='<div class="meta" style="font-size:10.5px">Ratings: '+((RATINGS.have||0))+' snapshot(s) stored — a second week is needed before movement can be shown.</div>';
   h+='</div>';
 

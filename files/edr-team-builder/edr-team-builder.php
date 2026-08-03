@@ -2,7 +2,7 @@
 /**
  * Plugin Name: EDR Team Builder
  * Description: Endurotech Racing endurance team + stint planner. Pulls Garage 61 pace and official iRacing session times, collects driver availability in-house, and builds Pro/Casual teams and stint rotations. Add the [edr_team_builder] shortcode to a page.
- * Version: 2.4.27
+ * Version: 2.4.28
  * Author: Endurotech Racing
  * License: GPL-2.0-or-later
  */
@@ -11,7 +11,7 @@ if (!defined('ABSPATH')) exit; // no direct access
 
 define('EDR_TB_DIR', plugin_dir_path(__FILE__));
 define('EDR_TB_URL', plugin_dir_url(__FILE__));
-define('EDR_TB_VER', '2.4.27');
+define('EDR_TB_VER', '2.4.28');
 
 require_once EDR_TB_DIR . 'includes/garage61.php';
 require_once EDR_TB_DIR . 'includes/iracing.php';
@@ -488,12 +488,16 @@ function edr_tb_rating_movement() {
     $prev = $snaps[$keys[count($keys) - 2]];
     $curr = $snaps[$keys[count($keys) - 1]];
     $movers = array();
+    $matched = 0; $zeroDelta = 0; $curRated = 0; $prevRated = 0;
+    foreach ((array) $prev['r'] as $p) { if (intval($p['ir']) > 0) $prevRated++; }
     foreach ((array) $curr['r'] as $k => $c) {
+        if (intval($c['ir']) > 0) $curRated++;
         if (!isset($prev['r'][$k])) continue;          // joined since the last snapshot
+        $matched++;
         $p = $prev['r'][$k];
         $dIr = intval($c['ir']) - intval($p['ir']);
         $dSr = round(floatval($c['sr']) - floatval($p['sr']), 2);
-        if ($dIr === 0 && abs($dSr) < 0.01) continue;  // nothing moved
+        if ($dIr === 0 && abs($dSr) < 0.01) { $zeroDelta++; continue; }  // nothing moved
         $movers[] = array(
             'name' => $c['name'], 'irDelta' => $dIr, 'irEnd' => intval($c['ir']),
             'srDelta' => $dSr, 'srStart' => floatval($p['sr']), 'srEnd' => floatval($c['sr']),
@@ -501,7 +505,24 @@ function edr_tb_rating_movement() {
         );
     }
     usort($movers, function ($a, $b) { return $b['irDelta'] - $a['irDelta']; });
-    return array('ready' => true, 'from' => $keys[count($keys) - 2], 'to' => $keys[count($keys) - 1], 'movers' => $movers);
+    return array(
+        'ready'  => true,
+        'from'   => $keys[count($keys) - 2],
+        'to'     => $keys[count($keys) - 1],
+        'movers' => $movers,
+        /* Why "N moved" can read low: only the sports_car category is snapshotted
+           (edr_g61_member_ratings_full), and a driver only moves if they raced it between the two
+           snapshots. These counts separate a coverage problem (few matched, or few with a rating
+           at all) from genuinely-quiet (many matched, nearly all zero-delta). */
+        'diag'   => array(
+            'prevDrivers' => count((array) $prev['r']),
+            'currDrivers' => count((array) $curr['r']),
+            'matched'     => $matched,
+            'prevRated'   => $prevRated,
+            'currRated'   => $curRated,
+            'zeroDelta'   => $zeroDelta,
+        ),
+    );
 }
 
 function edr_tb_rest_ratings(WP_REST_Request $req) {
