@@ -903,6 +903,7 @@ function weeklyFacts(){
     sprints.push({
       series:label, cat:seed?seed.cat:'', starts:seed?seed.st:0, who:who,
       cars:(r.cars&&r.cars.length)?r.cars:[],   // live car classes for the round, from iRacing
+      carsWeek:(r.carsWeek!==false), raceLaps:r.race_laps||0,
       track:r.track||'', raceMin:r.race_min||0, sessions:r.sessions||[],
       when:raceTimePattern(r), times:sessionTimeList(r,4), firstRaw:r.firstRaw||'', repeatRaw:r.repeat||0,
       matched:!!r.track, note:trackNoteFor(r.track), flare:driverNoteFor(who, usedDrivers),
@@ -936,6 +937,7 @@ function weeklyFacts(){
     if(specials.some(function(ev){ return sameRace(ev, r); })) return;   // already led with it above
     enduros.push({
       series:label, track:r.track||'', raceMin:r.race_min||0, cars:r.cars||[],
+      carsWeek:(r.carsWeek!==false), raceLaps:r.race_laps||0,
       when:raceTimePattern(r), times:sessionTimeList(r,6),
       recurring:(r.rounds||0)>3, note:trackNoteFor(r.track), startDate:r.start_date,
       team:isTeamSeries(label)
@@ -1103,6 +1105,14 @@ function fmtRaceLen(m){
   if(m>=90) return Math.floor(m/60)+'h '+(m%60)+'m';
   return m+' min';
 }
+/* Race length, from whichever limit the round actually has. Lap-limited rounds — Ring Meister,
+   both cup cars, most ovals — carry no race_time_limit at all, so reading only the minutes left
+   them looking like rounds of unknown length when the schedule had said "2 laps" all along. */
+function fmtRaceDist(min, laps){
+  if(min) return fmtRaceLen(min);
+  laps=laps||0;
+  return laps ? (laps+' lap'+(laps===1?'':'s')) : '';
+}
 function weeklyDraft(f){
   /* Markdown, because the draft is posted straight into Discord — which renders #/##
      headings, bold and block quotes — and still reads fine as plain text if it is pasted
@@ -1162,9 +1172,11 @@ function weeklyDraft(f){
   f.enduros.forEach(function(e){
     let line='**'+e.series+'** — '+(e.track||'track TBC');
     if(e.cars&&e.cars.length) line+=' · '+e.cars.join(' / ');
-    if(e.raceMin) line+=' · '+fmtRaceLen(e.raceMin);
+    const elen=fmtRaceDist(e.raceMin, e.raceLaps);
+    if(elen) line+=' · '+elen;
     if(e.team) line+=' · *team event*';
     L.push(line);
+    if(!e.carsWeek) L.push('-# Please confirm car for '+draftWeekWord()+' — the schedule did not name one for this round.');
     if(e.times)     L.push('-# Sessions: '+e.times);
     else if(e.when) L.push('-# Races '+e.when);
     if(e.note) L.push('> '+cap(e.note)+'.');
@@ -1187,11 +1199,13 @@ function weeklyDraft(f){
     if(s.cars&&s.cars.length===1) line+=' in the '+s.cars[0];
     const bits=[];
     if(multi) bits.push(s.cars.join(' / '));
-    if(s.raceMin) bits.push(fmtRaceLen(s.raceMin));
+    const slen=fmtRaceDist(s.raceMin, s.raceLaps);
+    if(slen) bits.push(slen);
     if(bits.length) line+=' ('+bits.join(', ')+')';
     if(s.when) line+=' — '+s.when;
     else if(s.times) line+=' — '+s.times;
     L.push(line);
+    if(!s.carsWeek) L.push('-# Please confirm car for '+draftWeekWord()+' — the schedule did not name one for this round.');
     if(s.note) L.push('> '+cap(s.note)+'.');
     if(s.flare) L.push('-# One for '+s.flare.name+' — '+s.flare.note+'.');
     L.push('');
@@ -1316,6 +1330,21 @@ function renderWeekly(){
       h+='<label style="cursor:default"><span>'+esc(x.series)
         +'<span class="st"> · first='+esc(x.firstRaw||'(none)')+' · repeat='+esc(String(x.repeatRaw||0))
         +' · sessions='+((x.sessions&&x.sessions.length)||0)+'</span></span></label>';
+    });
+    h+='</div></div>';
+  }
+
+  /* Rounds whose car came from the season-wide class list rather than the week's own
+     race_week_cars. For a rotating-car series that list never moves, so the draft would name
+     the same car every week of the season — say so here rather than let it read as fact. */
+  const noCar=(f.sprints||[]).concat(f.enduros||[]).filter(function(x){ return x.carsWeek===false; });
+  if(noCar.length){
+    h+='<div class="importbox"><div class="meta" style="text-transform:uppercase;letter-spacing:.04em;margin-bottom:2px">Car unconfirmed for '+noCar.length+' series</div>';
+    h+='<div class="meta" style="font-size:10.5px">The schedule named no car for these rounds, so the season-wide list is showing. Check the car before the draft goes out.</div>';
+    h+='<div class="wkser">';
+    noCar.slice(0,12).forEach(function(x){
+      h+='<label style="cursor:default"><span>'+esc(x.series)
+        +'<span class="st"> · showing '+esc((x.cars&&x.cars.length)?x.cars.join(' / '):'(nothing)')+'</span></span></label>';
     });
     h+='</div></div>';
   }
