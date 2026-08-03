@@ -513,34 +513,37 @@ function isAdmin(){ return state.role==='admin'; }
    that makes a series line land. Anything from the source profiles that reads as a dig at
    someone, or is nobody else's business, is not in here: this text gets pasted into a team
    channel. Admins can edit or clear any of it on the Weekly tab (state.weekly.driver). */
+/* Personality lines for the earned driver mentions, from the team's own profile brief. Only ever
+   shown for a driver the week's data actually ties to a round (see flareFor) — never dropped in
+   for no reason. Drivers without a line here fall back to their own record. Keys are the Garage 61
+   roster spellings (NAME_ALIASES maps survey/profile variants onto these). */
 const DRIVER_NOTES={
-  'Matthew Halden':'team organiser; still owes Blanchimont an apology',
-  'Chris Wilson':'co-leader; steady when it matters',
-  'Aden Lennox-Bradley':'the quick one; sarcasm is load-bearing',
-  'Jake Lennox-Bradley':'asks the question everyone else was thinking',
-  'Matt Blee':'social engine of the team; badly undersells his own pace',
-  'Dominic Bou-Samra':'meme department; posts his own crashes first',
-  'Laurent Masson':'apologises more than the stewards do',
-  'Thomaz Hernandes':'turns up and immediately makes things work',
-  'Erik van der Bijl':'the coach. "Do less."',
-  'Joseph Tavora':'fast, and the first to prosecute himself for it',
-  'Michael Cullen':'hand-writes the guides the rest of us read',
-  'Aaron Werth':'loudest and keenest, wins or not',
-  'Sam Millar':'IMSA and GT3 regular; races more than anyone',
-  'Janne Salminen':'fuel and setup wizard; quietly the fastest',
-  'Brock Hellmech':'happy to learn in public, which is rarer than it sounds',
-  'Luke Hay':'few words; pays for the liveries',
-  'John Nyhouse':'boundless keenness, zero cynicism',
-  'Fred Zufelt':'resident F1 analyst; will defend Stroll to anyone',
-  'David Piljek':'Nordschleife obsessive',
-  'Jarrod Williams':'the quartermaster — setups appear when needed',
-  'Zachary Martin':'lights up about anything with carburettors',
+  'Matthew Halden':'the ringmaster; names corners by crashing into them, and Blanchimont is his',
+  'Chris Wilson':'co-founder and Kiwi race voice; get the car home in one piece',
+  'Aden Lennox-Bradley':'the fastest here, and the most allergic to being seen to care',
+  'Jake Lennox-Bradley':'the tinkerer who confesses the crash first; keeps score only against Aden',
+  'Matt Blee':'the social engine; ten seconds off the pace and first to say the sincere thing',
+  'Dominic Bou-Samra':'meme-engineer; bins it from a good grid slot and posts the clip himself',
+  'Laurent Masson':'the emotional core, permanently over-trying and permanently sorry about it',
+  'Thomaz Hernandes':'built half the grid rigs and painted their cars, then races them mid-pack',
+  'Erik van der Bijl':'the coach; his whole method is two words, do less',
+  'Joseph Tavora':'genuinely quick, and his own harshest steward',
+  'Michael Cullen':'the chat comedian and its most rigorous mind in the one body',
+  'Aaron Werth':'loudest and keenest; rawdogs a race with no practice, then explains the dead tyres',
+  'Sam Millar':'wears his heart on his sleeve; would rather do an all-nighter enduro than sleep',
+  'Janne Salminen':'the quiet Finn who out-drives everyone and gives the credit away',
+  'Brock Hellmech':'no ego about being slow, no shame about improving in public',
+  'Luke Hay':'six words and a filthy punchline; pays for the liveries, organises the racing',
+  'John Nyhouse':'boundlessly keen, wildly accident-prone, apologises at length for everything',
+  'Fred Zufelt':'the 3am Canadian who defends Lance Stroll to his last breath',
+  'David Piljek':'Nordschleife obsessive with a real-life Ring war story',
+  'Jarrod Williams':'the quiet quartermaster; hands you a setup, posts your position, owns his mistakes',
+  'Zachary Martin':'apologises for his lap times before anyone can; lights up about old cars',
   'Roland Fokkens':'IMSA mainstay',
   'Sam Mackenzie':'endurance specialist',
   'Andrew Espenes':'quietly racks up the starts',
-  'Bernardo Hickmann':'GT3 regular',
-  'Ben Hagstrom':'always in something',
-  'Thomas McEwan':'turns up for the odd one out'
+  'Jackson Lancaster':'Geelong teenager racing off a wooden end desk; takes any GT3 seat going',
+  'River Johnson':'the nocturnal American who reckons GT3 is beneath him'
 };
 /* Track hooks, keyed by a loose match on the iRacing track name. Seeded from the write-ups
    that already worked; admins add to it over time (state.weekly.track). */
@@ -1019,23 +1022,47 @@ function histTrackLine(track){
   if(pos && t.bestLabel && t.bestBy) s+=' (best '+t.bestLabel+', '+t.bestBy+')';
   return s;
 }
-/* An earned driver mention for a round: whoever among the runners has actually raced this track,
-   with their own record, so the line changes as the season does. Falls back to the hand-written
-   personality note, then to nothing. `used` keeps one driver from being the flare twice. */
-function flareFor(who, used, track){
-  const w=weeklyState(); if(!w.flare) return null;
+/* The drivers on the team who actually race this series, from the history sweep (TEAM_SERIES is
+   re-keyed by the client's own seriesKey, so this joins the schedule name cleanly). null when the
+   sweep found none — which is the signal to say nothing rather than reach for a seeded name. */
+function histSeriesDrivers(label){
+  if(typeof TEAM_SERIES==='undefined' || !TEAM_SERIES || !label) return null;
+  const a=TEAM_SERIES[seriesKey(label)];
+  return (a && a.length) ? a : null;
+}
+/* Ordered pool of drivers worth mentioning for a round: whoever has actually raced this track
+   (most starts first), then whoever races this series. Everyone here is in the week's data by
+   construction, so a mention is never for no reason. */
+function flarePool(track, seriesLabel){
+  const out=[], seen={};
   if(haveHistory() && track){
     const t=HISTORY.tracks[histTrackKey(track)];
-    if(t && t.drivers && t.drivers.length){
-      const cand=t.drivers.filter(function(d){ return (who||[]).indexOf(d.name)>=0 && !(used&&used[d.name]); });
-      if(cand.length){
-        const d=cand[0], pos=!!(HISTORY.fields && HISTORY.fields.pos);
-        if(used) used[d.name]=1;
-        let note=d.races+' start'+(d.races===1?'':'s')+' here';
-        if(pos){ if(d.wins) note+=', '+d.wins+' win'+(d.wins===1?'':'s'); else if(d.bestLabel && d.best!==null) note+=', best '+d.bestLabel; }
-        return {name:d.name, note:note};
-      }
+    if(t && t.drivers) t.drivers.forEach(function(d){ if(!seen[d.name]){ seen[d.name]=1; out.push(d); } });
+  }
+  const sd=histSeriesDrivers(seriesLabel);
+  if(sd) sd.forEach(function(d){ if(!seen[d.name]){ seen[d.name]=1; out.push(d); } });
+  return out;
+}
+/* A driver mention for a round. Picks someone the data ties to this round (track regular, then
+   series regular) and gives their personality line — so the character is relevant, never a name
+   dropped in for no reason. Unprofiled drivers fall back to their own record. Returns null when
+   the sweep knows nobody for this round (rather than mention a seeded name), and only drops back
+   to the hand-written notes when there is no history at all (standalone build / not yet pulled).
+   `used` keeps one driver from being the flare twice in a draft. */
+function flareFor(who, used, track, seriesLabel){
+  const w=weeklyState(); if(!w.flare) return null;
+  if(haveHistory()){
+    const notes=Object.assign({}, DRIVER_NOTES, w.driver||{});
+    const d=flarePool(track, seriesLabel).find(function(x){ return !(used&&used[x.name]); });
+    if(!d) return null;                       // nobody from the data is free — say nothing
+    if(used) used[d.name]=1;
+    let note=notes[d.name];
+    if(!note){                                // unprofiled: use their own record rather than invent character
+      const pos=!!(HISTORY.fields && HISTORY.fields.pos);
+      note=d.races+' start'+(d.races===1?'':'s');
+      if(pos){ if(d.wins) note+=', '+d.wins+' win'+(d.wins===1?'':'s'); else if(d.bestLabel && d.best!==null) note+=', best '+d.bestLabel; }
     }
+    return {name:d.name, note:note};
   }
   return driverNoteFor(who, used);
 }
@@ -1134,7 +1161,7 @@ function weeklyFacts(){
       carsWeek:(r.carsWeek!==false), raceLaps:r.race_laps||0,
       track:r.track||'', raceMin:r.race_min||0, sessions:r.sessions||[],
       when:raceTimePattern(r), times:sessionTimeList(r,4), firstRaw:r.firstRaw||'', repeatRaw:r.repeat||0,
-      matched:!!r.track, note:trackNoteFor(r.track), flare:flareFor(who, usedDrivers, r.track), hist:histTrackLine(r.track),
+      matched:!!r.track, note:trackNoteFor(r.track), flare:flareFor(who, usedDrivers, r.track, label), hist:histTrackLine(r.track),
       startDate:r.start_date
     });
   });

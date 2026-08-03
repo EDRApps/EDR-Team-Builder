@@ -2,7 +2,7 @@
 /**
  * Plugin Name: EDR Team Builder
  * Description: Endurotech Racing endurance team + stint planner. Pulls Garage 61 pace and official iRacing session times, collects driver availability in-house, and builds Pro/Casual teams and stint rotations. Add the [edr_team_builder] shortcode to a page.
- * Version: 2.4.28
+ * Version: 2.4.29
  * Author: Endurotech Racing
  * License: GPL-2.0-or-later
  */
@@ -11,7 +11,7 @@ if (!defined('ABSPATH')) exit; // no direct access
 
 define('EDR_TB_DIR', plugin_dir_path(__FILE__));
 define('EDR_TB_URL', plugin_dir_url(__FILE__));
-define('EDR_TB_VER', '2.4.28');
+define('EDR_TB_VER', '2.4.29');
 
 require_once EDR_TB_DIR . 'includes/garage61.php';
 require_once EDR_TB_DIR . 'includes/iracing.php';
@@ -479,6 +479,19 @@ function edr_tb_snapshot_ratings() {
     return array('week' => $week, 'drivers' => count($now));
 }
 
+/**
+ * Split an iRacing safety-rating sub-level into a class letter and a real SR.
+ * A sub-level encodes class*1000 + SR*100, so 5233 -> ('A', 2.33). Values under 100 are treated
+ * as an already-decoded SR with no class (defensive, in case the feed ever sends the plain number).
+ */
+function edr_tb_sr_parts($v) {
+    $v = floatval($v);
+    if ($v >= 100) { $cls = (int) ($v / 1000); $sr = round(($v - $cls * 1000) / 100, 2); }
+    else           { $cls = 0; $sr = round($v, 2); }
+    $names = array(1 => 'R', 2 => 'D', 3 => 'C', 4 => 'B', 5 => 'A', 6 => 'P');
+    return array(isset($names[$cls]) ? $names[$cls] : '', $sr);
+}
+
 /** Movement between the two most recent snapshots. */
 function edr_tb_rating_movement() {
     // normalise on read too, so a diff taken before the next snapshot never sees mixed key styles
@@ -496,12 +509,17 @@ function edr_tb_rating_movement() {
         $matched++;
         $p = $prev['r'][$k];
         $dIr = intval($c['ir']) - intval($p['ir']);
-        $dSr = round(floatval($c['sr']) - floatval($p['sr']), 2);
+        /* Garage 61 carries the safety rating as the iRacing sub-level (class*1000 + SR*100), so
+           5233 is A 2.33, not a rating of 5233. Split it into a class letter and a real SR before
+           diffing, so the delta is in SR points (0.21) and the display reads "A 2.33", not "5233.00". */
+        list($cLab, $cSr) = edr_tb_sr_parts($c['sr']);
+        list(, $pSr)      = edr_tb_sr_parts($p['sr']);
+        $dSr = round($cSr - $pSr, 2);
         if ($dIr === 0 && abs($dSr) < 0.01) { $zeroDelta++; continue; }  // nothing moved
         $movers[] = array(
             'name' => $c['name'], 'irDelta' => $dIr, 'irEnd' => intval($c['ir']),
-            'srDelta' => $dSr, 'srStart' => floatval($p['sr']), 'srEnd' => floatval($c['sr']),
-            'srLabel' => (string) $c['srLabel'],
+            'srDelta' => $dSr, 'srStart' => $pSr, 'srEnd' => $cSr,
+            'srLabel' => $cLab !== '' ? $cLab : (string) $c['srLabel'],
         );
     }
     usort($movers, function ($a, $b) { return $b['irDelta'] - $a['irDelta']; });
