@@ -178,9 +178,24 @@ loss, Safety Rating movers, wins, busiest and cleanest.
 per unique subsession, against a GET-only proxy on a single shared iRacing account that
 rate-limits. It runs at `EDR_TB_RECAP_PACE` (0.45s) between calls and is capped at
 `EDR_TB_RECAP_MAX_SUBS`; anything dropped by that cap is reported in the UI rather than
-silently truncated. It **never** runs in a page request — `POST /recap/refresh` sets a
-running flag and queues `edr_tb_recap_job`, the client polls `GET /recap` every 5s, and the
+silently truncated. It **never** runs whole in one request. `POST /recap/refresh` builds the work
+plan synchronously (one Garage 61 membership call, so a bad token surfaces immediately) then arms
+the run; the sweep advances one bounded slice (`EDR_TB_RECAP_BUDGET`, ~10s) at a time, banking
+state after **every** driver and every subsession so a killed request loses at most one item. The
 result is cached in `edr_tb_recap` until the next run. Both routes are edit-gated.
+
+**What advances a slice (2.4.26).** `edr_tb_recap_advance()` runs exactly one slice under a
+non-blocking MySQL lock (`GET_LOCK('edr_tb_recap_step')`), so the cron job and a client poll can
+never step the same state at once. It is called both by `edr_tb_recap_job` (WP-Cron, which
+re-queues itself while work remains) **and by `GET /recap` on every 5s poll**. That second caller
+is the point: on a host with WP-Cron loopback disabled (`DISABLE_WP_CRON`, or a firewall blocking
+the self-HTTP `spawn_cron` fires) the queued job never runs, and before 2.4.26 the sweep stalled
+after its first slice and the tab reported "the host cut it off" — which is exactly what kept
+happening. Letting the open tab's own polling drive the run makes it finish with no working cron
+at all. The `edr_tb_recap_running` transient is the single source of truth that a sweep is live:
+armed by `/recap/refresh`, cleared only by `edr_tb_recap_advance()` on done/error, so the cron
+re-queue can never outlive it. Trade-off: if every tab closes mid-sweep and cron is dead, the run
+pauses until someone reopens the Weekly tab (state persists, so it resumes, never restarts).
 
 Conventions this code depends on, all easy to get wrong:
 - **finish positions are 0-based** (winner = 0) — the recap adds one only for display
@@ -199,18 +214,23 @@ needs another sweep of the API.
 
 iRating and Safety Rating movement do **not** need the results sweep, and should never wait on
 it. Garage 61 already carries both on each member account, so `POST /ratings` stores a dated
-snapshot (`edr_tb_rating_snaps`, keyed by ISO week) and `GET /ratings` diffs the two most recent
-— two HTTP calls, seconds. That covers the whole roster, not just whoever turned up in the races
-the sweep managed to fetch.
+snapshot (`edr_tb_rating_snaps`, keyed by the race week's own Tuesday via `edr_tb_next_week_tick()`,
+same boundary as the draft window) and `GET /ratings` diffs the two most recent — two HTTP calls,
+seconds. That covers the whole roster, not just whoever turned up in the races the sweep fetched.
+
+**Only `sports_car` counts** — `edr_g61_member_ratings_full()` reads the max `irating` /
+`safety_rating` in that one category per driver. A diff therefore only moves for someone who raced
+sports_car official sessions between the two snapshots; drivers who did not, or who only race other
+categories, read as unchanged. That is the first thing to check if "N drivers moved" looks too low.
 
 The sweep is now only needed for **wins, podiums, incidents and race counts**. `recapAwards()`
 prefers the snapshot diff for ratings and folds the sweep's counts onto each mover by name;
 a driver present in one source and not the other degrades to whichever half exists.
 
-The sweep also reports progress (`edr_tb_recap_progress`, stamped every driver and every race)
-and `GET /recap` treats a heartbeat older than three minutes as a dead job — the host killing
-the loopback request mid-sweep is the normal failure, and without this the tab polls an opaque
-spinner until the running flag expires twenty minutes later.
+The sweep also reports progress (`edr_tb_recap_progress`, stamped every driver and every race).
+With step-on-read driving it, the heartbeat only falls silent when every tab has closed, so
+`GET /recap` now treats **five** minutes of silence (not three) as an abandoned run before it
+surfaces the "host cut it off" message and clears the flag.
 
 **Pace is never auto-applied.** The warm cache only makes the *next* import instant; it does not
 rewrite `state.drivers` behind anyone's back. Silently re-running the split could reshuffle a

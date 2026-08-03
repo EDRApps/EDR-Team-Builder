@@ -106,8 +106,8 @@ function edr_tb_recap_rows($sub) {
  * So progress is persisted and each invocation does a bounded slice of work, then re-queues itself.
  * No single request runs longer than EDR_TB_RECAP_BUDGET, whatever the host's limit is.
  */
-define('EDR_TB_RECAP_BUDGET', 15);      // seconds of work per invocation, well under any host limit
-define('EDR_TB_RECAP_MAX_STEPS', 200);  // backstop: refuse to re-queue forever on a pathological run
+define('EDR_TB_RECAP_BUDGET', 10);      // seconds of work per invocation — short, so even a tight host limit clears one slice
+define('EDR_TB_RECAP_MAX_STEPS', 300);  // backstop: refuse to re-queue forever on a pathological run
 
 function edr_tb_recap_state() { return (array) get_option('edr_tb_recap_state', array()); }
 function edr_tb_recap_state_save($st) { update_option('edr_tb_recap_state', $st, false); }
@@ -186,6 +186,7 @@ function edr_tb_recap_step($base, $key, &$st) {
             $found = edr_tb_recap_search($base, $key, $cust, $st['from'], $st['to']);
             if (is_wp_error($found)) { edr_tb_recap_state_save($st); return $found; }
             foreach ($found as $sid => $_) $st['subs'][(string) $sid] = true;
+            edr_tb_recap_state_save($st);   // bank each driver: a mid-slice kill then loses one search, not the slice
             usleep(EDR_TB_RECAP_PACE);
             edr_tb_recap_progress('drivers', count($st['byCust']) - count($st['todo']), count($st['byCust']));
         }
@@ -209,6 +210,7 @@ function edr_tb_recap_step($base, $key, &$st) {
             usleep(EDR_TB_RECAP_PACE);
             // a single bad subsession must not kill a sweep that is otherwise fine
             if (!is_wp_error($sub) && is_array($sub)) edr_tb_recap_fold($sub, $st['byCust']);
+            edr_tb_recap_state_save($st);   // bank each subsession so a mid-slice kill keeps the tallies
             edr_tb_recap_progress('races', $st['nSubs'] - count($st['ids']), $st['nSubs']);
         }
         edr_tb_recap_state_save($st);

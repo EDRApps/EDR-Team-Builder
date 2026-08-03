@@ -2,7 +2,7 @@
 /**
  * Plugin Name: EDR Team Builder
  * Description: Endurotech Racing endurance team + stint planner. Pulls Garage 61 pace and official iRacing session times, collects driver availability in-house, and builds Pro/Casual teams and stint rotations. Add the [edr_team_builder] shortcode to a page.
- * Version: 2.4.25
+ * Version: 2.4.26
  * Author: Endurotech Racing
  * License: GPL-2.0-or-later
  */
@@ -11,7 +11,7 @@ if (!defined('ABSPATH')) exit; // no direct access
 
 define('EDR_TB_DIR', plugin_dir_path(__FILE__));
 define('EDR_TB_URL', plugin_dir_url(__FILE__));
-define('EDR_TB_VER', '2.4.25');
+define('EDR_TB_VER', '2.4.26');
 
 require_once EDR_TB_DIR . 'includes/garage61.php';
 require_once EDR_TB_DIR . 'includes/iracing.php';
@@ -504,14 +504,52 @@ function edr_tb_rest_ratings(WP_REST_Request $req) {
     return rest_ensure_response(edr_tb_rating_movement());
 }
 
+/**
+ * Advance the sweep by one bounded slice, guarded so the cron job and a client poll can never step
+ * the same state at once — that would double the proxy calls and let two saves clobber each other.
+ * Returns 'idle' (nothing running, or another request holds the lock), 'working', 'done', 'error'.
+ *
+ * This is what lets the sweep finish on a host with WP-Cron loopback disabled: GET /recap calls it
+ * on every 5s poll, so the open tab itself drives the run to completion with no cron at all.
+ */
+function edr_tb_recap_advance() {
+    global $wpdb;
+    if (!get_transient('edr_tb_recap_running')) return 'idle';
+    if ($wpdb->get_var("SELECT GET_LOCK('edr_tb_recap_step', 0)") != 1) return 'idle';
+
+    $out = 'idle';
+    $st  = edr_tb_recap_state();
+    $s   = edr_tb_settings();
+    if ($st && !empty($s['iracing_url']) && !empty($s['iracing_key'])) {
+        @set_time_limit(0);
+        $step = edr_tb_recap_step($s['iracing_url'], $s['iracing_key'], $st);
+        if (is_wp_error($step)) {
+            update_option('edr_tb_recap_err', $step->get_error_message(), false);
+            edr_tb_recap_state_clear();
+            delete_transient('edr_tb_recap_running');
+            $out = 'error';
+        } elseif ($step === 'done') {
+            update_option('edr_tb_recap', edr_tb_recap_shape($st), false);
+            update_option('edr_tb_recap_err', '', false);
+            edr_tb_recap_state_clear();
+            delete_transient('edr_tb_recap_running');
+            $out = 'done';
+        } else {
+            $out = 'working';   // edr_tb_recap_step saved state as it went
+        }
+    }
+    $wpdb->query("SELECT RELEASE_LOCK('edr_tb_recap_step')");
+    return $out;
+}
+
 function edr_tb_rest_recap() {
+    edr_tb_recap_advance();   // the poll itself drives the sweep — see edr_tb_recap_advance()
     $r = get_option('edr_tb_recap', null);
     $prog = (array) get_option('edr_tb_recap_progress', array());
     $running = (bool) get_transient('edr_tb_recap_running');
-    /* A job whose heartbeat stopped more than three minutes ago is dead — the host killed the
-       loopback request. Say so instead of leaving the tab polling a spinner until the flag
-       expires twenty minutes later. */
-    $stalled = $running && !empty($prog['at']) && (time() - intval($prog['at']) > 180);
+    /* With step-on-read driving it, the heartbeat only goes quiet if every tab has closed. Five
+       minutes of true silence means the run is abandoned; report it rather than spin forever. */
+    $stalled = $running && !empty($prog['at']) && (time() - intval($prog['at']) > 300);
     if ($stalled) { delete_transient('edr_tb_recap_running'); $running = false; }
     return rest_ensure_response(array(
         'recap'    => $r ?: null,
@@ -531,6 +569,9 @@ function edr_tb_rest_recap_refresh(WP_REST_Request $req) {
     if (empty($s['iracing_url']) || empty($s['iracing_key'])) {
         return new WP_Error('not_configured', 'Set the iRacing proxy in plugin Settings first.', array('status' => 400));
     }
+    if (empty($s['g61_token'])) {
+        return new WP_Error('not_configured', 'Set the Garage 61 token in plugin Settings first.', array('status' => 400));
+    }
     if (get_transient('edr_tb_recap_running')) {
         return rest_ensure_response(array('ok' => true, 'running' => true, 'queued' => false));
     }
@@ -547,8 +588,24 @@ function edr_tb_rest_recap_refresh(WP_REST_Request $req) {
     $shape = function ($v) { return is_string($v) && preg_match('/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$/', $v); };
     $to   = $shape($req->get_param('to'))   ? $req->get_param('to')   : gmdate('Y-m-d\TH:i:s\Z', $tick);
     $from = $shape($req->get_param('from')) ? $req->get_param('from') : gmdate('Y-m-d\TH:i:s\Z', $tick - 7 * DAY_IN_SECONDS);
+
+    /* Build the work plan now, in this request. The queued job still builds it where WP-Cron works,
+       but on a host with cron loopback dead the plan would never exist and the client's step-on-read
+       (GET /recap) would have nothing to advance — leaving the sweep "running" until it timed out,
+       which is the failure that kept recurring. One Garage 61 membership call is cheap, and doing it
+       here also surfaces a token/proxy problem immediately instead of as a silent stall. */
+    $members = edr_g61_all_members($s['g61_token']);
+    if (is_wp_error($members)) return $members;
+    if (empty($members['ids'])) {
+        return new WP_Error('no_members', 'Could not read the Garage 61 membership (needed for iRacing customer IDs).', array('status' => 502));
+    }
+    $st = edr_tb_recap_state_init($members['ids'], $from, $to);
+    edr_tb_recap_state_save($st);
+    update_option('edr_tb_recap_err', '', false);
+
     set_transient('edr_tb_recap_running', 1, 20 * MINUTE_IN_SECONDS);
     wp_schedule_single_event(time(), 'edr_tb_recap_job', array((string) $from, (string) $to));
+    if (function_exists('spawn_cron')) spawn_cron();
     return rest_ensure_response(array('ok' => true, 'running' => true, 'queued' => true, 'from' => $from, 'to' => $to));
 }
 
@@ -574,35 +631,33 @@ function edr_tb_recap_run($from = '', $to = '') {
     }
     @set_time_limit(0);
 
-    $st = edr_tb_recap_state();
-    $fresh = !$st || ($from !== '' && ((string) ($st['from'] ?? '') !== (string) $from || (string) ($st['to'] ?? '') !== (string) $to));
-    if ($fresh) {
-        $members = edr_g61_all_members($s['g61_token']);
-        if (is_wp_error($members) || empty($members['ids'])) {
-            $fail('Could not read the Garage 61 membership (needed for iRacing customer IDs).');
-            return;
+    /* A window means "start (or restart) a sweep" — build the plan and arm the run. The refresh
+       route already does this synchronously, so its queued job finds the plan in place and skips
+       straight to stepping; a no-argument call is the self-requeue and just resumes. The running
+       transient is the single source of truth that a sweep is live: it is armed here and cleared
+       only by edr_tb_recap_advance() on done/error, so the re-queue below can never outlive it. */
+    if ($from !== '') {
+        $st = edr_tb_recap_state();
+        $changed = !$st || (string) ($st['from'] ?? '') !== (string) $from || (string) ($st['to'] ?? '') !== (string) $to;
+        if ($changed) {
+            $members = edr_g61_all_members($s['g61_token']);
+            if (is_wp_error($members) || empty($members['ids'])) {
+                $fail('Could not read the Garage 61 membership (needed for iRacing customer IDs).');
+                return;
+            }
+            $st = edr_tb_recap_state_init($members['ids'], $from, $to);
+            edr_tb_recap_state_save($st);
+            update_option('edr_tb_recap_err', '', false);
         }
-        $st = edr_tb_recap_state_init($members['ids'], $from, $to);
-        edr_tb_recap_state_save($st);
+        set_transient('edr_tb_recap_running', 1, 20 * MINUTE_IN_SECONDS);
     }
 
-    $r = edr_tb_recap_step($s['iracing_url'], $s['iracing_key'], $st);
-    if (is_wp_error($r)) { $fail($r->get_error_message()); return; }
-
-    if ($r === 'working') {
-        /* Hand the rest to a fresh request. spawn_cron() kicks a loopback now rather than waiting
-           for the next visitor — and the client polling GET /recap every 5s is itself traffic, so
-           the chain keeps advancing even where spawn_cron's own 60s lock declines to fire. */
-        set_transient('edr_tb_recap_running', 1, 20 * MINUTE_IN_SECONDS);
+    $r = edr_tb_recap_advance();   // one bounded slice, under the shared step lock
+    if (($r === 'working' || $r === 'idle') && get_transient('edr_tb_recap_running')) {
+        // more to do (or a client poll holds the lock this instant) — hand on to another request
         wp_schedule_single_event(time() + 1, 'edr_tb_recap_job');
         if (function_exists('spawn_cron')) spawn_cron();
-        return;
     }
-
-    update_option('edr_tb_recap', edr_tb_recap_shape($st), false);
-    update_option('edr_tb_recap_err', '', false);
-    edr_tb_recap_state_clear();
-    delete_transient('edr_tb_recap_running');
 }
 
 function edr_tb_rest_rev(WP_REST_Request $req) {
