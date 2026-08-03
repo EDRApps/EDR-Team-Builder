@@ -2,7 +2,7 @@
 /**
  * Plugin Name: EDR Team Builder
  * Description: Endurotech Racing endurance team + stint planner. Pulls Garage 61 pace and official iRacing session times, collects driver availability in-house, and builds Pro/Casual teams and stint rotations. Add the [edr_team_builder] shortcode to a page.
- * Version: 2.4.23
+ * Version: 2.4.24
  * Author: Endurotech Racing
  * License: GPL-2.0-or-later
  */
@@ -11,7 +11,7 @@ if (!defined('ABSPATH')) exit; // no direct access
 
 define('EDR_TB_DIR', plugin_dir_path(__FILE__));
 define('EDR_TB_URL', plugin_dir_url(__FILE__));
-define('EDR_TB_VER', '2.4.23');
+define('EDR_TB_VER', '2.4.24');
 
 require_once EDR_TB_DIR . 'includes/garage61.php';
 require_once EDR_TB_DIR . 'includes/iracing.php';
@@ -552,28 +552,56 @@ function edr_tb_rest_recap_refresh(WP_REST_Request $req) {
     return rest_ensure_response(array('ok' => true, 'running' => true, 'queued' => true, 'from' => $from, 'to' => $to));
 }
 
+/**
+ * One slice of the sweep per invocation, re-queueing itself until done.
+ *
+ * Called two ways, and the difference matters: with a window (from the refresh route) it starts or
+ * restarts a sweep, and with no arguments (its own re-queue) it resumes the stored one. Resuming
+ * rather than restarting is why a host that kills the request every 30 seconds still gets there —
+ * each slice keeps whatever the last one banked.
+ */
 add_action('edr_tb_recap_job', 'edr_tb_recap_run', 10, 2);
-function edr_tb_recap_run($from, $to) {
+function edr_tb_recap_run($from = '', $to = '') {
     $s = edr_tb_settings();
-    if (empty($s['iracing_url']) || empty($s['iracing_key']) || empty($s['g61_token'])) {
+    $fail = function ($msg) {
+        update_option('edr_tb_recap_err', $msg, false);
+        edr_tb_recap_state_clear();
         delete_transient('edr_tb_recap_running');
-        update_option('edr_tb_recap_err', 'Garage 61 token and iRacing proxy both need to be set.', false);
+    };
+    if (empty($s['iracing_url']) || empty($s['iracing_key']) || empty($s['g61_token'])) {
+        $fail('Garage 61 token and iRacing proxy both need to be set.');
         return;
     }
     @set_time_limit(0);
-    $members = edr_g61_all_members($s['g61_token']);
-    if (is_wp_error($members) || empty($members['ids'])) {
-        delete_transient('edr_tb_recap_running');
-        update_option('edr_tb_recap_err', 'Could not read the Garage 61 membership (needed for iRacing customer IDs).', false);
+
+    $st = edr_tb_recap_state();
+    $fresh = !$st || ($from !== '' && ((string) ($st['from'] ?? '') !== (string) $from || (string) ($st['to'] ?? '') !== (string) $to));
+    if ($fresh) {
+        $members = edr_g61_all_members($s['g61_token']);
+        if (is_wp_error($members) || empty($members['ids'])) {
+            $fail('Could not read the Garage 61 membership (needed for iRacing customer IDs).');
+            return;
+        }
+        $st = edr_tb_recap_state_init($members['ids'], $from, $to);
+        edr_tb_recap_state_save($st);
+    }
+
+    $r = edr_tb_recap_step($s['iracing_url'], $s['iracing_key'], $st);
+    if (is_wp_error($r)) { $fail($r->get_error_message()); return; }
+
+    if ($r === 'working') {
+        /* Hand the rest to a fresh request. spawn_cron() kicks a loopback now rather than waiting
+           for the next visitor — and the client polling GET /recap every 5s is itself traffic, so
+           the chain keeps advancing even where spawn_cron's own 60s lock declines to fire. */
+        set_transient('edr_tb_recap_running', 1, 20 * MINUTE_IN_SECONDS);
+        wp_schedule_single_event(time() + 1, 'edr_tb_recap_job');
+        if (function_exists('spawn_cron')) spawn_cron();
         return;
     }
-    $out = edr_tb_recap_build($s['iracing_url'], $s['iracing_key'], $members['ids'], $from, $to);
-    if (is_wp_error($out)) {
-        update_option('edr_tb_recap_err', $out->get_error_message(), false);
-    } else {
-        update_option('edr_tb_recap', $out, false);
-        update_option('edr_tb_recap_err', '', false);
-    }
+
+    update_option('edr_tb_recap', edr_tb_recap_shape($st), false);
+    update_option('edr_tb_recap_err', '', false);
+    edr_tb_recap_state_clear();
     delete_transient('edr_tb_recap_running');
 }
 

@@ -94,73 +94,135 @@ function edr_tb_recap_rows($sub) {
 }
 
 /**
- * Build the recap. $members is custId => display name, from edr_g61_all_members().
- * Returns the shape the Weekly tab renders, or a WP_Error if the proxy is unusable.
+ * The sweep is RESUMABLE, and has to be.
+ *
+ * It used to run start-to-finish inside one wp_schedule_single_event loopback: ~30 driver searches
+ * plus up to EDR_TB_RECAP_MAX_SUBS subsession fetches, all at EDR_TB_RECAP_PACE, which is minutes
+ * in a single HTTP request. @set_time_limit(0) lifts PHP's own ceiling but nothing else's — the
+ * webserver, PHP-FPM and any front proxy all have their own, and on shared hosting the request is
+ * killed long before the sweep ends. The symptom is the stale-heartbeat message the Weekly tab
+ * shows ("the host cut it off"), and on a host with a short limit the recap can never finish at all.
+ *
+ * So progress is persisted and each invocation does a bounded slice of work, then re-queues itself.
+ * No single request runs longer than EDR_TB_RECAP_BUDGET, whatever the host's limit is.
  */
-function edr_tb_recap_build($base, $key, $members, $from, $to) {
-    if (!$members) return new WP_Error('no_members', 'No Garage 61 members with an iRacing ID.', array('status' => 400));
+define('EDR_TB_RECAP_BUDGET', 15);      // seconds of work per invocation, well under any host limit
+define('EDR_TB_RECAP_MAX_STEPS', 200);  // backstop: refuse to re-queue forever on a pathological run
 
-    // 1) which subsessions the squad raced — one search per driver
-    $subs = array();
+function edr_tb_recap_state() { return (array) get_option('edr_tb_recap_state', array()); }
+function edr_tb_recap_state_save($st) { update_option('edr_tb_recap_state', $st, false); }
+function edr_tb_recap_state_clear() { delete_option('edr_tb_recap_state'); }
+
+/** Fresh per-driver tally. */
+function edr_tb_recap_blank($name) {
+    return array(
+        'name' => $name, 'races' => 0, 'wins' => 0, 'podiums' => 0, 'inc' => 0, 'dnf' => 0,
+        'irDelta' => 0, 'irEnd' => null, 'srStart' => null, 'srEnd' => null, 'best' => null,
+    );
+}
+
+/** Start a sweep: just the plan, no proxy calls yet. */
+function edr_tb_recap_state_init($members, $from, $to) {
     $byCust = array();
-    $n = 0; $nMembers = count($members);
-    edr_tb_recap_progress('drivers', 0, $nMembers);
-    foreach ($members as $cust => $name) {
-        $found = edr_tb_recap_search($base, $key, $cust, $from, $to);
-        if (is_wp_error($found)) return $found;                 // proxy down or expired: fail loudly
-        foreach ($found as $sid => $_) $subs[$sid] = true;
-        $byCust[(string) $cust] = array(
-            'name' => $name, 'races' => 0, 'wins' => 0, 'podiums' => 0, 'inc' => 0, 'dnf' => 0,
-            'irDelta' => 0, 'irEnd' => null, 'srStart' => null, 'srEnd' => null, 'best' => null,
-        );
-        usleep(EDR_TB_RECAP_PACE);
-        edr_tb_recap_progress('drivers', ++$n, $nMembers);
-    }
-    if (!$subs) return array('at' => time(), 'from' => $from, 'to' => $to, 'drivers' => array(), 'races' => 0);
+    foreach ($members as $cust => $name) $byCust[(string) $cust] = edr_tb_recap_blank($name);
+    return array(
+        'from' => (string) $from, 'to' => (string) $to,
+        'phase' => 'search',
+        'todo'  => array_map('strval', array_keys($members)),   // custIds still to search
+        'subs'  => array(),                                     // sid => true, deduped
+        'ids'   => array(),                                     // sids still to fetch
+        'byCust' => $byCust,
+        'nSubs' => 0, 'dropped' => 0, 'steps' => 0, 'started' => time(),
+    );
+}
 
-    // 2) each subsession once — team enduros overlap heavily, so dedupe first
-    $ids = array_slice(array_keys($subs), 0, EDR_TB_RECAP_MAX_SUBS);
-    $dropped = count($subs) - count($ids);
-    $r = 0; $nRaces = count($ids);
-    edr_tb_recap_progress('races', 0, $nRaces);
-    foreach ($ids as $sid) {
-        $sub = edr_ir_get($base, $key, '/data/results/get?subsession_id=' . intval($sid));
-        usleep(EDR_TB_RECAP_PACE);
-        edr_tb_recap_progress('races', ++$r, $nRaces);
-        if (is_wp_error($sub) || !is_array($sub)) continue;      // skip a bad one, keep the run
-        foreach (edr_tb_recap_rows($sub) as $r) {
-            $cust = isset($r['cust_id']) ? (string) intval($r['cust_id']) : '';
-            if ($cust === '' || !isset($byCust[$cust])) continue;
-            $d =& $byCust[$cust];
-            $d['races']++;
-            // finish positions are 0-based; prefer in-class where the payload gives it
-            $pos = null;
-            foreach (array('finish_position_in_class', '_class_pos', 'finish_position') as $k) {
-                if (isset($r[$k]) && $r[$k] !== null) { $pos = intval($r[$k]); break; }
-            }
-            if ($pos !== null) {
-                if ($pos === 0) $d['wins']++;
-                if ($pos <= 2) $d['podiums']++;
-                if ($d['best'] === null || $pos < $d['best']) $d['best'] = $pos;
-            }
-            if (isset($r['incidents'])) $d['inc'] += intval($r['incidents']);
-            if (!empty($r['reason_out']) && strcasecmp((string) $r['reason_out'], 'Running') !== 0) $d['dnf']++;
-            if (isset($r['oldi_rating'], $r['newi_rating']) && intval($r['oldi_rating']) > 0) {
-                $d['irDelta'] += intval($r['newi_rating']) - intval($r['oldi_rating']);
-                $d['irEnd']    = intval($r['newi_rating']);
-            }
-            if (isset($r['old_sub_level'], $r['new_sub_level'])) {
-                if ($d['srStart'] === null) $d['srStart'] = intval($r['old_sub_level']);
-                $d['srEnd'] = intval($r['new_sub_level']);
-            }
-            unset($d);
+/** Fold one subsession payload into the running tallies. */
+function edr_tb_recap_fold($sub, &$byCust) {
+    foreach (edr_tb_recap_rows($sub) as $row) {
+        $cust = isset($row['cust_id']) ? (string) intval($row['cust_id']) : '';
+        if ($cust === '' || !isset($byCust[$cust])) continue;
+        $d =& $byCust[$cust];
+        $d['races']++;
+        // finish positions are 0-based; prefer in-class where the payload gives it
+        $pos = null;
+        foreach (array('finish_position_in_class', '_class_pos', 'finish_position') as $k) {
+            if (isset($row[$k]) && $row[$k] !== null) { $pos = intval($row[$k]); break; }
         }
+        if ($pos !== null) {
+            if ($pos === 0) $d['wins']++;
+            if ($pos <= 2) $d['podiums']++;
+            if ($d['best'] === null || $pos < $d['best']) $d['best'] = $pos;
+        }
+        if (isset($row['incidents'])) $d['inc'] += intval($row['incidents']);
+        if (!empty($row['reason_out']) && strcasecmp((string) $row['reason_out'], 'Running') !== 0) $d['dnf']++;
+        if (isset($row['oldi_rating'], $row['newi_rating']) && intval($row['oldi_rating']) > 0) {
+            $d['irDelta'] += intval($row['newi_rating']) - intval($row['oldi_rating']);
+            $d['irEnd']    = intval($row['newi_rating']);
+        }
+        if (isset($row['old_sub_level'], $row['new_sub_level'])) {
+            if ($d['srStart'] === null) $d['srStart'] = intval($row['old_sub_level']);
+            $d['srEnd'] = intval($row['new_sub_level']);
+        }
+        unset($d);
+    }
+}
+
+/**
+ * Do one bounded slice. Returns 'working', 'done', or a WP_Error the caller should surface.
+ * Mutates and saves $st itself so a mid-slice kill still leaves real progress behind.
+ */
+function edr_tb_recap_step($base, $key, &$st) {
+    $deadline = time() + EDR_TB_RECAP_BUDGET;
+    $st['steps'] = intval($st['steps']) + 1;
+    if ($st['steps'] > EDR_TB_RECAP_MAX_STEPS) {
+        return new WP_Error('too_many_steps', 'Results sweep did not converge; giving up rather than looping.');
     }
 
-    // 3) shape it for the write-up — only drivers who actually raced
+    // phase 1: one search per driver, collecting deduped subsession ids
+    if ($st['phase'] === 'search') {
+        $total = count($st['todo']) + count($st['byCust']) - count($st['todo']);   // for the heartbeat
+        while ($st['todo'] && time() < $deadline) {
+            $cust = array_shift($st['todo']);
+            $found = edr_tb_recap_search($base, $key, $cust, $st['from'], $st['to']);
+            if (is_wp_error($found)) { edr_tb_recap_state_save($st); return $found; }
+            foreach ($found as $sid => $_) $st['subs'][(string) $sid] = true;
+            usleep(EDR_TB_RECAP_PACE);
+            edr_tb_recap_progress('drivers', count($st['byCust']) - count($st['todo']), count($st['byCust']));
+        }
+        if (!$st['todo']) {
+            // team enduros overlap heavily, so dedupe before spending a fetch each
+            $all = array_keys($st['subs']);
+            $st['ids']     = array_slice($all, 0, EDR_TB_RECAP_MAX_SUBS);
+            $st['dropped'] = count($all) - count($st['ids']);
+            $st['nSubs']   = count($st['ids']);
+            $st['phase']   = 'races';
+        }
+        edr_tb_recap_state_save($st);
+        return 'working';
+    }
+
+    // phase 2: each unique subsession once
+    if ($st['phase'] === 'races') {
+        while ($st['ids'] && time() < $deadline) {
+            $sid = array_shift($st['ids']);
+            $sub = edr_ir_get($base, $key, '/data/results/get?subsession_id=' . intval($sid));
+            usleep(EDR_TB_RECAP_PACE);
+            // a single bad subsession must not kill a sweep that is otherwise fine
+            if (!is_wp_error($sub) && is_array($sub)) edr_tb_recap_fold($sub, $st['byCust']);
+            edr_tb_recap_progress('races', $st['nSubs'] - count($st['ids']), $st['nSubs']);
+        }
+        edr_tb_recap_state_save($st);
+        return $st['ids'] ? 'working' : 'done';
+    }
+
+    return 'done';
+}
+
+/** Shape the finished tallies for the write-up — only drivers who actually raced. */
+function edr_tb_recap_shape($st) {
     $drivers = array();
-    foreach ($byCust as $cust => $d) {
-        if (!$d['races']) continue;
+    foreach ((array) $st['byCust'] as $d) {
+        if (empty($d['races'])) continue;
         $drivers[] = array(
             'name'    => $d['name'],
             'races'   => $d['races'],
@@ -180,10 +242,10 @@ function edr_tb_recap_build($base, $key, $members, $from, $to) {
 
     return array(
         'at'      => time(),
-        'from'    => $from,
-        'to'      => $to,
-        'races'   => count($ids),
-        'dropped' => $dropped,     // surfaced rather than silently truncating
+        'from'    => $st['from'],
+        'to'      => $st['to'],
+        'races'   => intval($st['nSubs']),
+        'dropped' => intval($st['dropped']),   // surfaced rather than silently truncating
         'drivers' => $drivers,
     );
 }
