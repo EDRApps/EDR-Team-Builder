@@ -126,8 +126,13 @@ function edr_ir_season_cars($s, $classes) {
  * result if between them they account for every car — otherwise the week is a rotation slice
  * rather than a class, and the car's own name is the honest answer.
  *
- * Returns array($names, $perWeek). $perWeek false means the names are the season-wide fallback
- * and the caller must not present them as this week's car.
+ * Returns array($names, $known). $known false means we had per-week car ids and could not turn
+ * them into names — the one case where the answer really is unknown and the draft should say so.
+ *
+ * An **empty** race_week_cars is not that case. iRacing sends `[]` for every series that does not
+ * vary its cars by week (verified against iracing-week-planner's own fixture), so the season list
+ * is the authority there, not a guess. Flagging those put "please confirm car" on 13 of 14 series
+ * and buried the one round it was meant to catch.
  */
 function edr_ir_week_cars($wk, $seasonIds, $seasonCars, $classes, $members) {
     $ids = array(); $names = array();
@@ -178,7 +183,11 @@ function edr_ir_week_cars($wk, $seasonIds, $seasonCars, $classes, $members) {
     }
     if ($restrict) return array($restrict, true);
 
-    return array($seasonCars, false);
+    /* No per-week car ids at all — the series does not rotate cars and the season list is the
+       authority (iRacing sends an empty race_week_cars for every non-rotating series, verified
+       against the reference planner's data). Only a week that HAD per-week ids we could not turn
+       into any name is genuinely unknown; that is the one case worth flagging. */
+    return array($seasonCars, empty($ids));
 }
 
 
