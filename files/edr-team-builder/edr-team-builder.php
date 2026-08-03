@@ -2,7 +2,7 @@
 /**
  * Plugin Name: EDR Team Builder
  * Description: Endurotech Racing endurance team + stint planner. Pulls Garage 61 pace and official iRacing session times, collects driver availability in-house, and builds Pro/Casual teams and stint rotations. Add the [edr_team_builder] shortcode to a page.
- * Version: 2.4.22
+ * Version: 2.4.23
  * Author: Endurotech Racing
  * License: GPL-2.0-or-later
  */
@@ -11,7 +11,7 @@ if (!defined('ABSPATH')) exit; // no direct access
 
 define('EDR_TB_DIR', plugin_dir_path(__FILE__));
 define('EDR_TB_URL', plugin_dir_url(__FILE__));
-define('EDR_TB_VER', '2.4.22');
+define('EDR_TB_VER', '2.4.23');
 
 require_once EDR_TB_DIR . 'includes/garage61.php';
 require_once EDR_TB_DIR . 'includes/iracing.php';
@@ -399,9 +399,53 @@ function edr_tb_rest_draft_post(WP_REST_Request $req) {
 }
 
 /**
+ * iRacing race weeks tick over at Tuesday 00:00 UTC — 10:00 Brisbane year-round, 10:00 or 11:00
+ * Melbourne depending on daylight saving. Everything the Weekly tab reports is a race week, so
+ * the recap window and the ratings snapshot key both hang off this one boundary; otherwise the
+ * two halves of the same draft describe weeks that are a day out from each other.
+ *
+ * Returns the UTC timestamp of the tick that STARTS the next race week — the same instant the
+ * client's nextWeekWindow() anchors on. Subtract a week for the race week now finishing.
+ * Done arithmetically rather than with strtotime('next tuesday') because the relative formats
+ * behave differently on a Tuesday itself, which is exactly the case that has to be right.
+ */
+function edr_tb_next_week_tick($now = null) {
+    $now   = ($now === null) ? time() : (int) $now;
+    $today = strtotime(gmdate('Y-m-d', $now) . ' 00:00:00 UTC');
+    $ahead = (2 - (int) gmdate('w', $today) + 7) % 7;      // 2 = Tuesday
+    if ($ahead === 0) $ahead = 7;                          // today's tick has already gone by
+    return $today + $ahead * DAY_IN_SECONDS;
+}
+
+/**
+ * Snapshots used to be keyed gmdate('o-\WW'). Fold any of those onto the race week they belong
+ * to so the two key styles never sort against each other — ksort() is a string sort and every
+ * 'YYYY-MM-DD' key sorts before every 'YYYY-Wnn' one, which would strand the new snapshots at
+ * the bottom and diff the two stale ones forever.
+ *
+ * An ISO week's Tuesday is the right bucket for anything snapshotted Tue–Sun of that week, which
+ * is every snapshot the Sunday job ever took. A hand-taken Monday one lands a week late; that is
+ * one slightly-off movement figure on legacy data, not a broken diff.
+ */
+function edr_tb_migrate_snap_keys($snaps) {
+    $out = array();
+    foreach ((array) $snaps as $k => $v) {
+        if (preg_match('/^(\d{4})-W(\d{2})$/', (string) $k, $m)) {
+            $d = new DateTime('now', new DateTimeZone('UTC'));
+            $d->setISODate((int) $m[1], (int) $m[2], 2);   // 2 = Tuesday of that ISO week
+            $d->setTime(0, 0, 0);
+            $k = $d->format('Y-m-d');
+        }
+        $out[$k] = $v;
+    }
+    ksort($out);
+    return $out;
+}
+
+/**
  * Weekly ratings snapshot + diff.
  *
- * Two Garage 61 calls, seconds not minutes. Every snapshot is stored under its ISO week, so the
+ * Two Garage 61 calls, seconds not minutes. Every snapshot is stored under its race week, so the
  * movement for a week is just this week's numbers minus last week's. This is what actually
  * answers "most improved" and "safety rating changes" — the iRacing results sweep is only
  * needed for wins and podiums, and should not be what those awards wait on.
@@ -413,8 +457,12 @@ function edr_tb_snapshot_ratings() {
     if (is_wp_error($now)) return $now;
     if (!$now) return new WP_Error('empty', 'Garage 61 returned no member ratings.', array('status' => 502));
 
-    $snaps = (array) get_option('edr_tb_rating_snaps', array());
-    $week  = gmdate('o-\WW');                       // ISO year-week, so one snapshot per week
+    $snaps = edr_tb_migrate_snap_keys(get_option('edr_tb_rating_snaps', array()));
+    /* Keyed by the race week's own Tuesday. ISO weeks start on Monday, so a snapshot taken
+       Monday and one taken Tuesday sat in different ISO weeks despite being a day apart in the
+       same race week — the movement then read as a full week's gain off a single day. The
+       Weekly tab has a Take-snapshot button, so off-schedule runs are normal, not hypothetical. */
+    $week  = gmdate('Y-m-d', edr_tb_next_week_tick() - 7 * DAY_IN_SECONDS);
     $snaps[$week] = array('at' => time(), 'r' => $now);
     // keep a quarter of history; this option is read on every diff
     if (count($snaps) > 14) { ksort($snaps); $snaps = array_slice($snaps, -14, null, true); }
@@ -424,9 +472,9 @@ function edr_tb_snapshot_ratings() {
 
 /** Movement between the two most recent snapshots. */
 function edr_tb_rating_movement() {
-    $snaps = (array) get_option('edr_tb_rating_snaps', array());
+    // normalise on read too, so a diff taken before the next snapshot never sees mixed key styles
+    $snaps = edr_tb_migrate_snap_keys(get_option('edr_tb_rating_snaps', array()));
     if (count($snaps) < 2) return array('ready' => false, 'have' => count($snaps), 'movers' => array());
-    ksort($snaps);
     $keys = array_keys($snaps);
     $prev = $snaps[$keys[count($keys) - 2]];
     $curr = $snaps[$keys[count($keys) - 1]];
@@ -486,11 +534,19 @@ function edr_tb_rest_recap_refresh(WP_REST_Request $req) {
     if (get_transient('edr_tb_recap_running')) {
         return rest_ensure_response(array('ok' => true, 'running' => true, 'queued' => false));
     }
-    /* The write-up previews NEXT week, so the recap is the week immediately before it — the one
-       just finishing — not the one before that. Generated mid-week it is results-so-far, which
-       is still the right thing to look back on. */
-    $to   = $req->get_param('to')   ?: gmdate('Y-m-d\TH:i:s\Z', strtotime('monday next week'));
-    $from = $req->get_param('from') ?: gmdate('Y-m-d\TH:i:s\Z', strtotime('monday this week'));
+    /* The write-up previews the next race week, so the recap is the race week immediately before
+       it — the one just finishing — not the one before that. It hangs off the same Tuesday tick as
+       the client's window (edr_tb_next_week_tick()); anchoring this on Monday while the preview
+       ran Tuesday-to-Monday left the two halves of one draft a day out of step. Generated
+       mid-week it is results-so-far, which is still the right thing to look back on. */
+    $tick = edr_tb_next_week_tick();
+    /* The client sends the window explicitly so the recap follows the tab's next-week/this-week
+       toggle. Anything not in the exact shape the proxy expects falls back to the default rather
+       than being passed through: a malformed range comes back as an empty sweep, which reads as
+       "nobody raced last week" rather than as the bug it is. */
+    $shape = function ($v) { return is_string($v) && preg_match('/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$/', $v); };
+    $to   = $shape($req->get_param('to'))   ? $req->get_param('to')   : gmdate('Y-m-d\TH:i:s\Z', $tick);
+    $from = $shape($req->get_param('from')) ? $req->get_param('from') : gmdate('Y-m-d\TH:i:s\Z', $tick - 7 * DAY_IN_SECONDS);
     set_transient('edr_tb_recap_running', 1, 20 * MINUTE_IN_SECONDS);
     wp_schedule_single_event(time(), 'edr_tb_recap_job', array((string) $from, (string) $to));
     return rest_ensure_response(array('ok' => true, 'running' => true, 'queued' => true, 'from' => $from, 'to' => $to));
