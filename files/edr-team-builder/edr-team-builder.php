@@ -2,7 +2,7 @@
 /**
  * Plugin Name: EDR Team Builder
  * Description: Endurotech Racing endurance team + stint planner. Pulls Garage 61 pace and official iRacing session times, collects driver availability in-house, and builds Pro/Casual teams and stint rotations. Add the [edr_team_builder] shortcode to a page.
- * Version: 2.4.26
+ * Version: 2.4.27
  * Author: Endurotech Racing
  * License: GPL-2.0-or-later
  */
@@ -11,11 +11,12 @@ if (!defined('ABSPATH')) exit; // no direct access
 
 define('EDR_TB_DIR', plugin_dir_path(__FILE__));
 define('EDR_TB_URL', plugin_dir_url(__FILE__));
-define('EDR_TB_VER', '2.4.26');
+define('EDR_TB_VER', '2.4.27');
 
 require_once EDR_TB_DIR . 'includes/garage61.php';
 require_once EDR_TB_DIR . 'includes/iracing.php';
 require_once EDR_TB_DIR . 'includes/results.php';
+require_once EDR_TB_DIR . 'includes/history.php';
 
 /* ----------------------------------------------------------------
  * Settings (one shared credential set, admin-only, server-side)
@@ -199,6 +200,14 @@ add_action('rest_api_init', function () {
     ));
     register_rest_route('edr/v1', '/recap/refresh', array(
         'methods' => 'POST', 'permission_callback' => 'edr_tb_req_can_edit', 'callback' => 'edr_tb_rest_recap_refresh',
+    ));
+    // per-driver / per-track / per-series team history for the write-up (cheap proxy sweep,
+    // resumable like the recap). GET reads + advances a slice, POST starts a fresh sweep.
+    register_rest_route('edr/v1', '/history', array(
+        'methods' => 'GET', 'permission_callback' => 'edr_tb_req_can_edit', 'callback' => 'edr_tb_rest_history',
+    ));
+    register_rest_route('edr/v1', '/history/refresh', array(
+        'methods' => 'POST', 'permission_callback' => 'edr_tb_req_can_edit', 'callback' => 'edr_tb_rest_history_refresh',
     ));
     // the weekly write-up: the browser renders it, the server keeps the latest copy so a
     // scheduled job can post it without needing a browser
@@ -656,6 +665,112 @@ function edr_tb_recap_run($from = '', $to = '') {
     if (($r === 'working' || $r === 'idle') && get_transient('edr_tb_recap_running')) {
         // more to do (or a client poll holds the lock this instant) — hand on to another request
         wp_schedule_single_event(time() + 1, 'edr_tb_recap_job');
+        if (function_exists('spawn_cron')) spawn_cron();
+    }
+}
+
+/* ----------------------------------------------------------------
+ * Team history sweep — same resumable, step-on-read machinery as the recap (see
+ * edr_tb_recap_advance for the why). Its own lock and running flag so the two never collide.
+ * ---------------------------------------------------------------- */
+function edr_tb_hist_advance() {
+    global $wpdb;
+    if (!get_transient('edr_tb_hist_running')) return 'idle';
+    if ($wpdb->get_var("SELECT GET_LOCK('edr_tb_hist_step', 0)") != 1) return 'idle';
+
+    $out = 'idle';
+    $st  = edr_tb_hist_state();
+    $s   = edr_tb_settings();
+    if ($st && !empty($s['iracing_url']) && !empty($s['iracing_key'])) {
+        @set_time_limit(0);
+        $step = edr_tb_hist_step($s['iracing_url'], $s['iracing_key'], $st);
+        if (is_wp_error($step)) {
+            update_option('edr_tb_history_err', $step->get_error_message(), false);
+            edr_tb_hist_state_clear();
+            delete_transient('edr_tb_hist_running');
+            $out = 'error';
+        } elseif ($step === 'done') {
+            update_option('edr_tb_history', edr_tb_hist_shape($st), false);
+            update_option('edr_tb_history_err', '', false);
+            edr_tb_hist_state_clear();
+            delete_transient('edr_tb_hist_running');
+            $out = 'done';
+        } else {
+            $out = 'working';   // edr_tb_hist_step banked state as it went
+        }
+    }
+    $wpdb->query("SELECT RELEASE_LOCK('edr_tb_hist_step')");
+    return $out;
+}
+
+function edr_tb_rest_history() {
+    edr_tb_hist_advance();   // the poll drives the sweep, cron or not
+    $h = get_option('edr_tb_history', null);
+    $prog = (array) get_option('edr_tb_hist_progress', array());
+    $running = (bool) get_transient('edr_tb_hist_running');
+    $stalled = $running && !empty($prog['at']) && (time() - intval($prog['at']) > 300);
+    if ($stalled) { delete_transient('edr_tb_hist_running'); $running = false; }
+    return rest_ensure_response(array(
+        'history'  => $h ?: null,
+        'running'  => $running,
+        'progress' => $prog ?: null,
+        'stalled'  => $stalled,
+        'error'    => $stalled ? 'The history pull stopped partway through — reopen the Weekly tab to resume it.' : (string) get_option('edr_tb_history_err', ''),
+    ));
+}
+
+function edr_tb_rest_history_refresh(WP_REST_Request $req) {
+    $s = edr_tb_settings();
+    if (empty($s['iracing_url']) || empty($s['iracing_key'])) {
+        return new WP_Error('not_configured', 'Set the iRacing proxy in plugin Settings first.', array('status' => 400));
+    }
+    if (empty($s['g61_token'])) {
+        return new WP_Error('not_configured', 'Set the Garage 61 token in plugin Settings first.', array('status' => 400));
+    }
+    if (get_transient('edr_tb_hist_running')) {
+        return rest_ensure_response(array('ok' => true, 'running' => true, 'queued' => false));
+    }
+    $days = intval($req->get_param('days'));
+    // build the plan now so step-on-read has something to advance even where cron is dead
+    $members = edr_g61_all_members($s['g61_token']);
+    if (is_wp_error($members)) return $members;
+    if (empty($members['ids'])) {
+        return new WP_Error('no_members', 'Could not read the Garage 61 membership (needed for iRacing customer IDs).', array('status' => 502));
+    }
+    $st = edr_tb_hist_state_init($members['ids'], $days);
+    edr_tb_hist_state_save($st);
+    update_option('edr_tb_history_err', '', false);
+    set_transient('edr_tb_hist_running', 1, 30 * MINUTE_IN_SECONDS);
+    wp_schedule_single_event(time(), 'edr_tb_hist_job', array($days));
+    if (function_exists('spawn_cron')) spawn_cron();
+    return rest_ensure_response(array('ok' => true, 'running' => true, 'queued' => true, 'days' => $st['days']));
+}
+
+add_action('edr_tb_hist_job', 'edr_tb_hist_run', 10, 1);
+function edr_tb_hist_run($days = 0) {
+    $s = edr_tb_settings();
+    $fail = function ($msg) {
+        update_option('edr_tb_history_err', $msg, false);
+        edr_tb_hist_state_clear();
+        delete_transient('edr_tb_hist_running');
+    };
+    if (empty($s['iracing_url']) || empty($s['iracing_key']) || empty($s['g61_token'])) {
+        $fail('Garage 61 token and iRacing proxy both need to be set.');
+        return;
+    }
+    @set_time_limit(0);
+    if (!edr_tb_hist_state()) {   // cron beat the refresh, or a bare job — build the plan
+        $members = edr_g61_all_members($s['g61_token']);
+        if (is_wp_error($members) || empty($members['ids'])) {
+            $fail('Could not read the Garage 61 membership (needed for iRacing customer IDs).');
+            return;
+        }
+        edr_tb_hist_state_save(edr_tb_hist_state_init($members['ids'], intval($days)));
+        set_transient('edr_tb_hist_running', 1, 30 * MINUTE_IN_SECONDS);
+    }
+    $r = edr_tb_hist_advance();
+    if (($r === 'working' || $r === 'idle') && get_transient('edr_tb_hist_running')) {
+        wp_schedule_single_event(time() + 1, 'edr_tb_hist_job');
         if (function_exists('spawn_cron')) spawn_cron();
     }
 }

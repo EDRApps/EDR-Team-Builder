@@ -997,6 +997,48 @@ function driverNoteFor(names, used){
   if(used) used[hit]=1;
   return {name:hit, note:all[hit]};
 }
+/* Live team history (WordPress only — HISTORY is filled from GET /history; undefined in the
+   standalone build, so every helper below quietly returns nothing there and the draft keeps its
+   seeded/hand-written content). All of it degrades honestly: a win or podium count only prints
+   when the proxy actually carried finish positions (HISTORY.fields.pos). */
+function haveHistory(){ return typeof HISTORY!=='undefined' && HISTORY && HISTORY.tracks; }
+/* Config-insensitive, accent-folded — must match edr_tb_hist_track_key() in history.php. */
+function histTrackKey(name){
+  return String(name||'').normalize('NFD').replace(/[̀-ͯ]/g,'').toLowerCase().replace(/[^a-z0-9]+/g,'');
+}
+/* "EDR here: 23 starts, 3 wins, 5 podiums (best 2nd, Sam Millar)" for a round's track, or ''. */
+function histTrackLine(track){
+  if(!haveHistory() || !track) return '';
+  const t=HISTORY.tracks[histTrackKey(track)];
+  if(!t || !t.races) return '';
+  const pos=!!(HISTORY.fields && HISTORY.fields.pos);
+  const bits=['EDR here: '+t.races+' start'+(t.races===1?'':'s')];
+  if(pos && t.wins) bits.push(t.wins+' win'+(t.wins===1?'':'s'));
+  if(pos && t.podiums) bits.push(t.podiums+' podium'+(t.podiums===1?'':'s'));
+  let s=bits.join(', ');
+  if(pos && t.bestLabel && t.bestBy) s+=' (best '+t.bestLabel+', '+t.bestBy+')';
+  return s;
+}
+/* An earned driver mention for a round: whoever among the runners has actually raced this track,
+   with their own record, so the line changes as the season does. Falls back to the hand-written
+   personality note, then to nothing. `used` keeps one driver from being the flare twice. */
+function flareFor(who, used, track){
+  const w=weeklyState(); if(!w.flare) return null;
+  if(haveHistory() && track){
+    const t=HISTORY.tracks[histTrackKey(track)];
+    if(t && t.drivers && t.drivers.length){
+      const cand=t.drivers.filter(function(d){ return (who||[]).indexOf(d.name)>=0 && !(used&&used[d.name]); });
+      if(cand.length){
+        const d=cand[0], pos=!!(HISTORY.fields && HISTORY.fields.pos);
+        if(used) used[d.name]=1;
+        let note=d.races+' start'+(d.races===1?'':'s')+' here';
+        if(pos){ if(d.wins) note+=', '+d.wins+' win'+(d.wins===1?'':'s'); else if(d.bestLabel && d.best!==null) note+=', best '+d.bestLabel; }
+        return {name:d.name, note:note};
+      }
+    }
+  }
+  return driverNoteFor(who, used);
+}
 /* Everything the write-up is built from. Endurance and specials lead, because that is the bit
    the team most needs telling about; sprints follow, one per selected series. */
 /* The week the write-up covers is an iRacing race week, which ticks over at Tuesday 00:00
@@ -1092,7 +1134,7 @@ function weeklyFacts(){
       carsWeek:(r.carsWeek!==false), raceLaps:r.race_laps||0,
       track:r.track||'', raceMin:r.race_min||0, sessions:r.sessions||[],
       when:raceTimePattern(r), times:sessionTimeList(r,4), firstRaw:r.firstRaw||'', repeatRaw:r.repeat||0,
-      matched:!!r.track, note:trackNoteFor(r.track), flare:driverNoteFor(who, usedDrivers),
+      matched:!!r.track, note:trackNoteFor(r.track), flare:flareFor(who, usedDrivers, r.track), hist:histTrackLine(r.track),
       startDate:r.start_date
     });
   });
@@ -1126,7 +1168,7 @@ function weeklyFacts(){
       carsWeek:(r.carsWeek!==false), raceLaps:r.race_laps||0,
       when:raceTimePattern(r), times:sessionTimeList(r,6),
       recurring:(r.rounds||0)>3, note:trackNoteFor(r.track), startDate:r.start_date,
-      team:isTeamSeries(label)
+      hist:histTrackLine(r.track), team:isTeamSeries(label)
     });
   });
   enduros.sort(function(a,b){ return (a.startDate||'').localeCompare(b.startDate||'') || a.series.localeCompare(b.series); });
@@ -1165,6 +1207,10 @@ function teamRunners(key, seed){
    server-side (WORDPRESS ONLY — the standalone has no proxy, so this stays empty and the
    recap section is simply omitted). */
 let RECAP=null, RECAP_RUNNING=false, RECAP_ERR='', RECAP_PROG=null;
+/* Season team history (per track / series / driver), pulled server-side (WORDPRESS ONLY). Declared
+   here so both builds have the state and the standalone stub can write to it; the WP layer fills it
+   via applyHistory() and populates TEAM_SERIES from it. */
+let HISTORY=null, HIST_RUNNING=false, HIST_ERR='', HIST_PROG=null;
 /* Weekly iRating/Safety Rating movement, diffed from two Garage 61 snapshots. Two HTTP calls
    rather than the multi-minute iRacing sweep, so the ratings awards never wait on it. */
 let RATINGS=null;
@@ -1232,6 +1278,20 @@ function recapAgeLabel(){
   return 'last pulled '+relTime(new Date(RECAP.at*1000).toISOString().replace('T',' ').slice(0,19))
        +' · '+d+' driver'+(d===1?'':'s')+', '+(RECAP.races||0)+' race'+((RECAP.races||0)===1?'':'s')
        +((RECAP.dropped)?' · '+RECAP.dropped+' not fetched (run capped)':'');
+}
+/* Freshness line for the team-history sweep, mirroring recapAgeLabel(). */
+function histAgeLabel(){
+  if(typeof HIST_ERR!=='undefined' && HIST_ERR) return HIST_ERR;
+  if(typeof HIST_RUNNING!=='undefined' && HIST_RUNNING){
+    const p=(typeof HIST_PROG!=='undefined')?HIST_PROG:null;
+    if(p && p.total) return 'searching drivers — '+p.done+' of '+p.total;
+    return 'starting the history pull…';
+  }
+  if(!haveHistory() || !HISTORY.at) return 'no team history yet — "EDR here" lines and earned mentions stay off until you pull it';
+  const nd=(HISTORY.drivers?HISTORY.drivers.length:0);
+  return 'last pulled '+relTime(new Date(HISTORY.at*1000).toISOString().replace('T',' ').slice(0,19))
+       +' · last '+(HISTORY.days||90)+' days · '+nd+' driver'+(nd===1?'':'s')+', '+(HISTORY.races||0)+' race'+((HISTORY.races||0)===1?'':'s')
+       +((HISTORY.fields && !HISTORY.fields.pos)?' · positions not in feed — starts only':'');
 }
 /* When a repeating series actually goes green, as minutes past the hour — the thing people
    need in order to plan an evening ("on the :00 and :30"). Computed in the viewer's own
@@ -1363,6 +1423,7 @@ function weeklyDraft(f){
     if(e.team) line+=' · *team event*';
     L.push(line);
     if(!e.carsWeek) L.push('-# Please confirm car for '+draftWeekWord()+' — the schedule did not name one for this round.');
+    if(e.hist)      L.push('-# '+e.hist);
     if(e.times)     L.push('-# Sessions: '+e.times);
     else if(e.when) L.push('-# Races '+e.when);
     if(e.note) L.push('> '+cap(e.note)+'.');
@@ -1392,6 +1453,7 @@ function weeklyDraft(f){
     else if(s.times) line+=' — '+s.times;
     L.push(line);
     if(!s.carsWeek) L.push('-# Please confirm car for '+draftWeekWord()+' — the schedule did not name one for this round.');
+    if(s.hist) L.push('-# '+s.hist);
     if(s.note) L.push('> '+cap(s.note)+'.');
     if(s.flare) L.push('-# One for '+s.flare.name+' — '+s.flare.note+'.');
     L.push('');
@@ -1451,6 +1513,13 @@ function renderWeekly(){
       +(RECAP_RUNNING?'Pulling last week…':'Pull last week\'s results')+'</button>'
     +'<button class="quickbtn avfree" data-action="wksnap" title="reads iRating and safety rating from Garage 61 — seconds, not minutes">Snapshot ratings</button>'
     +'<span class="meta" style="font-size:10.5px;color:'+(RECAP_ERR?'var(--red)':'var(--dim)')+'">'+esc(recapAgeLabel())+'</span>'
+    +'</div>';
+  /* Season-long team history — the "EDR here: N starts, W wins" lines and the earned driver
+     mentions. Its own slow pull, like the recap. */
+  h+='<div class="quickrow">'
+    +'<button class="quickbtn avfree" data-action="wkhist"'+((typeof HIST_RUNNING!=='undefined'&&HIST_RUNNING)?' disabled':'')+' title="one search per driver over the last season — used for per-track records and earned driver mentions">'
+      +((typeof HIST_RUNNING!=='undefined'&&HIST_RUNNING)?'Pulling team history…':'Pull team history')+'</button>'
+    +'<span class="meta" style="font-size:10.5px;color:'+((typeof HIST_ERR!=='undefined'&&HIST_ERR)?'var(--red)':'var(--dim)')+'">'+esc(histAgeLabel())+'</span>'
     +'</div>';
   if(RATINGS&&RATINGS.ready) h+='<div class="meta" style="font-size:10.5px">Ratings movement '+esc(RATINGS.from)+' → '+esc(RATINGS.to)+', '+((RATINGS.movers||[]).length)+' driver(s) moved. This is what the iRating and safety rating awards use.</div>';
   else if(RATINGS) h+='<div class="meta" style="font-size:10.5px">Ratings: '+((RATINGS.have||0))+' snapshot(s) stored — a second week is needed before movement can be shown.</div>';
@@ -2231,6 +2300,7 @@ function cacheDraft(text){ return Promise.resolve(); }   /* WP build overrides: 
 function postDraftToDiscord(){ _wkMsg='Posting to Discord needs the WordPress build.'; _wkErr=true; renderContent(); }
 function snapshotRatings(){ _wkMsg='Ratings snapshots need the WordPress build.'; _wkErr=true; renderContent(); }
 function refreshRecap(){ RECAP_ERR='Last week\'s results need the iRacing proxy — WordPress build only.'; renderContent(); }
+function refreshHistory(){ HIST_ERR='Team history needs the iRacing proxy — WordPress build only.'; renderContent(); }
 /* a tab named in the URL (#availability), but only if that tab exists in this build — the
    WordPress build has Setup and the standalone does not */
 function tabFromHash(){
@@ -2368,6 +2438,7 @@ document.getElementById('content').addEventListener('click',e=>{
   if(e.target.dataset.action==='wkpost'){ if(isAdmin()) postDraftToDiscord(); return; }
   if(e.target.dataset.action==='wksnap'){ if(isAdmin()) snapshotRatings(); return; }
   if(e.target.dataset.action==='wkrecap'){ if(isAdmin()) refreshRecap(); return; }
+  if(e.target.dataset.action==='wkhist'){ if(isAdmin()) refreshHistory(); return; }
   if(e.target.dataset.action==='wkser'){
     if(!isAdmin()) return;
     const w=weeklyState(); w.pick[e.target.dataset.n]=e.target.checked; save(); return;   // no re-render: keeps the scroll position while ticking a long list
