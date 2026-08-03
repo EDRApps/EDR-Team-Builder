@@ -232,6 +232,35 @@ With step-on-read driving it, the heartbeat only falls silent when every tab has
 `GET /recap` now treats **five** minutes of silence (not three) as an abandoned run before it
 surfaces the "host cut it off" message and clears the flag.
 
+### Team history (`includes/history.php`, 2.4.27)
+
+The per-driver / per-track / per-series record the write-up used to fake. Until 2.4.27 the
+"who races this" figures came from the seeded `WEEKLY_SERIES` constant and the driver mentions from
+hand-written `DRIVER_NOTES`, so every draft said the same thing no matter what anyone had raced.
+
+**Cheap where the recap is expensive.** `results/search_series` returns one row per race *for the
+driver searched*, carrying the track, series and that driver's own finish — so history is one call
+per driver per ≤90-day chunk (~30–60 calls), and never touches `results/get`. The recap is only
+costly because it must find *other* EDR drivers in races it did not know about.
+
+- **Same resumable, step-on-read machinery as the recap** (`edr_tb_hist_advance()`, its own
+  `GET_LOCK('edr_tb_hist_step')` and `edr_tb_hist_running` flag). `POST /history/refresh` builds the
+  plan synchronously; `GET /history` advances a slice on every poll. Finishes without working cron.
+- **Degrades honestly.** Every field is probed across spellings and the payload reports which
+  arrived (`fields.pos`, `fields.inc`). If the proxy omits finish positions the draft shows "starts
+  only" — never a fabricated "0 wins". Confirmed by test: positions present → "12 starts, 3 wins,
+  6 podiums (best 1st, Sam Millar)"; absent → "12 starts".
+- **Track keys are config-insensitive and accent-folded** (`edr_tb_hist_track_key()` ↔ client
+  `histTrackKey()`, verified byte-identical across PHP and JS, so "Nürburgring" joins "Nurburgring").
+- **The series join can't drift.** The client re-keys history entries through its *own*
+  `seriesKey()` over each label to build `TEAM_SERIES`, rather than trusting PHP's
+  `edr_tb_hist_series_key()` to match — the mismatch the old handoff warned about is now
+  structurally impossible. `TEAM_SERIES` feeds `teamRunners()`; `histTrackLine()` and `flareFor()`
+  read `HISTORY` for the per-track line and the earned driver mention.
+- Client: `HISTORY`/`HIST_*` declared in the HTML core (so the standalone build no-ops cleanly);
+  the fetch/poll/`applyHistory()` live in the WP `APPEND` layer. "Pull team history" button sits
+  beside "Pull last week's results" on the Weekly tab.
+
 **Pace is never auto-applied.** The warm cache only makes the *next* import instant; it does not
 rewrite `state.drivers` behind anyone's back. Silently re-running the split could reshuffle a
 line-up an admin had already settled — the same class of surprise the plan's 409 guard exists to

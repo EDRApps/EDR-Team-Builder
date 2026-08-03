@@ -221,6 +221,26 @@ function pollRecap(n){
     }).catch(function(){ pollRecap(n+1); });
   }, 5000);
 }
+/* Team history sweep — same shape as the recap: kick it, then poll GET /history, whose every
+   read advances one slice server-side (so it finishes even where WP-Cron is dead). */
+function refreshHistory(){
+  HIST_RUNNING=true; HIST_ERR=''; renderContent();
+  fetch(API+'history/refresh',{method:'POST',headers:_hdrs(true),body:'{}'})
+    .then(function(r){ return r.json().catch(function(){return {};}).then(function(j){
+      if(!r.ok) throw new Error((j&&j.message)||'could not start the history pull'); return j; }); })
+    .then(function(){ pollHistory(0); })
+    .catch(function(err){ HIST_RUNNING=false; HIST_ERR=(err&&err.message)||'history pull failed'; renderContent(); });
+}
+function pollHistory(n){
+  if(n>90){ HIST_RUNNING=false; HIST_ERR='The history pull is taking longer than expected — reopen the tab shortly.'; renderContent(); return; }
+  setTimeout(function(){
+    apiGET('history').then(function(hh){
+      if(hh){ if(hh.history) applyHistory(hh.history); HIST_ERR=hh.error||''; HIST_RUNNING=!!hh.running; HIST_PROG=hh.progress||null; renderContent(); }
+      if(hh && hh.running) return pollHistory(n+1);
+      HIST_RUNNING=false; renderContent();
+    }).catch(function(){ pollHistory(n+1); });
+  }, 5000);
+}
 /* Keep the server's copy of the draft in step with what the admin sees. The scheduled
    Discord post has no browser to render with, so whatever was last generated here IS what
    gets posted — see cacheDraft callers. */
@@ -356,10 +376,24 @@ var IR_SEASONS=[], IR_STATUS='';
    weeks carrying session_times, because irMatchFor() scores across it and would otherwise
    settle on a sessionless week and stop the official-times feature working. */
 var IR_WEEKS=[];
-/* namespaced series key -> [{name, starts}] of who on the team actually runs it, built live
-   from iRacing results. Empty until that pull exists; the builder falls back to the seeded
-   figures and says so in the UI. */
+/* namespaced series key -> [{name, ...}] of who on the team actually runs it, built live from
+   the history sweep (GET /history). Empty until that pull exists; the builder falls back to the
+   seeded WEEKLY_SERIES figures and says so in the UI. */
 var TEAM_SERIES={};
+/* Fold a GET /history payload into the live globals (HISTORY + HIST_* are declared in the HTML
+   core so both builds share them). TEAM_SERIES is re-keyed by the client's own seriesKey() over
+   each series label, so the join to the schedule can never drift from the PHP key function — the
+   one that bit this before. */
+function applyHistory(h){
+  HISTORY=(h&&h.tracks)?h:null;
+  TEAM_SERIES={};
+  if(HISTORY&&HISTORY.series){
+    Object.keys(HISTORY.series).forEach(function(sk){
+      var e=HISTORY.series[sk]; var k=seriesKey(e.label||'');
+      if(k&&e.drivers&&e.drivers.length) TEAM_SERIES[k]=e.drivers;
+    });
+  }
+}
 function loadIracing(){
   return apiGET('iracing').then(function(r){
     if(r&&r.ok){ IR_SEASONS=r.seasons||[]; IR_WEEKS=r.weeks||[]; IR_STATUS=IR_SEASONS.length?'':'iRacing connected, but no active events expose session times right now.'; }
@@ -600,6 +634,7 @@ async function bootSetup(){
   renderContent();
   if(isAdmin()){
     try{ var rc=await apiGET('recap'); if(rc){ RECAP=rc.recap||null; RECAP_RUNNING=!!rc.running; RECAP_ERR=rc.error||''; RECAP_PROG=rc.progress||null; } }catch(e){}
+    try{ var hh=await apiGET('history'); if(hh){ applyHistory(hh.history||null); HIST_RUNNING=!!hh.running; HIST_ERR=hh.error||''; HIST_PROG=hh.progress||null; } }catch(e){}
     try{ RATINGS=await apiGET('ratings'); }catch(e){}
     try{ TRACKS=await apiGET('tracks'); }catch(e){ TRACKS=[]; } if(!Array.isArray(TRACKS)) TRACKS=[];
     preselectNearest();
