@@ -198,7 +198,14 @@ function snapshotRatings(){
 }
 function refreshRecap(){
   RECAP_RUNNING=true; RECAP_ERR=''; renderContent();
-  fetch(API+'recap/refresh',{method:'POST',headers:_hdrs(true),body:'{}'})
+  /* Recap the race week immediately before the one being drafted, so the "how last week went"
+     half and the "what is on" half of a draft never describe different weeks. Sent explicitly
+     because the server cannot know which way the tab's next-week/this-week toggle is set; its
+     own default is the same window for the 'next' case, which is what the Sunday job uses. */
+  const _wkWin=draftWeekWindow();
+  const _wkTo=Date.parse(_wkWin.from+'T00:00:00Z');
+  const _body=JSON.stringify({from:isoDayUTC(_wkTo-7*86400000)+'T00:00:00Z', to:isoDayUTC(_wkTo)+'T00:00:00Z'});
+  fetch(API+'recap/refresh',{method:'POST',headers:_hdrs(true),body:_body})
     .then(function(r){ return r.json().catch(function(){return {};}).then(function(j){
       if(!r.ok) throw new Error((j&&j.message)||'could not start the results pull'); return j; }); })
     .then(function(){ pollRecap(0); })

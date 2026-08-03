@@ -770,7 +770,7 @@ function catLabel(c){
   return m[c]||cap(String(c||'').replace(/_/g,' '));
 }
 function weeklyState(){
-  if(!state.weekly) state.weekly={pick:{}, track:{}, driver:{}, flare:true};
+  if(!state.weekly) state.weekly={pick:{}, track:{}, driver:{}, flare:true, scope:'next'};
   const w=state.weekly;
   /* `pick` holds ONLY explicit admin choices. It used to bulk-seed every known series on first
      open, which meant a stored `false` for everything outside the top twelve — indistinguishable
@@ -779,6 +779,11 @@ function weeklyState(){
      install that had already been opened once. Defaults are computed fresh in weeklyPickList();
      only what an admin actually clicked is stored. */
   if(!w.pick) w.pick={};
+  /* Which race week the draft covers. 'next' is the default and the tab's real job — the week
+     ahead — but an admin drafting mid-week sometimes wants the week already under way, and on a
+     Tuesday afternoon the "next" week is six days out. Anything unset or unrecognised normalises
+     to 'next' so an older stored plan opens on the documented default. */
+  if(w.scope!=='this') w.scope='next';
   return w;
 }
 /* iRacing season names carry the season and the sponsor ("iRacing Porsche Cup by CONSPIT -
@@ -808,13 +813,12 @@ function driverNoteFor(names, used){
 }
 /* Everything the write-up is built from. Endurance and specials lead, because that is the bit
    the team most needs telling about; sprints follow, one per selected series. */
-/* Next week: the Monday after this one, through the following Sunday.
+/* The week the write-up covers is an iRacing race week, which ticks over at Tuesday 00:00
+   UTC — 10:00 Brisbane year-round, 10:00 or 11:00 Melbourne depending on daylight saving.
    Returned as ISO date strings and compared as strings — iRacing start_date is a plain
    YYYY-MM-DD, and mixing that with local-midnight timestamps skews the window by hours in
    Brisbane and can drop or double-count a round at the boundary. */
-function isoDay(d){
-  return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
-}
+function isoDayUTC(ms){ return new Date(ms).toISOString().slice(0,10); }
 /* Race length is the honest split between an endurance round and a sprint: the endurance
    series run 90 minutes and up, the sprints 12 to 45. Series names are not reliable — plenty
    of sprint series have "Challenge" or a track famous for enduros in the name. */
@@ -849,16 +853,28 @@ function sameRace(ev, r){
   if(isNaN(d1)||isNaN(d2)) return false;
   return Math.abs(d1-d2) <= 4*86400000;
 }
-function nextWeekWindow(){
-  const start=weekStartOf(isoDay(new Date()));   // weekStartOf takes a date STRING, not a Date
-  start.setDate(start.getDate()+7);
-  const end=new Date(start); end.setDate(end.getDate()+6);
-  return {from:isoDay(start), to:isoDay(end)};
+/* Anchored on iRacing's own Tuesday tick rather than on a local Monday. The old version took
+   this week's Monday and added seven days, which lands on the Tuesday EIGHT days out whenever
+   the draft is generated on a Monday — the write-up then described the week after the one
+   everybody was about to race. It only read correctly Wed–Sun, which is why the Sunday cron
+   never showed it. Done in UTC so the window does not shift with whose browser generated it. */
+function draftWeekWindow(){
+  const now=new Date();
+  let ahead=(2 - now.getUTCDay() + 7) % 7;                 // 2 = Tuesday
+  /* on a Tuesday the 00:00 UTC tick has already gone, so the next week is a full seven days
+     out — without this the draft re-announces a week that is already under way */
+  if(ahead===0) ahead=7;
+  let start=Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()+ahead);
+  /* "this week" steps back to the tick that has already passed: the week being raced right now */
+  if(weeklyState().scope==='this') start-=7*86400000;
+  return {from:isoDayUTC(start), to:isoDayUTC(start+6*86400000)};
 }
-function inNextWeek(startDate){
-  const w=nextWeekWindow(), d=String(startDate||'');
+function inDraftWeek(startDate){
+  const w=draftWeekWindow(), d=String(startDate||'');
   return d>=w.from && d<=w.to;
 }
+/* "next week" / "this week", for headings and draft lines that have to agree with the toggle. */
+function draftWeekWord(){ return weeklyState().scope==='this' ? 'this week' : 'next week'; }
 function weeklyFacts(){
   /* The live schedule is the source of truth for what is on. IR_WEEKS comes straight from the
      iRacing API (every official round in the next fortnight); the baked WEEKLY_SERIES list is
@@ -866,11 +882,11 @@ function weeklyFacts(){
   const weeks=(typeof IR_WEEKS!=='undefined' && Array.isArray(IR_WEEKS)) ? IR_WEEKS : [];
   const w=weeklyState();
   const now=Date.now();
-  const win=nextWeekWindow();
+  const win=draftWeekWindow();
   const known={}; WEEKLY_SERIES.forEach(function(s){ known[seriesKey(s.n)]=s; });
 
-  /* only rounds that actually start next week */
-  const rounds=weeks.filter(function(r){ return inNextWeek(r.start_date); });
+  /* only rounds that actually start in the drafted week */
+  const rounds=weeks.filter(function(r){ return inDraftWeek(r.start_date); });
 
   /* one source for "is this series in": the same list the tick boxes render from, so the draft
      can never disagree with what the admin sees ticked */
@@ -896,12 +912,12 @@ function weeklyFacts(){
   sprints.sort(function(a,b){ return (b.starts||0)-(a.starts||0) || a.series.localeCompare(b.series); });
 
   /* Specials: the one-off majors and anything the team has flagged as a target, four weeks
-     out from the start of next week. These come from the season calendar rather than iRacing
+     out from the start of the drafted week. These come from the season calendar rather than iRacing
      because that is where EDR's own entries and round numbering live. */
-  const horizon=isoDay(new Date(Date.parse(win.from+'T00:00:00')+28*86400000));
+  const horizon=isoDayUTC(Date.parse(win.from+'T00:00:00Z')+28*86400000);
   const specials=calendar().filter(function(ev){
     if(ev.cat!=='endurance' && !ev.special && !isTarget(ev)) return false;
-    if((ev.e||ev.s) < win.from) return false;          // finished before next week begins
+    if((ev.e||ev.s) < win.from) return false;          // finished before the drafted week begins
     if(ev.s > horizon) return false;
     /* A recurring series synced in from iRacing is not a "special" — it belongs in the
        endurance list below, once, rather than filling this section with one row per future
@@ -910,7 +926,7 @@ function weeklyFacts(){
   }).sort(function(a,b){ return a.s.localeCompare(b.s); });
 
   /* Regular scheduled endurance — the weekly and fortnightly series, from the live schedule,
-     next week's round only. Split from sprints on race length, which is the honest signal:
+     the drafted week's round only. Split from sprints on race length, which is the honest signal:
      these run 90 minutes and up, the sprints are 12 to 45. */
   const enduros=[];
   rounds.forEach(function(r){
@@ -1141,8 +1157,8 @@ function weeklyDraft(f){
     L.push('');
   });
 
-  L.push('## Endurance — on next week');
-  if(!f.enduros.length) L.push('-# No endurance rounds next week.');
+  L.push('## Endurance — on '+draftWeekWord());
+  if(!f.enduros.length) L.push('-# No endurance rounds '+draftWeekWord()+'.');
   f.enduros.forEach(function(e){
     let line='**'+e.series+'** — '+(e.track||'track TBC');
     if(e.cars&&e.cars.length) line+=' · '+e.cars.join(' / ');
@@ -1160,7 +1176,7 @@ function weeklyDraft(f){
   if(!f.haveIracing){
     L.push('-# No live iRacing schedule — connect the proxy in plugin Settings.');
   } else if(!f.sprints.length){
-    L.push('-# No rounds next week for the series you have ticked.');
+    L.push('-# No rounds '+draftWeekWord()+' for the series you have ticked.');
   }
   f.sprints.forEach(function(s){
     if(!s.matched){ L.push('**'+s.series+'** — track TBC'); L.push(''); return; }
@@ -1184,7 +1200,7 @@ function weeklyDraft(f){
   L.push('-# Draft from the Team Builder — edit it before it goes anywhere public.');
   return L.join('\n');
 }
-/* The pick list is next week's actual rounds, not a fixed menu. Series the team has history in
+/* The pick list is the drafted week's actual rounds, not a fixed menu. Series the team has history in
    come first and are ticked; anything else is offered unticked so a new series can be added
    without editing code. */
 function weeklyPickList(){
@@ -1193,7 +1209,7 @@ function weeklyPickList(){
   const known={}; WEEKLY_SERIES.forEach(function(s){ known[seriesKey(s.n)]=s; });
   const seen={}, rows=[];
   weeks.forEach(function(r){
-    if(!inNextWeek(r.start_date)) return;
+    if(!inDraftWeek(r.start_date)) return;
     const k=seriesKey(r.series); if(seen[k]) return; seen[k]=1;
     const seed=known[k]||null;
     const label=seed?seed.n:prettySeriesName(r.series);
@@ -1221,6 +1237,10 @@ function renderWeekly(){
     +'<button class="btn btn-amber avfree" data-action="wkgen">Generate the update</button>'
     +'<button class="quickbtn avfree" data-action="wkcopy">Copy to clipboard</button>'
     +'<button class="quickbtn avfree" data-action="wkpost" title="post the box below to the Discord drafting channel">Post to Discord</button>'
+    +'<span class="meta" style="display:flex;gap:10px;align-items:center;margin-left:8px" title="which race week the draft covers — iRacing weeks tick over Tuesday 10:00 Melbourne">'
+      +'<label style="display:flex;gap:5px;align-items:center"><input type="radio" name="wkscope" data-action="wkscope" data-v="next"'+(w.scope==='next'?' checked':'')+'> next week</label>'
+      +'<label style="display:flex;gap:5px;align-items:center"><input type="radio" name="wkscope" data-action="wkscope" data-v="this"'+(w.scope==='this'?' checked':'')+'> this week</label>'
+    +'</span>'
     +'<label class="meta" style="display:flex;gap:6px;align-items:center;margin-left:8px"><input type="checkbox" data-action="wkflare"'+(w.flare?' checked':'')+'> driver mentions</label>'
     +(_wkMsg?'<span class="meta" style="color:'+(_wkErr?'var(--red)':'var(--green)')+'">'+esc(_wkMsg)+'</span>':'')
     +'</div>';
@@ -1236,7 +1256,7 @@ function renderWeekly(){
   else if(RATINGS) h+='<div class="meta" style="font-size:10.5px">Ratings: '+((RATINGS.have||0))+' snapshot(s) stored — a second week is needed before movement can be shown.</div>';
   h+='</div>';
 
-  h+='<div class="importbox"><div class="meta" style="text-transform:uppercase;letter-spacing:.04em;margin-bottom:2px">Series racing next week</div>';
+  h+='<div class="importbox"><div class="meta" style="text-transform:uppercase;letter-spacing:.04em;margin-bottom:2px">Series racing '+draftWeekWord()+'</div>';
   h+='<div class="meta" style="font-size:10.5px">Straight from the iRacing schedule for '+esc(f.week.from)+' to '+esc(f.week.to)+'. '
     +(f.liveRunners?'Team participation is live from iRacing results.'
                    :'Team participation is still the seeded snapshot — it becomes live once the results pull has run.')+'</div>';
@@ -2141,6 +2161,12 @@ document.getElementById('content').addEventListener('click',e=>{
     if(!isAdmin()) return;
     weeklyState().flare=e.target.checked; save(); return;
   }
+  if(e.target.dataset.action==='wkscope'){
+    if(!isAdmin()) return;
+    /* re-render, unlike the tick handlers: the whole window moves, so the pick list and every
+       round in it change with it */
+    weeklyState().scope=(e.target.dataset.v==='this')?'this':'next'; save(); renderContent(); return;
+  }
   if(e.target.dataset.action==='drvremove'){ excludeDriver(e.target.dataset.n); return; }
   if(e.target.dataset.action==='drvrestore'){ restoreDriver(e.target.dataset.k); return; }
   if(e.target.dataset.action==='avblock'){ if(isAdmin()) avSetBlock(+e.target.dataset.b); return; }
@@ -2328,7 +2354,14 @@ function snapshotRatings(){
 }
 function refreshRecap(){
   RECAP_RUNNING=true; RECAP_ERR=''; renderContent();
-  fetch(API+'recap/refresh',{method:'POST',headers:_hdrs(true),body:'{}'})
+  /* Recap the race week immediately before the one being drafted, so the "how last week went"
+     half and the "what is on" half of a draft never describe different weeks. Sent explicitly
+     because the server cannot know which way the tab's next-week/this-week toggle is set; its
+     own default is the same window for the 'next' case, which is what the Sunday job uses. */
+  const _wkWin=draftWeekWindow();
+  const _wkTo=Date.parse(_wkWin.from+'T00:00:00Z');
+  const _body=JSON.stringify({from:isoDayUTC(_wkTo-7*86400000)+'T00:00:00Z', to:isoDayUTC(_wkTo)+'T00:00:00Z'});
+  fetch(API+'recap/refresh',{method:'POST',headers:_hdrs(true),body:_body})
     .then(function(r){ return r.json().catch(function(){return {};}).then(function(j){
       if(!r.ok) throw new Error((j&&j.message)||'could not start the results pull'); return j; }); })
     .then(function(){ pollRecap(0); })

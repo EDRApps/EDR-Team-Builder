@@ -116,8 +116,18 @@ Generates a pasteable "This week in iRacing" draft. Hidden from drivers by
 
 - **Next week's rounds come from the live iRacing schedule.** `GET /iracing` now returns a
   second array, `weeks` (`edr_ir_weeks_from()`), holding every official round in the next
-  fortnight. The client keeps only rounds starting in next week's Mon–Sun window and the pick
-  list is built from those — so the tab shows what is actually on, not a fixed menu.
+  fortnight. The client keeps only rounds starting in the drafted **race week** and the pick list
+  is built from those — so the tab shows what is actually on, not a fixed menu.
+- **A race week is Tuesday 00:00 UTC to the following Tuesday**, iRacing's own rollover (10:00
+  Brisbane year-round; 10:00 or 11:00 Melbourne with daylight saving). `draftWeekWindow()` anchors
+  on that tick, and `edr_tb_next_week_tick()` is the PHP half so the recap window and the ratings
+  snapshot key land on the same boundary. Anchoring on a local Monday instead (as this did until
+  2.4.23) picks the Tuesday *eight* days out whenever the draft is generated on a Monday, so the
+  whole write-up ran a week ahead — and it only read correctly Wed–Sun, which is why the Sunday
+  job never showed it.
+- **The Weekly tab chooses which race week** — `state.weekly.scope`, `'next'` (default) or
+  `'this'`. `refreshRecap()` sends the matching recap window, so both halves of one draft always
+  describe the same pair of weeks.
 - **`weeks` is deliberately separate from `seasons`.** `edr_ir_seasons()` only emits weeks that
   carry `session_times`, because `irMatchFor()` scores across it; feed it every schedule week
   and it can settle on a sessionless one, at which point `applyIrTiming()` bails and the
