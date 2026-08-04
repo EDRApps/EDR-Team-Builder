@@ -333,10 +333,10 @@ function isAdmin(){ return state.role==='admin'; }
    roster spellings (NAME_ALIASES maps survey/profile variants onto these). */
 const DRIVER_NOTES={
   'Matthew Halden':'the ringmaster; names corners by crashing into them, and Blanchimont is his',
-  'Chris Wilson':'co-founder and Kiwi race voice; get the car home in one piece',
+  'Chris w':'co-founder and Kiwi race voice; get the car home in one piece',
   'Aden Lennox-Bradley':'the fastest here, and the most allergic to being seen to care',
   'Jake Lennox-Bradley':'the tinkerer who confesses the crash first; keeps score only against Aden',
-  'Matt Blee':'the social engine; ten seconds off the pace and first to say the sincere thing',
+  'matt blee':'the social engine; ten seconds off the pace and first to say the sincere thing',
   'Dominic Bou-Samra':'meme-engineer; bins it from a good grid slot and posts the clip himself',
   'Laurent Masson':'the emotional core, permanently over-trying and permanently sorry about it',
   'Thomaz Hernandes':'built half the grid rigs and painted their cars, then races them mid-pack',
@@ -863,20 +863,28 @@ function flarePool(track, seriesLabel){
    the sweep knows nobody for this round (rather than mention a seeded name), and only drops back
    to the hand-written notes when there is no history at all (standalone build / not yet pulled).
    `used` keeps one driver from being the flare twice in a draft. */
+/* A driver's own record is only worth a line if there is something to it — a win, a podium, or a
+   real body of starts. "1 start, best 8th" is noise, so it is not counted as flare-worthy. */
+function flareStatWorthy(d){ return d.wins>0 || d.podiums>0 || d.races>=5; }
+function flareStatNote(d){
+  const pos=!!(HISTORY.fields && HISTORY.fields.pos);
+  let note=d.races+' start'+(d.races===1?'':'s');
+  if(pos){ if(d.wins) note+=', '+d.wins+' win'+(d.wins===1?'':'s'); else if(d.podiums) note+=', '+d.podiums+' podium'+(d.podiums===1?'':'s'); else if(d.bestLabel && d.best!==null) note+=', best '+d.bestLabel; }
+  return note;
+}
 function flareFor(who, used, track, seriesLabel){
   const w=weeklyState(); if(!w.flare) return null;
   if(haveHistory()){
     const notes=Object.assign({}, DRIVER_NOTES, w.driver||{});
-    const d=flarePool(track, seriesLabel).find(function(x){ return !(used&&used[x.name]); });
-    if(!d) return null;                       // nobody from the data is free — say nothing
+    const free=flarePool(track, seriesLabel).filter(function(x){ return !(used&&used[x.name]); });
+    /* Prefer a driver we have a personality line for — that is the richest, most human mention and
+       keeps the character relevant to a driver the data ties to this round. */
+    let d=free.find(function(x){ return !!notes[x.name]; });
+    /* Otherwise a driver whose own record actually says something. Never fall to a bland stat. */
+    if(!d) d=free.find(flareStatWorthy);
+    if(!d) return null;                       // nobody worth a mention — better silent than filler
     if(used) used[d.name]=1;
-    let note=notes[d.name];
-    if(!note){                                // unprofiled: use their own record rather than invent character
-      const pos=!!(HISTORY.fields && HISTORY.fields.pos);
-      note=d.races+' start'+(d.races===1?'':'s');
-      if(pos){ if(d.wins) note+=', '+d.wins+' win'+(d.wins===1?'':'s'); else if(d.bestLabel && d.best!==null) note+=', best '+d.bestLabel; }
-    }
-    return {name:d.name, note:note};
+    return {name:d.name, note:notes[d.name] || flareStatNote(d)};
   }
   return driverNoteFor(who, used);
 }

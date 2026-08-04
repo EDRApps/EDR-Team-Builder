@@ -58,6 +58,10 @@ function edr_ir_track_label($tr) {
     if (!is_array($tr)) return '';
     $name = trim((string) (isset($tr['track_name']) ? $tr['track_name'] : ''));
     $cfg  = trim((string) (isset($tr['config_name']) ? $tr['config_name'] : ''));
+    // iRacing's results feed sends "N/A" as the config for tracks with no variant (Bathurst,
+    // Long Beach…), while the schedule sends none — so a raw label diverges and the history line
+    // fails to join. Treat "N/A" as no config so both sides land on the same name and key.
+    if (strcasecmp($cfg, 'N/A') === 0) $cfg = '';
     if ($cfg === '' || $name === '' || strcasecmp($cfg, $name) === 0) return $name;
     if (stripos($name, $cfg) !== false) return $name;   // config already contained in the name
     return trim($name . ' ' . $cfg);
