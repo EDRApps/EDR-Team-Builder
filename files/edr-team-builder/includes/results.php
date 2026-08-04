@@ -234,9 +234,13 @@ function edr_tb_recap_shape($st) {
             'dnf'     => $d['dnf'],
             'irDelta' => $d['irDelta'],
             'irEnd'   => $d['irEnd'],
-            'srDelta' => ($d['srStart'] !== null && $d['srEnd'] !== null) ? ($d['srEnd'] - $d['srStart']) : 0,
-            'srStart' => edr_tb_sr_label($d['srStart']),
-            'srEnd'   => edr_tb_sr_label($d['srEnd']),
+            /* results/get gives old/new_sub_level as SR*100 with no class digit (269 = 2.69 SR),
+               unlike the Garage 61 rating which packs class*1000+SR*100. So decode to SR points
+               here — running it through edr_tb_sr_label() printed a bogus class ("0 2.69") and a
+               delta 100x too big. No class letter is available from this feed. */
+            'srDelta' => ($d['srStart'] !== null && $d['srEnd'] !== null) ? round(($d['srEnd'] - $d['srStart']) / 100, 2) : 0,
+            'srStart' => ($d['srStart'] !== null) ? round($d['srStart'] / 100, 2) : null,
+            'srEnd'   => ($d['srEnd'] !== null) ? round($d['srEnd'] / 100, 2) : null,
             'best'    => ($d['best'] === null) ? null : ($d['best'] + 1),   // 0-based -> human
         );
     }
