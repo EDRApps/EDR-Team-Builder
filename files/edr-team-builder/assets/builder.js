@@ -1298,6 +1298,193 @@ function weeklyDraft(f){
   L.push('-# Draft from the Team Builder — edit it before it goes anywhere public.');
   return L.join('\n');
 }
+
+/* ===== Printable PDF brief =====================================================================
+   The same weekly facts, laid out as an EDR-branded briefing and sent to the browser's Save-as-PDF.
+   Pure client side (works in both builds): it opens a print window, lays the content into explicit
+   A4 pages so the dark background is edge to edge with a clean per-page footer, and prints. */
+const EDR_BRIEF_CSS = `
+:root{ --bg:#0c0e13; --card:#151a22; --card2:#11151b; --line:#242b36; --yellow:#f0f000; --white:#fff; --dim:#98a1b2; --dim2:#727c8d; }
+*{box-sizing:border-box;margin:0;padding:0}
+@page{ size:A4; margin:0; }
+html,body{ background:var(--bg); color:var(--white); font-family:'Karla',system-ui,sans-serif; font-size:10.2px; line-height:1.5; -webkit-print-color-adjust:exact; print-color-adjust:exact; }
+#src{ position:absolute; left:-9999px; top:0; width:180mm; }
+.page{ position:relative; width:210mm; height:297mm; background:var(--bg); overflow:hidden; padding:13mm 15mm 15mm; break-after:page; }
+.page:last-child{ break-after:auto; }
+.page.cont{ padding-top:26mm; }
+.minilogo{ position:absolute; top:11mm; right:15mm; width:78px; }
+.foot{ position:absolute; left:0; right:0; bottom:0; height:11mm; padding:0 15mm; display:flex; justify-content:space-between; align-items:center; background:var(--bg); border-top:1px solid var(--line); font-size:8px; color:var(--dim2); }
+.foot .c{ color:var(--yellow); }
+.disp,h1,h2,h3{ font-family:'Prompt','Karla',sans-serif; }
+.mono-cap{ font-family:'Prompt',sans-serif; text-transform:uppercase; letter-spacing:.24em; }
+.mast{ display:flex; align-items:flex-start; gap:16px; }
+.mast img{ width:118px; height:auto; }
+.mast .kicker{ color:var(--yellow); font-size:9px; font-weight:600; }
+.mast .title{ color:#fff; font-weight:700; font-style:italic; font-size:34px; line-height:.98; letter-spacing:.5px; text-transform:uppercase; margin-top:1px; }
+.mast .sub{ color:var(--dim); font-weight:700; font-size:11px; margin-top:5px; font-family:'Prompt',sans-serif; }
+.rule{ height:3px; background:var(--yellow); margin:9px 0 12px; }
+.intro{ color:var(--dim); font-size:11px; line-height:1.6; }
+.intro b{ color:var(--yellow); }
+.sec{ display:flex; align-items:center; gap:14px; margin:18px 0 11px; }
+.sec .h{ color:var(--yellow); font-weight:700; font-style:italic; font-size:21px; text-transform:uppercase; letter-spacing:.5px; white-space:nowrap; }
+.sec .ln{ flex:1; height:1px; background:var(--line); }
+.sec .tag{ color:var(--dim2); font-size:8.5px; }
+.recap{ background:var(--card); border:1px solid var(--line); border-radius:5px; padding:19px 21px; }
+.recap .lead{ color:#fff; font-family:'Prompt',sans-serif; font-weight:700; font-size:17px; margin-bottom:13px; }
+.recap .lead b{ color:var(--yellow); }
+.podium{ display:flex; gap:12px; margin-bottom:16px; }
+.pod{ flex:1; background:var(--card2); border-top:2px solid var(--yellow); border-radius:3px; padding:11px 13px; }
+.pod .rk{ color:var(--dim2); font-size:8.5px; font-family:'Prompt',sans-serif; letter-spacing:.14em; }
+.pod .nm{ color:#fff; font-weight:700; font-size:14.5px; font-family:'Prompt',sans-serif; margin-top:2px; }
+.pod .dl{ color:var(--yellow); font-weight:700; font-size:20px; margin-top:1px; }
+.pod .ex{ color:var(--dim); font-size:9.5px; margin-top:2px; }
+.awards{ display:grid; grid-template-columns:1fr 1fr; gap:9px 26px; }
+.aw{ color:var(--dim); font-size:11.5px; }
+.aw .lbl{ color:#cfd6e2; font-weight:700; }
+.aw .y{ color:var(--yellow); font-weight:700; }
+.card{ background:var(--card); border-left:4px solid var(--yellow); border-radius:3px; padding:12px 15px; margin-bottom:9px; }
+.card .crow{ display:flex; justify-content:space-between; align-items:flex-start; gap:12px; }
+.card .name{ color:#fff; font-weight:700; font-size:15px; font-family:'Prompt',sans-serif; }
+.card .track{ color:var(--yellow); font-weight:700; font-size:11px; margin-top:1px; }
+.badges{ display:flex; gap:7px; align-items:center; white-space:nowrap; }
+.pill{ background:var(--yellow); color:#111; font-weight:700; font-size:9px; padding:3px 8px; border-radius:2px; font-family:'Prompt',sans-serif; }
+.pill.ghost{ background:transparent; color:#fff; border:1px solid #3a4250; font-weight:600; letter-spacing:.04em; }
+.meta{ color:var(--dim); font-size:10px; margin-top:8px; }
+.meta b{ color:#cfd6e2; font-weight:700; }
+.desc{ color:var(--dim); font-size:10.3px; line-height:1.55; margin-top:7px; }
+.edrhere{ color:#cfd6e2; font-size:10px; margin-top:6px; }
+.edrhere b{ color:var(--yellow); }
+.tgt{ display:inline-block; border:1px solid #3a4250; color:var(--dim); font-size:7.6px; letter-spacing:.12em; padding:2px 6px; border-radius:2px; margin-left:8px; text-transform:uppercase; font-family:'Prompt',sans-serif; }
+.pairs{ width:100%; border-collapse:collapse; }
+.pairs td{ padding:9px 12px; font-size:10px; vertical-align:top; }
+.pairs tr:nth-child(odd) td{ background:var(--card2); }
+.pairs .ptrk{ color:var(--yellow); font-weight:700; width:26%; }
+.pairs .pser{ color:#fff; font-weight:700; width:32%; font-family:'Prompt',sans-serif; }
+.pairs .pmatch{ color:var(--dim); }
+.sprint{ padding:9px 0 8px; border-bottom:1px solid var(--line); }
+.sprint .stop{ display:flex; justify-content:space-between; align-items:baseline; gap:12px; }
+.sprint .s{ color:#fff; font-weight:700; font-size:12.5px; font-family:'Prompt',sans-serif; }
+.sprint .s .dur{ color:var(--yellow); font-size:11px; margin-left:5px; }
+.sprint .trk{ color:var(--dim); font-size:10px; text-align:right; }
+.sprint .cls{ color:var(--dim2); font-size:9.6px; margin-top:2px; }
+.sprint .cls .t{ color:var(--yellow); }
+.shout{ background:var(--card2); border-left:3px solid var(--yellow); border-radius:2px; padding:6px 10px; margin-top:6px; font-size:10px; color:var(--dim); }
+.shout .lbl{ color:var(--dim2); font-size:7.6px; letter-spacing:.18em; margin-right:8px; font-family:'Prompt',sans-serif; }
+.shout b{ color:var(--yellow); }
+`;
+function _briefDate(iso){ try{ return new Date(iso+'T00:00:00Z').toLocaleDateString('en-AU',{day:'numeric',month:'long',timeZone:'UTC'}); }catch(e){ return iso; } }
+function _briefYear(iso){ return String(iso||'').slice(0,4); }
+function _bsec(h,tag){ return '<div class="sec" data-keep="1"><div class="h">'+esc(h)+'</div><div class="ln"></div><div class="tag mono-cap">'+esc(tag)+'</div></div>'; }
+function _bpill(dur,date,live){ let b=[]; if(live) b.push('<span class="pill">LIVE NOW</span>'); if(dur) b.push('<span class="pill">'+esc(dur)+'</span>'); if(date) b.push('<span class="pill ghost">'+esc(date)+'</span>'); return b.length?'<div class="badges">'+b.join('')+'</div>':''; }
+function _bcard(o){
+  let p=['<div class="card"><div class="crow"><div><div class="name">'+esc(o.name)+'</div><div class="track">'+esc(o.track||'track TBC')+'</div></div>'+_bpill(o.dur,o.date,o.live)+'</div>'];
+  const tgt=o.target?'<span class="tgt">EDR target</span>':'';
+  if(o.cars) p.push('<div class="meta"><b>Class:</b> '+esc(o.cars)+tgt+'</div>'); else if(tgt) p.push('<div class="meta">'+tgt+'</div>');
+  if(o.sessions) p.push('<div class="meta"><b>Sessions:</b> '+esc(o.sessions)+'</div>');
+  if(o.edrhere) p.push('<div class="edrhere"><b>EDR here:</b> '+esc(o.edrhere)+'</div>');
+  if(o.desc) p.push('<div class="desc">'+esc(o.desc)+'</div>');
+  return p.join('')+'</div>';
+}
+function _bsprint(s){
+  const dur=fmtRaceDist(s.raceMin,s.raceLaps), cls=(s.cars&&s.cars.length)?s.cars.join(' / '):'', timing=s.when||s.times||'';
+  let h='<div class="sprint"><div class="stop"><div class="s">'+esc(s.series)+(dur?'<span class="dur">'+esc(dur)+'</span>':'')+'</div><div class="trk">'+esc(s.track||'track TBC')+'</div></div>';
+  if(cls||timing) h+='<div class="cls">'+esc(cls)+(cls&&timing?' · ':'')+(timing?'<span class="t">'+esc(timing)+'</span>':'')+'</div>';
+  if(s.hist) h+='<div class="edrhere"><b>EDR here:</b> '+esc(s.hist)+'</div>';
+  if(s.flare) h+='<div class="shout"><span class="lbl">SHOUTOUT</span><b>'+esc(s.flare.name)+'</b>: '+esc(s.flare.note)+'.</div>';
+  return h+'</div>';
+}
+/* Sprints that share a track with an enduro — the mockup's "free homework" table. */
+function _briefPairings(f){
+  const rows=[];
+  (f.enduros||[]).forEach(function(e){
+    if(!e.track) return;
+    const k=histTrackKey(e.track);
+    const m=(f.sprints||[]).filter(function(s){ return s.track && histTrackKey(s.track)===k; })
+      .map(function(s){ return s.series+' '+fmtRaceDist(s.raceMin,s.raceLaps); });
+    if(m.length) rows.push({trk:e.track, ser:e.series+' · '+fmtRaceDist(e.raceMin,e.raceLaps), match:m.slice(0,3).join(' · ')});
+  });
+  return rows;
+}
+/* The whole brief as one HTML string of blocks (in #src), for the paginator to lay out. */
+function weeklyBriefBlocks(f){
+  const B=[];
+  B.push('<div class="mast"><img src="'+(EDR_BRIEF_LOGO||'')+'">'
+    +'<div><div class="kicker mono-cap">Endurotech Racing Weekly Briefing</div>'
+    +'<div class="title disp">This Week in iRacing</div>'
+    +'<div class="sub">Week of '+esc(_briefDate(f.week.from))+' to '+esc(_briefDate(f.week.to))+' '+esc(_briefYear(f.week.to))+'</div></div></div>'
+    +'<div class="rule"></div>'
+    +'<div class="intro">Team first, as always: last week in the mirrors, then the endurance calendar, the majors on the horizon, and this week\'s sprint lineup. <b>If you don\'t know a race is on, you don\'t know.</b></div>');
+
+  const aw=(typeof recapAwards==='function')?recapAwards(RECAP):null;
+  if(aw){
+    B.push(_bsec('Last Week','In the mirrors'));
+    let r='<div class="recap"><div class="lead"><b>'+(aw.drivers||0)+'</b> drivers started <b>'+(aw.starts||0)+'</b> official races.</div>';
+    if(aw.top3&&aw.top3.length){
+      r+='<div class="podium">';
+      aw.top3.forEach(function(d,i){
+        const ex=(d.races?(d.races+' race'+(d.races===1?'':'s')+(d.wins?', '+d.wins+' win'+(d.wins===1?'':'s'):(d.podiums?', '+d.podiums+' podium'+(d.podiums===1?'':'s'):''))):'');
+        r+='<div class="pod"><div class="rk">'+(i===0?'01 · Most improved':(i===1?'02':'03'))+'</div><div class="nm">'+esc(d.name)+'</div><div class="dl">'+sgn(d.irDelta)+'</div><div class="ex">'+(d.irEnd?'→ '+d.irEnd+' iR':'')+(ex?' · '+esc(ex):'')+'</div></div>';
+      });
+      r+='</div>';
+    }
+    const aws=[];
+    if(aw.lost) aws.push('<span class="lbl">Took one for the team</span> — '+esc(aw.lost.name)+' <span class="y">'+sgn(aw.lost.irDelta)+'</span>');
+    if(aw.winners&&aw.winners.length) aws.push('<span class="lbl">Wins</span> — '+aw.winners.map(function(d){return esc(d.name)+' ('+d.wins+')';}).join(', '));
+    if(aw.srUp) aws.push('<span class="lbl">Safety rating climb</span> — '+esc(aw.srUp.name)+' '+esc(fmtSr(aw.srUp)));
+    if(aw.srDown) aws.push('<span class="lbl">Safety rating slide</span> — '+esc(aw.srDown.name)+' '+esc(fmtSr(aw.srDown)));
+    if(aw.busiest&&aw.busiest.races>1) aws.push('<span class="lbl">Busiest</span> — '+esc(aw.busiest.name)+', '+aw.busiest.races+' starts');
+    if(aw.cleanest) aws.push('<span class="lbl">Cleanest</span> — '+esc(aw.cleanest.name)+', '+(Math.round((aw.cleanest.inc/aw.cleanest.races)*10)/10)+'x per race');
+    if(aws.length) r+='<div class="awards">'+aws.map(function(a){return '<div class="aw">'+a+'</div>';}).join('')+'</div>';
+    B.push(r+'</div>');
+  }
+
+  if(f.enduros&&f.enduros.length){
+    B.push(_bsec('Endurance','Team focus'));
+    f.enduros.forEach(function(e){ B.push(_bcard({name:e.series, track:e.track, cars:(e.cars&&e.cars.length)?e.cars.join(' / '):'', sessions:(e.times?'Sessions: '+e.times:(e.when?'Races '+e.when:'')).replace(/^Sessions: /,''), dur:fmtRaceDist(e.raceMin,e.raceLaps), edrhere:e.hist, desc:e.note?cap(e.note)+'.':''})); });
+  }
+  if(f.specials&&f.specials.length){
+    B.push(_bsec('On the Horizon','Next four weeks · EDR targets'));
+    f.specials.forEach(function(ev){
+      const when=ev.live?'':(esc(ev.dates)+' · in '+ev.inDays+' day'+(ev.inDays===1?'':'s'));
+      B.push(_bcard({name:ev.name, track:ev.track, cars:ev.cars||'', dur:ev.dur?ev.dur+'H':'', date:when, live:ev.live, target:ev.target, desc:ev.note?cap(ev.note)+'.':''}));
+    });
+  }
+  const pr=_briefPairings(f);
+  if(pr.length){
+    B.push(_bsec('Practice Pairings','Free homework'));
+    B.push('<div class="intro" style="margin-bottom:8px">Some of this week\'s sprints run on the same track as an enduro — same corners, a fraction of the commitment.</div>');
+    B.push('<table class="pairs"><tbody>'+pr.map(function(p){ return '<tr><td class="ptrk">'+esc(p.trk)+'</td><td class="pser">'+esc(p.ser)+'</td><td class="pmatch">'+esc(p.match)+'</td></tr>'; }).join('')+'</tbody></table>');
+  }
+  if(f.sprints&&f.sprints.length){
+    B.push(_bsec('Sprints','On the repeating slots'));
+    f.sprints.forEach(function(s){ if(s.matched) B.push(_bsprint(s)); });
+  }
+  return B.join('\n');
+}
+let EDR_BRIEF_LOGO='';
+function openWeeklyBrief(){
+  if(!isAdmin()) return;
+  const f=weeklyFacts();
+  try{ const im=document.querySelector('img[src^="data:image/png;base64,iVBOR"]'); EDR_BRIEF_LOGO=im?im.src:''; }catch(e){ EDR_BRIEF_LOGO=''; }
+  const blocks=weeklyBriefBlocks(f);
+  const footHTML='<div class="mono-cap">Endurotech Racing</div><div class="c mono-cap">This Week in iRacing · '+esc(_briefDate(f.week.from))+' to '+esc(_briefDate(f.week.to))+'</div><div class="mono-cap">Endurotech</div>';
+  const pager='(function(){var LOGO='+JSON.stringify(EDR_BRIEF_LOGO)+',FOOT='+JSON.stringify(footHTML)+';'
+    +'function px(mm){return mm*96/25.4;}var CAP=px(297-16);'
+    +'function foot(){var f=document.createElement("div");f.className="foot";f.innerHTML=FOOT;return f;}'
+    +'function logo(){var i=document.createElement("img");i.className="minilogo";i.src=LOGO;return i;}'
+    +'function run(){var src=document.getElementById("src"),pages=document.getElementById("pages");var bl=[].slice.call(src.children);src.parentNode.removeChild(src);'
+    +'var page,first=true;function np(){page=document.createElement("div");page.className="page"+(first?"":" cont");if(!first)page.appendChild(logo());page.appendChild(foot());pages.appendChild(page);}'
+    +'function anchor(){return page.querySelector(".foot");}function cnt(){return page.querySelectorAll(":scope > :not(.foot):not(.minilogo)").length;}np();'
+    +'bl.forEach(function(b){page.insertBefore(b,anchor());if(b.offsetTop+b.offsetHeight>CAP&&cnt()>1){page.removeChild(b);var carry=[],last=anchor().previousElementSibling;if(last&&last.getAttribute("data-keep")==="1"){page.removeChild(last);carry.push(last);}first=false;np();carry.forEach(function(c){page.insertBefore(c,anchor());});page.insertBefore(b,anchor());}});'
+    +'setTimeout(function(){try{window.focus();window.print();}catch(e){}},80);}'
+    +'window.addEventListener("load",function(){if(document.fonts&&document.fonts.ready){document.fonts.ready.then(function(){setTimeout(run,150);});}else setTimeout(run,400);});})();';
+  const doc='<!doctype html><html><head><meta charset="utf-8"><title>EDR — This Week in iRacing</title>'
+    +'<link href="https://fonts.googleapis.com/css2?family=Prompt:ital,wght@0,500;0,600;0,700;1,600;1,700&family=Karla:wght@400;500;700&display=swap" rel="stylesheet">'
+    +'<style>'+EDR_BRIEF_CSS+'</style></head><body><div id="src">'+blocks+'</div><div id="pages"></div><script>'+pager+'<\/script></body></html>';
+  const w=window.open('','_blank');
+  if(!w){ _wkMsg='Allow pop-ups for this site, then hit Download brief again.'; _wkErr=true; renderContent(); return; }
+  w.document.open(); w.document.write(doc); w.document.close();
+}
 /* The pick list is the drafted week's actual rounds, not a fixed menu. Series the team has history in
    come first and are ticked; anything else is offered unticked so a new series can be added
    without editing code. */
@@ -1335,6 +1522,7 @@ function renderWeekly(){
     +'<button class="btn btn-amber avfree" data-action="wkgen">Generate the update</button>'
     +'<button class="quickbtn avfree" data-action="wkai"'+(_wkAI?' disabled':'')+' title="rewrite the generated draft in EDR\'s voice with Gemini — needs an API key in plugin Settings">'+(_wkAI?'Composing…':'Compose with AI')+'</button>'
     +'<button class="quickbtn avfree" data-action="wkcopy">Copy to clipboard</button>'
+    +'<button class="quickbtn avfree" data-action="wkpdf" title="open a styled, printable brief and save it as a PDF (uses this week\'s data)">Download brief (PDF)</button>'
     +'<button class="quickbtn avfree" data-action="wkpost" title="post the box below to the Discord drafting channel">Post to Discord</button>'
     +'<span class="meta" style="display:flex;gap:10px;align-items:center;margin-left:8px" title="which race week the draft covers — iRacing weeks tick over Tuesday 10:00 Melbourne">'
       +'<label style="display:flex;gap:5px;align-items:center"><input type="radio" name="wkscope" data-action="wkscope" data-v="next"'+(w.scope==='next'?' checked':'')+'> next week</label>'
@@ -2270,6 +2458,7 @@ document.getElementById('content').addEventListener('click',e=>{
     _wkDraft=weeklyDraft(weeklyFacts()); _wkMsg='Draft built.'; _wkErr=false; cacheDraft(_wkDraft); save(); renderContent(); return;
   }
   if(e.target.dataset.action==='wkai'){ if(isAdmin()) composeDraft(); return; }
+  if(e.target.dataset.action==='wkpdf'){ if(isAdmin()) openWeeklyBrief(); return; }
   if(e.target.dataset.action==='wkcopy'){
     if(!isAdmin()) return;
     const ta=document.getElementById('wkdraft');
