@@ -2,7 +2,7 @@
 /**
  * Plugin Name: EDR Team Builder
  * Description: Endurotech Racing endurance team + stint planner. Pulls Garage 61 pace and official iRacing session times, collects driver availability in-house, and builds Pro/Casual teams and stint rotations. Add the [edr_team_builder] shortcode to a page.
- * Version: 2.4.32
+ * Version: 2.4.33
  * Author: Endurotech Racing
  * License: GPL-2.0-or-later
  */
@@ -11,7 +11,7 @@ if (!defined('ABSPATH')) exit; // no direct access
 
 define('EDR_TB_DIR', plugin_dir_path(__FILE__));
 define('EDR_TB_URL', plugin_dir_url(__FILE__));
-define('EDR_TB_VER', '2.4.32');
+define('EDR_TB_VER', '2.4.33');
 
 require_once EDR_TB_DIR . 'includes/garage61.php';
 require_once EDR_TB_DIR . 'includes/iracing.php';
@@ -29,6 +29,8 @@ function edr_tb_settings() {
         'iracing_url' => '',
         'iracing_key' => '',
         'discord_webhook' => '',
+        'gemini_key'   => '',
+        'gemini_model' => 'gemini-2.5-flash',
     ));
 }
 
@@ -117,6 +119,8 @@ add_action('admin_init', function () {
             'iracing_url' => esc_url_raw($in['iracing_url'] ?? ''),
             'iracing_key' => sanitize_text_field($in['iracing_key'] ?? ''),
             'discord_webhook' => esc_url_raw($in['discord_webhook'] ?? ''),
+            'gemini_key'   => sanitize_text_field($in['gemini_key'] ?? ''),
+            'gemini_model' => sanitize_text_field($in['gemini_model'] ?? 'gemini-2.5-flash'),
         );
     });
 });
@@ -148,6 +152,12 @@ function edr_tb_settings_page() {
           <tr><th scope="row">Discord webhook (weekly update)</th>
             <td><input type="text" name="edr_tb_settings[discord_webhook]" value="<?php echo esc_attr($s['discord_webhook']); ?>" class="regular-text" autocomplete="off" placeholder="https://discord.com/api/webhooks/...">
             <p class="description">Where the weekly write-up gets posted. Use a <strong>private drafting channel</strong> &mdash; what is posted is a draft to edit, not a finished announcement. Leave blank to disable posting.</p></td></tr>
+          <tr><th scope="row">Gemini API key (optional)</th>
+            <td><input type="text" name="edr_tb_settings[gemini_key]" value="<?php echo esc_attr($s['gemini_key']); ?>" class="regular-text" autocomplete="off">
+            <p class="description">Enables the <strong>Compose with AI</strong> button on the Weekly tab, which rewrites the generated draft in EDR&rsquo;s voice. Only the draft and the sanitised driver one-liners are sent &mdash; never the source profile briefs. <strong>Use a billing-enabled key:</strong> Google&rsquo;s free tier trains on your prompts and has human reviewers; the paid tier does not, and weekly use costs next to nothing. Leave blank to hide the button.</p></td></tr>
+          <tr><th scope="row">Gemini model</th>
+            <td><input type="text" name="edr_tb_settings[gemini_model]" value="<?php echo esc_attr($s['gemini_model']); ?>" class="regular-text" autocomplete="off" placeholder="gemini-2.5-flash">
+            <p class="description">Which model composes the draft. A Flash model is cheap and plenty for this. If the compose button reports the model was not found, correct the id here.</p></td></tr>
         </table>
         <?php submit_button(); ?>
       </form>
@@ -208,6 +218,10 @@ add_action('rest_api_init', function () {
     ));
     register_rest_route('edr/v1', '/history/refresh', array(
         'methods' => 'POST', 'permission_callback' => 'edr_tb_req_can_edit', 'callback' => 'edr_tb_rest_history_refresh',
+    ));
+    // optional: rewrite the generated draft in EDR's voice with Gemini (facts stay the client's)
+    register_rest_route('edr/v1', '/draft/compose', array(
+        'methods' => 'POST', 'permission_callback' => 'edr_tb_req_can_edit', 'callback' => 'edr_tb_rest_compose',
     ));
     // the weekly write-up: the browser renders it, the server keeps the latest copy so a
     // scheduled job can post it without needing a browser
@@ -812,6 +826,90 @@ function edr_tb_hist_run($days = 0) {
         wp_schedule_single_event(time() + 1, 'edr_tb_hist_job');
         if (function_exists('spawn_cron')) spawn_cron();
     }
+}
+
+/* ----------------------------------------------------------------
+ * Optional AI compose — rewrite the generated draft in EDR's voice with Gemini.
+ *
+ * The draft the client sends is the single source of truth for every fact; the model is told, in
+ * the strongest terms, to rewrite prose only and invent nothing. Only the draft and the sanitised
+ * one-line driver notes ($voice) are sent — never the source profile briefs (which the codebase
+ * does not even hold). Server-side so the key never reaches a browser, same as every other credential.
+ * ---------------------------------------------------------------- */
+function edr_tb_gemini_compose($draft, $voice) {
+    $s = edr_tb_settings();
+    if (empty($s['gemini_key'])) {
+        return new WP_Error('no_key', 'Add a Gemini API key in plugin Settings to use Compose with AI.', array('status' => 400));
+    }
+    $draft = trim((string) $draft);
+    if ($draft === '') return new WP_Error('empty', 'Generate the draft first, then compose.', array('status' => 400));
+
+    $model = ($s['gemini_model'] !== '') ? $s['gemini_model'] : 'gemini-2.5-flash';
+
+    $system = "You are the race-week correspondent for Endurotech Racing (EDR), a GT3/GTP iRacing "
+        . "endurance team of adult amateurs who race for fun. Rewrite the weekly update below so it reads "
+        . "like a sharp, funny team-mate wrote it, in EDR's house voice: Australian English, warm and a "
+        . "little irreverent, sentence case, no emojis, no em dashes.\n\n"
+        . "ABSOLUTE RULES:\n"
+        . "- The draft is the ONLY source of facts. Never invent, change or drop a statistic, result, driver "
+        . "name, car, track, race length, session time, date or event. If it is not in the draft, it does not exist.\n"
+        . "- Keep every section heading, and keep every schedule detail (track, car, race length, session times) exact.\n"
+        . "- You may rewrite the intro, the award wording and the one-line driver mentions for flow and character, "
+        . "drawing on the personality notes. Those notes are voice only: do not state them as facts.\n"
+        . "- Only mention a driver the draft already mentions.\n"
+        . "- It is pasted into Discord, which renders #/## headings, **bold** and > quotes. Keep it tight.\n"
+        . "- Output only the finished update, nothing before or after it.";
+
+    $voiceTxt = '';
+    if (is_array($voice) && $voice) {
+        $lines = array();
+        foreach ($voice as $name => $note) {
+            $name = trim((string) $name); $note = trim((string) $note);
+            if ($name !== '' && $note !== '') $lines[] = '- ' . $name . ': ' . $note;
+        }
+        if ($lines) $voiceTxt = "\n\nDriver personality notes (voice and character only, never facts):\n" . implode("\n", $lines);
+    }
+
+    $payload = wp_json_encode(array(
+        'systemInstruction' => array('parts' => array(array('text' => $system))),
+        'contents' => array(array('role' => 'user', 'parts' => array(array(
+            'text' => "This week's draft. Every fact in your version must come from it:\n\n" . $draft . $voiceTxt,
+        )))),
+        'generationConfig' => array('temperature' => 0.7, 'maxOutputTokens' => 8192),
+    ));
+
+    $url = 'https://generativelanguage.googleapis.com/v1beta/models/' . rawurlencode($model) . ':generateContent';
+    $res = wp_remote_post($url, array(
+        'timeout' => 45,
+        'headers' => array('Content-Type' => 'application/json', 'x-goog-api-key' => $s['gemini_key']),
+        'body'    => $payload,
+    ));
+    if (is_wp_error($res)) return $res;
+    $code = wp_remote_retrieve_response_code($res);
+    $data = json_decode(wp_remote_retrieve_body($res), true);
+    if ($code !== 200) {
+        $msg = (is_array($data) && isset($data['error']['message'])) ? (string) $data['error']['message'] : ('Gemini returned HTTP ' . $code . '.');
+        return new WP_Error('gemini_http', $msg, array('status' => 502));
+    }
+    $text = '';
+    if (isset($data['candidates'][0]['content']['parts']) && is_array($data['candidates'][0]['content']['parts'])) {
+        foreach ($data['candidates'][0]['content']['parts'] as $p) {
+            if (isset($p['text'])) $text .= $p['text'];
+        }
+    }
+    $text = trim($text);
+    if ($text === '') {
+        $reason = isset($data['candidates'][0]['finishReason']) ? (' (' . (string) $data['candidates'][0]['finishReason'] . ')') : '';
+        return new WP_Error('gemini_empty', 'Gemini returned no text' . $reason . '. Try again, or pick a different model in Settings.', array('status' => 502));
+    }
+    return $text;
+}
+
+function edr_tb_rest_compose(WP_REST_Request $req) {
+    $voice = $req->get_param('voice');
+    $out = edr_tb_gemini_compose((string) $req->get_param('draft'), is_array($voice) ? $voice : array());
+    if (is_wp_error($out)) return $out;
+    return rest_ensure_response(array('ok' => true, 'text' => $out));
 }
 
 function edr_tb_rest_rev(WP_REST_Request $req) {

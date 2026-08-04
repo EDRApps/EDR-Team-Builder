@@ -766,7 +766,7 @@ function renderEventTab(){
    the voice is not something PHP can invent, so the draft is a skeleton an admin finishes.
    When the Claude API step is wired in it consumes weeklyFacts() and replaces weeklyDraft()
    only — nothing else has to move. */
-let _wkMsg='', _wkDraft='', _wkErr=false;
+let _wkMsg='', _wkDraft='', _wkErr=false, _wkAI=false;
 let _wkCat='all', _wkQ='';   /* pick-list discipline filter and search, display only */
 function catLabel(c){
   const m={'sports_car':'Sports car','formula_car':'Formula','oval':'Oval','dirt_oval':'Dirt oval','dirt_road':'Dirt road','road':'Road'};
@@ -1336,6 +1336,7 @@ function renderWeekly(){
                    :'No live iRacing data right now, so tracks will be blank — set the proxy in plugin Settings.')+'</div>';
   h+='<div class="quickrow" style="margin-top:10px">'
     +'<button class="btn btn-amber avfree" data-action="wkgen">Generate the update</button>'
+    +'<button class="quickbtn avfree" data-action="wkai"'+(_wkAI?' disabled':'')+' title="rewrite the generated draft in EDR\'s voice with Gemini — needs an API key in plugin Settings">'+(_wkAI?'Composing…':'Compose with AI')+'</button>'
     +'<button class="quickbtn avfree" data-action="wkcopy">Copy to clipboard</button>'
     +'<button class="quickbtn avfree" data-action="wkpost" title="post the box below to the Discord drafting channel">Post to Discord</button>'
     +'<span class="meta" style="display:flex;gap:10px;align-items:center;margin-left:8px" title="which race week the draft covers — iRacing weeks tick over Tuesday 10:00 Melbourne">'
@@ -2148,6 +2149,7 @@ function postDraftToDiscord(){ _wkMsg='Posting to Discord needs the WordPress bu
 function snapshotRatings(){ _wkMsg='Ratings snapshots need the WordPress build.'; _wkErr=true; renderContent(); }
 function refreshRecap(){ RECAP_ERR='Last week\'s results need the iRacing proxy — WordPress build only.'; renderContent(); }
 function refreshHistory(){ HIST_ERR='Team history needs the iRacing proxy — WordPress build only.'; renderContent(); }
+function composeDraft(){ _wkMsg='Compose with AI needs the WordPress build and a Gemini key.'; _wkErr=true; renderContent(); }
 /* a tab named in the URL (#availability), but only if that tab exists in this build — the
    WordPress build has Setup and the standalone does not */
 function tabFromHash(){
@@ -2270,6 +2272,7 @@ document.getElementById('content').addEventListener('click',e=>{
     if(!isAdmin()) return;
     _wkDraft=weeklyDraft(weeklyFacts()); _wkMsg='Draft built.'; _wkErr=false; cacheDraft(_wkDraft); save(); renderContent(); return;
   }
+  if(e.target.dataset.action==='wkai'){ if(isAdmin()) composeDraft(); return; }
   if(e.target.dataset.action==='wkcopy'){
     if(!isAdmin()) return;
     const ta=document.getElementById('wkdraft');
@@ -2529,6 +2532,27 @@ function pollHistory(n){
       HIST_RUNNING=false; renderContent();
     }).catch(function(){ pollHistory(n+1); });
   }, 5000);
+}
+/* Compose with AI — send the deterministic draft (the source of truth for every fact) plus the
+   sanitised driver one-liners to the server, which asks Gemini to rewrite it in EDR's voice. The
+   plain draft is always one click away (Generate), so a model slip is caught before anything posts. */
+function composeDraft(){
+  if(!isAdmin()) return;
+  if(!_wkDraft || !_wkDraft.trim()){ _wkDraft=weeklyDraft(weeklyFacts()); cacheDraft(_wkDraft); }
+  var plain=_wkDraft;
+  var notes=Object.assign({}, DRIVER_NOTES, (weeklyState().driver||{}));
+  var voice={};                                   // only the notes for drivers the draft actually names
+  Object.keys(notes).forEach(function(n){ if(plain.indexOf(n)>=0) voice[n]=notes[n]; });
+  _wkAI=true; _wkErr=false; _wkMsg='Composing with AI…'; renderContent();
+  fetch(API+'draft/compose',{method:'POST',headers:_hdrs(true),body:JSON.stringify({draft:plain, voice:voice})})
+    .then(function(r){ return r.json().catch(function(){return {};}).then(function(j){
+      if(!r.ok) throw new Error((j&&j.message)||'compose failed'); return j; }); })
+    .then(function(j){
+      if(j&&j.text){ _wkDraft=j.text; cacheDraft(_wkDraft); _wkMsg='Composed — check it against the facts, and hit Generate to get the plain version back.'; _wkErr=false; }
+      else { _wkMsg='Compose returned nothing.'; _wkErr=true; }
+      _wkAI=false; renderContent();
+    })
+    .catch(function(err){ _wkAI=false; _wkErr=true; _wkMsg=(err&&err.message)||'compose failed'; renderContent(); });
 }
 /* Keep the server's copy of the draft in step with what the admin sees. The scheduled
    Discord post has no browser to render with, so whatever was last generated here IS what
