@@ -241,6 +241,27 @@ function pollHistory(n){
     }).catch(function(){ pollHistory(n+1); });
   }, 5000);
 }
+/* Compose with AI — send the deterministic draft (the source of truth for every fact) plus the
+   sanitised driver one-liners to the server, which asks Gemini to rewrite it in EDR's voice. The
+   plain draft is always one click away (Generate), so a model slip is caught before anything posts. */
+function composeDraft(){
+  if(!isAdmin()) return;
+  if(!_wkDraft || !_wkDraft.trim()){ _wkDraft=weeklyDraft(weeklyFacts()); cacheDraft(_wkDraft); }
+  var plain=_wkDraft;
+  var notes=Object.assign({}, DRIVER_NOTES, (weeklyState().driver||{}));
+  var voice={};                                   // only the notes for drivers the draft actually names
+  Object.keys(notes).forEach(function(n){ if(plain.indexOf(n)>=0) voice[n]=notes[n]; });
+  _wkAI=true; _wkErr=false; _wkMsg='Composing with AI…'; renderContent();
+  fetch(API+'draft/compose',{method:'POST',headers:_hdrs(true),body:JSON.stringify({draft:plain, voice:voice})})
+    .then(function(r){ return r.json().catch(function(){return {};}).then(function(j){
+      if(!r.ok) throw new Error((j&&j.message)||'compose failed'); return j; }); })
+    .then(function(j){
+      if(j&&j.text){ _wkDraft=j.text; cacheDraft(_wkDraft); _wkMsg='Composed — check it against the facts, and hit Generate to get the plain version back.'; _wkErr=false; }
+      else { _wkMsg='Compose returned nothing.'; _wkErr=true; }
+      _wkAI=false; renderContent();
+    })
+    .catch(function(err){ _wkAI=false; _wkErr=true; _wkMsg=(err&&err.message)||'compose failed'; renderContent(); });
+}
 /* Keep the server's copy of the draft in step with what the admin sees. The scheduled
    Discord post has no browser to render with, so whatever was last generated here IS what
    gets posted — see cacheDraft callers. */
