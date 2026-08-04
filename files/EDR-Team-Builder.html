@@ -1253,11 +1253,8 @@ function fmtSr(d){
 /* The awards. Deliberately computed from the same driver rows rather than pre-baked server
    side, so adding an award never needs a re-sweep of the API. */
 function recapAwards(r){
-  const mv=(RATINGS&&RATINGS.ready&&RATINGS.movers&&RATINGS.movers.length)?RATINGS.movers:null;
-  if((!r || !r.drivers || !r.drivers.length) && !mv) return null;
-  if(!r || !r.drivers) r={drivers:[]};
-  const ds=r.drivers.slice();
-  const raced=ds.filter(function(d){ return d.races>0; });
+  if(!r || !r.drivers || !r.drivers.length) return null;
+  const raced=r.drivers.slice().filter(function(d){ return d.races>0; });
   if(!raced.length) return null;
   const byIr=raced.slice().sort(function(a,b){ return b.irDelta-a.irDelta; });
   const bySr=raced.slice().sort(function(a,b){ return b.srDelta-a.srDelta; });
@@ -1266,21 +1263,14 @@ function recapAwards(r){
                      .sort(function(a,b){ return (a.inc/a.races)-(b.inc/b.races); });
   const winners=raced.filter(function(d){ return d.wins>0; })
                      .sort(function(a,b){ return b.wins-a.wins || b.podiums-a.podiums; });
-  /* Ratings from the snapshot diff when we have it: it covers everyone on the roster, not
-     just whoever appeared in the races the sweep managed to fetch. The two sources hold
-     different halves of the picture though — the diff has no race counts and the sweep has no
-     roster-wide ratings — so fold the sweep's counts onto each mover by name. Without this the
-     top three read "undefined races". */
-  const byName={}; raced.forEach(function(d){ byName[nameKey(d.name)]=d; });
-  const merged = mv ? mv.map(function(m){
-    const hit=byName[nameKey(m.name)];
-    return hit ? Object.assign({}, m, {races:hit.races, wins:hit.wins, podiums:hit.podiums, inc:hit.inc}) : m;
-  }) : null;
-  const rIr = merged ? merged.slice().sort(function(a,b){ return b.irDelta-a.irDelta; }) : byIr;
-  const rSr = merged ? merged.slice().sort(function(a,b){ return b.srDelta-a.srDelta; }) : bySr;
-  const srTxt=function(d){ return d.srLabel? (d.srLabel+' '+(d.srEnd!==undefined?d.srEnd:'')) : (d.srStart+' → '+d.srEnd); };
+  /* iRating and SR awards come from the recap — the actual iRacing race results, which are
+     authoritative and current. The Garage 61 ratings snapshot is deliberately NOT used here: it
+     lags iRacing badly (a real pull showed 28 of 30 drivers unchanged in a week the results say
+     ~20 moved, and its per-driver values contradicted the races), so folding it in hid the real
+     movers and named the wrong ones. The snapshot survives only as the Weekly-tab FYI line. */
+  const rIr = byIr, rSr = bySr;
   return {
-    ratingsLive: !!mv,
+    ratingsLive: true,
     top3:      rIr.filter(function(d){ return d.irDelta>0; }).slice(0,3),
     improved:  (rIr[0] && rIr[0].irDelta>0) ? rIr[0] : null,
     lost:      (rIr[rIr.length-1] && rIr[rIr.length-1].irDelta<0) ? rIr[rIr.length-1] : null,
