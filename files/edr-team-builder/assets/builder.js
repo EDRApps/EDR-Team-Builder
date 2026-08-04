@@ -844,25 +844,6 @@ function histSeriesDrivers(label){
   const a=TEAM_SERIES[seriesKey(label)];
   return (a && a.length) ? a : null;
 }
-/* Ordered pool of drivers worth mentioning for a round: whoever has actually raced this track
-   (most starts first), then whoever races this series. Everyone here is in the week's data by
-   construction, so a mention is never for no reason. */
-function flarePool(track, seriesLabel){
-  const out=[], seen={};
-  if(haveHistory() && track){
-    const t=HISTORY.tracks[histTrackKey(track)];
-    if(t && t.drivers) t.drivers.forEach(function(d){ if(!seen[d.name]){ seen[d.name]=1; out.push(d); } });
-  }
-  const sd=histSeriesDrivers(seriesLabel);
-  if(sd) sd.forEach(function(d){ if(!seen[d.name]){ seen[d.name]=1; out.push(d); } });
-  return out;
-}
-/* A driver mention for a round. Picks someone the data ties to this round (track regular, then
-   series regular) and gives their personality line — so the character is relevant, never a name
-   dropped in for no reason. Unprofiled drivers fall back to their own record. Returns null when
-   the sweep knows nobody for this round (rather than mention a seeded name), and only drops back
-   to the hand-written notes when there is no history at all (standalone build / not yet pulled).
-   `used` keeps one driver from being the flare twice in a draft. */
 /* A driver's own record is only worth a line if there is something to it — a win, a podium, or a
    real body of starts. "1 start, best 8th" is noise, so it is not counted as flare-worthy. */
 function flareStatWorthy(d){ return d.wins>0 || d.podiums>0 || d.races>=5; }
@@ -872,21 +853,37 @@ function flareStatNote(d){
   if(pos){ if(d.wins) note+=', '+d.wins+' win'+(d.wins===1?'':'s'); else if(d.podiums) note+=', '+d.podiums+' podium'+(d.podiums===1?'':'s'); else if(d.bestLabel && d.best!==null) note+=', best '+d.bestLabel; }
   return note;
 }
+/* Pick the best unused driver from a list: one we have a personality line for first, then one whose
+   own record says something. null if neither. */
+function flarePick(list, used, notes){
+  const free=(list||[]).filter(function(x){ return !(used&&used[x.name]); });
+  return free.find(function(x){ return !!notes[x.name]; }) || free.find(flareStatWorthy) || null;
+}
+/* A driver mention for a round, kept honest with the "EDR here" line above it. If the team has
+   history at this track, the mention comes from THAT track — never a series regular who has raced
+   the series elsewhere but never here (which is how "EDR here: Zach" ended up next to "one for
+   Fred"). As a last resort it names the track's own standout (the driver in the EDR-here line),
+   even if already used, so the two lines always agree rather than the flare going off-track. Only a
+   round with no track history at all falls back to who races the series. Standalone build (no
+   history pulled) keeps the hand-written notes. */
 function flareFor(who, used, track, seriesLabel){
   const w=weeklyState(); if(!w.flare) return null;
-  if(haveHistory()){
-    const notes=Object.assign({}, DRIVER_NOTES, w.driver||{});
-    const free=flarePool(track, seriesLabel).filter(function(x){ return !(used&&used[x.name]); });
-    /* Prefer a driver we have a personality line for — that is the richest, most human mention and
-       keeps the character relevant to a driver the data ties to this round. */
-    let d=free.find(function(x){ return !!notes[x.name]; });
-    /* Otherwise a driver whose own record actually says something. Never fall to a bland stat. */
-    if(!d) d=free.find(flareStatWorthy);
-    if(!d) return null;                       // nobody worth a mention — better silent than filler
+  if(!haveHistory()) return driverNoteFor(who, used);
+  const notes=Object.assign({}, DRIVER_NOTES, w.driver||{});
+  const t = track ? HISTORY.tracks[histTrackKey(track)] : null;
+  if(t && t.drivers && t.drivers.length){
+    let d=flarePick(t.drivers, used, notes);
+    if(!d && t.bestBy){ d=t.drivers.find(function(x){ return x.name===t.bestBy; }) || null; }  // the EDR-here driver, even if used
+    if(!d) return null;
     if(used) used[d.name]=1;
     return {name:d.name, note:notes[d.name] || flareStatNote(d)};
   }
-  return driverNoteFor(who, used);
+  /* no EDR history at this track — a series regular is the relevant mention, and there is no
+     "EDR here" line to disagree with */
+  const d=flarePick(histSeriesDrivers(seriesLabel), used, notes);
+  if(!d) return null;
+  if(used) used[d.name]=1;
+  return {name:d.name, note:notes[d.name] || flareStatNote(d)};
 }
 /* Everything the write-up is built from. Endurance and specials lead, because that is the bit
    the team most needs telling about; sprints follow, one per selected series. */
