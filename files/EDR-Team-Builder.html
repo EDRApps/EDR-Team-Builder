@@ -1539,7 +1539,7 @@ function renderWeekly(){
     +'<span class="meta" style="font-size:10.5px;color:'+((typeof HIST_ERR!=='undefined'&&HIST_ERR)?'var(--red)':'var(--dim)')+'">'+esc(histAgeLabel())+'</span>'
     +'</div>';
   if(RATINGS&&RATINGS.ready){
-    h+='<div class="meta" style="font-size:10.5px">Ratings movement '+esc(RATINGS.from)+' → '+esc(RATINGS.to)+', '+((RATINGS.movers||[]).length)+' driver(s) moved. This is what the iRating and safety rating awards use.</div>';
+    h+='<div class="meta" style="font-size:10.5px">Ratings movement '+esc(RATINGS.from)+' → '+esc(RATINGS.to)+', '+((RATINGS.movers||[]).length)+' driver(s) moved — from Garage 61\'s synced ratings, which lag iRacing by about a week. FYI only: the draft\'s iRating/SR awards now come from the results sweep below, not this.</div>';
     /* Diagnostic: says whether a low mover count is coverage (few matched / few with a sports-car
        rating) or genuinely quiet (many matched, nearly all unchanged). Only sports-car iRating is
        snapshotted, so a driver who did not race that category shows no movement. */
