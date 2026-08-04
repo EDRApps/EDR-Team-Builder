@@ -2,7 +2,7 @@
 /**
  * Plugin Name: EDR Team Builder
  * Description: Endurotech Racing endurance team + stint planner. Pulls Garage 61 pace and official iRacing session times, collects driver availability in-house, and builds Pro/Casual teams and stint rotations. Add the [edr_team_builder] shortcode to a page.
- * Version: 2.4.33
+ * Version: 2.4.34
  * Author: Endurotech Racing
  * License: GPL-2.0-or-later
  */
@@ -11,7 +11,7 @@ if (!defined('ABSPATH')) exit; // no direct access
 
 define('EDR_TB_DIR', plugin_dir_path(__FILE__));
 define('EDR_TB_URL', plugin_dir_url(__FILE__));
-define('EDR_TB_VER', '2.4.33');
+define('EDR_TB_VER', '2.4.34');
 
 require_once EDR_TB_DIR . 'includes/garage61.php';
 require_once EDR_TB_DIR . 'includes/iracing.php';
@@ -30,7 +30,7 @@ function edr_tb_settings() {
         'iracing_key' => '',
         'discord_webhook' => '',
         'gemini_key'   => '',
-        'gemini_model' => 'gemini-2.5-flash',
+        'gemini_model' => 'gemini-3.5-flash',
     ));
 }
 
@@ -120,7 +120,7 @@ add_action('admin_init', function () {
             'iracing_key' => sanitize_text_field($in['iracing_key'] ?? ''),
             'discord_webhook' => esc_url_raw($in['discord_webhook'] ?? ''),
             'gemini_key'   => sanitize_text_field($in['gemini_key'] ?? ''),
-            'gemini_model' => sanitize_text_field($in['gemini_model'] ?? 'gemini-2.5-flash'),
+            'gemini_model' => sanitize_text_field($in['gemini_model'] ?? 'gemini-3.5-flash'),
         );
     });
 });
@@ -156,7 +156,7 @@ function edr_tb_settings_page() {
             <td><input type="text" name="edr_tb_settings[gemini_key]" value="<?php echo esc_attr($s['gemini_key']); ?>" class="regular-text" autocomplete="off">
             <p class="description">Enables the <strong>Compose with AI</strong> button on the Weekly tab, which rewrites the generated draft in EDR&rsquo;s voice. Only the draft and the sanitised driver one-liners are sent &mdash; never the source profile briefs. <strong>Use a billing-enabled key:</strong> Google&rsquo;s free tier trains on your prompts and has human reviewers; the paid tier does not, and weekly use costs next to nothing. Leave blank to hide the button.</p></td></tr>
           <tr><th scope="row">Gemini model</th>
-            <td><input type="text" name="edr_tb_settings[gemini_model]" value="<?php echo esc_attr($s['gemini_model']); ?>" class="regular-text" autocomplete="off" placeholder="gemini-2.5-flash">
+            <td><input type="text" name="edr_tb_settings[gemini_model]" value="<?php echo esc_attr($s['gemini_model']); ?>" class="regular-text" autocomplete="off" placeholder="gemini-3.5-flash">
             <p class="description">Which model composes the draft. A Flash model is cheap and plenty for this. If the compose button reports the model was not found, correct the id here.</p></td></tr>
         </table>
         <?php submit_button(); ?>
@@ -844,21 +844,23 @@ function edr_tb_gemini_compose($draft, $voice) {
     $draft = trim((string) $draft);
     if ($draft === '') return new WP_Error('empty', 'Generate the draft first, then compose.', array('status' => 400));
 
-    $model = ($s['gemini_model'] !== '') ? $s['gemini_model'] : 'gemini-2.5-flash';
+    $model = ($s['gemini_model'] !== '') ? $s['gemini_model'] : 'gemini-3.5-flash';
 
     $system = "You are the race-week correspondent for Endurotech Racing (EDR), a GT3/GTP iRacing "
-        . "endurance team of adult amateurs who race for fun. Rewrite the weekly update below so it reads "
-        . "like a sharp, funny team-mate wrote it, in EDR's house voice: Australian English, warm and a "
-        . "little irreverent, sentence case, no emojis, no em dashes.\n\n"
-        . "ABSOLUTE RULES:\n"
-        . "- The draft is the ONLY source of facts. Never invent, change or drop a statistic, result, driver "
-        . "name, car, track, race length, session time, date or event. If it is not in the draft, it does not exist.\n"
+        . "endurance team of adult amateurs who race for fun.\n\n"
+        . "YOUR JOB: rewrite the weekly update below into one polished, flowing briefing in EDR's voice - "
+        . "Australian English, warm and a little irreverent, sentence case, no emojis, no em dashes.\n\n"
+        . "Return ONLY the finished briefing, ready to paste. Do NOT analyse, verify, compare, fact-check, "
+        . "explain or comment on the draft, and do not narrate what you are doing. No preamble, no notes, no "
+        . "checklists, no 'here is the rewrite' - output nothing but the rewritten briefing itself.\n\n"
+        . "CONTENT RULES:\n"
+        . "- Every fact must come from the draft. Never invent, change or drop a statistic, result, driver name, "
+        . "car, track, race length, session time, date or event.\n"
         . "- Keep every section heading, and keep every schedule detail (track, car, race length, session times) exact.\n"
-        . "- You may rewrite the intro, the award wording and the one-line driver mentions for flow and character, "
-        . "drawing on the personality notes. Those notes are voice only: do not state them as facts.\n"
+        . "- Rewrite the intro, the award wording and the one-line driver mentions for flow and character, using the "
+        . "personality notes. Those notes are voice only: never state them as facts.\n"
         . "- Only mention a driver the draft already mentions.\n"
-        . "- It is pasted into Discord, which renders #/## headings, **bold** and > quotes. Keep it tight.\n"
-        . "- Output only the finished update, nothing before or after it.";
+        . "- It is pasted into Discord, which renders #/## headings, **bold** and > quotes. Keep it tight.";
 
     $voiceTxt = '';
     if (is_array($voice) && $voice) {
@@ -870,23 +872,47 @@ function edr_tb_gemini_compose($draft, $voice) {
         if ($lines) $voiceTxt = "\n\nDriver personality notes (voice and character only, never facts):\n" . implode("\n", $lines);
     }
 
-    $payload = wp_json_encode(array(
+    $base = array(
         'systemInstruction' => array('parts' => array(array('text' => $system))),
         'contents' => array(array('role' => 'user', 'parts' => array(array(
             'text' => "This week's draft. Every fact in your version must come from it:\n\n" . $draft . $voiceTxt,
         )))),
         'generationConfig' => array('temperature' => 0.7, 'maxOutputTokens' => 8192),
-    ));
+    );
 
     $url = 'https://generativelanguage.googleapis.com/v1beta/models/' . rawurlencode($model) . ':generateContent';
-    $res = wp_remote_post($url, array(
-        'timeout' => 45,
-        'headers' => array('Content-Type' => 'application/json', 'x-goog-api-key' => $s['gemini_key']),
-        'body'    => $payload,
-    ));
-    if (is_wp_error($res)) return $res;
-    $code = wp_remote_retrieve_response_code($res);
-    $data = json_decode(wp_remote_retrieve_body($res), true);
+    $call = function ($cfg) use ($url, $s) {
+        return wp_remote_post($url, array(
+            'timeout' => 60,
+            'headers' => array('Content-Type' => 'application/json', 'x-goog-api-key' => $s['gemini_key']),
+            'body'    => wp_json_encode($cfg),
+        ));
+    };
+
+    /* Turn the model's "thinking" off: it is a rewrite, not a reasoning task, and a thinking model can
+       burn the whole token budget reasoning/verifying and return a truncated fact-check with no draft.
+       thinkingBudget lives under generationConfig in newer models and used to sit at the top level, and
+       a model that does not support disabling it 400s — so try the current shape, then the legacy one,
+       then plain, and never let that alone break compose. */
+    $variants = array(
+        array_merge_recursive($base, array('generationConfig' => array('thinkingConfig' => array('thinkingBudget' => 0)))),
+        array_merge($base, array('thinkingConfig' => array('thinkingBudget' => 0))),
+        $base,
+    );
+    $res = null; $code = 0; $data = null;
+    foreach ($variants as $i => $cfg) {
+        $res = $call($cfg);
+        if (is_wp_error($res)) return $res;
+        $code = wp_remote_retrieve_response_code($res);
+        $data = json_decode(wp_remote_retrieve_body($res), true);
+        if ($code === 200) break;
+        // only fall through to the next variant when it is the thinking field being rejected
+        $emsg = (is_array($data) && isset($data['error']['message'])) ? strtolower((string) $data['error']['message']) : '';
+        if ($i < count($variants) - 1 && (strpos($emsg, 'thinking') !== false || strpos($emsg, 'thinkingbudget') !== false || strpos($emsg, 'thinkingconfig') !== false)) {
+            continue;
+        }
+        break;
+    }
     if ($code !== 200) {
         $msg = (is_array($data) && isset($data['error']['message'])) ? (string) $data['error']['message'] : ('Gemini returned HTTP ' . $code . '.');
         return new WP_Error('gemini_http', $msg, array('status' => 502));
