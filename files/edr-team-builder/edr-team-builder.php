@@ -2,7 +2,7 @@
 /**
  * Plugin Name: EDR Team Builder
  * Description: Endurotech Racing endurance team + stint planner. Pulls Garage 61 pace and official iRacing session times, collects driver availability in-house, and builds Pro/Casual teams and stint rotations. Add the [edr_team_builder] shortcode to a page.
- * Version: 2.4.36
+ * Version: 2.4.37
  * Author: Endurotech Racing
  * License: GPL-2.0-or-later
  */
@@ -11,7 +11,7 @@ if (!defined('ABSPATH')) exit; // no direct access
 
 define('EDR_TB_DIR', plugin_dir_path(__FILE__));
 define('EDR_TB_URL', plugin_dir_url(__FILE__));
-define('EDR_TB_VER', '2.4.36');
+define('EDR_TB_VER', '2.4.37');
 
 require_once EDR_TB_DIR . 'includes/garage61.php';
 require_once EDR_TB_DIR . 'includes/iracing.php';
@@ -343,37 +343,58 @@ function edr_tb_rest_draft_set(WP_REST_Request $req) {
     return rest_ensure_response(array('ok' => true, 'at' => time()));
 }
 
-/** Discord hard-limits a message to 2000 characters; split on blank lines so sections stay whole. */
+/**
+ * Discord hard-limits a message to 2000 characters. Split on blank lines so sections stay whole,
+ * and never hand the webhook an empty message: it 400s on one, which aborts the whole post.
+ *
+ * Everything is normalised to \n first. The browser builds the draft with \n, but the write-up
+ * is copied out, edited elsewhere and pasted back, so CRLF arrives as a matter of course. This
+ * function used to carry literal CRLF inside its own string literals (this file is CRLF), so the
+ * paragraph split never matched LF-only text at all: every update over the limit fell through to
+ * a hard byte chop instead of splitting at a blank line.
+ */
 function edr_tb_discord_chunks($text, $limit = 1900) {
-    $paras = preg_split("/
-{2,}/", str_replace("
-
-", "
-", $text));
+    $text  = str_replace(array("\r\n", "\r"), "\n", (string) $text);
+    $paras = preg_split("/\n{2,}/", $text);
     $out = array(); $cur = '';
     foreach ($paras as $p) {
         $p = rtrim($p);
         if ($p === '') continue;
         if (strlen($p) > $limit) {                       // one huge block: fall back to line splitting
-            foreach (explode("
-", $p) as $line) {
+            foreach (explode("\n", $p) as $line) {
                 /* a single line can still exceed the limit if it has no newlines at all, and
-                   Discord 400s the whole post rather than truncating — so chop it hard */
-                $pieces = (strlen($line) > $limit) ? str_split($line, $limit) : array($line);
+                   Discord 400s the whole post rather than truncating - so chop it hard, but on
+                   character boundaries: a byte-wise chop lands inside a multi-byte character
+                   (every dot separator, dash and emoji in the write-up) and posts mojibake */
+                $pieces = (strlen($line) > $limit) ? edr_tb_split_utf8($line, $limit) : array($line);
                 foreach ($pieces as $piece) {
-                    if (strlen($cur) + strlen($piece) + 1 > $limit) { $out[] = $cur; $cur = ''; }
-                    $cur .= ($cur === '' ? '' : "
-") . $piece;
+                    /* only ever flush something: $cur is empty on the first piece, and pushing
+                       that empty string is what made a long post fail with "sent 0 of N" */
+                    if ($cur !== '' && strlen($cur) + strlen($piece) + 1 > $limit) { $out[] = $cur; $cur = ''; }
+                    $cur .= ($cur === '' ? '' : "\n") . $piece;
                 }
             }
             continue;
         }
-        if (strlen($cur) + strlen($p) + 2 > $limit) { $out[] = $cur; $cur = ''; }
-        $cur .= ($cur === '' ? '' : "
-
-") . $p;
+        if ($cur !== '' && strlen($cur) + strlen($p) + 2 > $limit) { $out[] = $cur; $cur = ''; }
+        $cur .= ($cur === '' ? '' : "\n\n") . $p;
     }
     if (trim($cur) !== '') $out[] = $cur;
+    return $out;
+}
+
+/** str_split() cuts on bytes and shreds multi-byte characters. Split on character boundaries
+ *  while still measuring against the byte budget the webhook is held to. */
+function edr_tb_split_utf8($s, $limit) {
+    $chars = preg_split('//u', $s, -1, PREG_SPLIT_NO_EMPTY);
+    if ($chars === false) return str_split($s, $limit);      // not valid UTF-8: nothing better to do
+    $out = array(); $cur = ''; $len = 0;
+    foreach ($chars as $ch) {
+        $n = strlen($ch);
+        if ($len + $n > $limit) { $out[] = $cur; $cur = ''; $len = 0; }
+        $cur .= $ch; $len += $n;
+    }
+    if ($cur !== '') $out[] = $cur;
     return $out;
 }
 
@@ -849,18 +870,23 @@ function edr_tb_gemini_compose($draft, $voice) {
     $system = "You are the race-week correspondent for Endurotech Racing (EDR), a GT3/GTP iRacing "
         . "endurance team of adult amateurs who race for fun.\n\n"
         . "YOUR JOB: rewrite the weekly update below into one polished, flowing briefing in EDR's voice - "
-        . "Australian English, warm and a little irreverent, sentence case, no emojis, no em dashes.\n\n"
+        . "Australian English, warm and a little irreverent, sentence case, no em dashes.\n\n"
         . "Return ONLY the finished briefing, ready to paste. Do NOT analyse, verify, compare, fact-check, "
         . "explain or comment on the draft, and do not narrate what you are doing. No preamble, no notes, no "
         . "checklists, no 'here is the rewrite' - output nothing but the rewritten briefing itself.\n\n"
         . "CONTENT RULES:\n"
         . "- Every fact must come from the draft. Never invent, change or drop a statistic, result, driver name, "
         . "car, track, race length, session time, date or event.\n"
-        . "- Keep every section heading, and keep every schedule detail (track, car, race length, session times) exact.\n"
+        . "- Keep every section heading exactly as written, including the emoji that starts it, and keep every "
+        . "schedule detail (track, car, race length, session times) exact.\n"
         . "- Rewrite the intro, the award wording and the one-line driver mentions for flow and character, using the "
         . "personality notes. Those notes are voice only: never state them as facts.\n"
         . "- Only mention a driver the draft already mentions.\n"
-        . "- It is pasted into Discord, which renders #/## headings, **bold** and > quotes. Keep it tight.";
+        . "- It is posted straight into Discord, which renders #/## headings, -# subtext, **bold** and > quotes. "
+        . "Keep that layout: one ## heading per section, the subject of an entry bold and alone on its line, its "
+        . "facts on the next line, quiet supporting detail on a -# line, and a blank line between entries. Keep the "
+        . "medal emoji on the top three. Do not add emoji anywhere else. Keep lines short - Discord wraps narrow on "
+        . "mobile.";
 
     $voiceTxt = '';
     if (is_array($voice) && $voice) {

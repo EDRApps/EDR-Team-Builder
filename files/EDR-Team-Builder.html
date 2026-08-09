@@ -87,6 +87,45 @@
   .readonly .tabs .tab[data-tab="weekly"]{display:none}
   .wkbox{width:100%;min-height:340px;background:#0a0a14;color:var(--body);border:1px solid var(--line);
     border-radius:var(--rmd);padding:12px;font-family:ui-monospace,Menlo,Consolas,monospace;font-size:12.5px;line-height:1.55}
+  /* the draft is now a reference to copy out of, the final box is the one being worked in —
+     two 340px boxes stacked put the Post button a long scroll away from the text it sends */
+  /* !important because the WP layer arms every textarea with `min-height:0!important` and its own
+     border, which would otherwise flatten both boxes and drop the final box's yellow edge */
+  #wkdraft.wkbox{min-height:220px!important}
+  #wkfinal.wkbox{min-height:340px!important;border-color:var(--yellow)!important}
+  /* Preview overlay — the last look before a post reaches the whole team. Built in JS and
+     appended to the app root rather than <body>, so the plugin's !important-armored CSS still
+     reaches it in the WordPress build. */
+  /* long-hand offsets, not inset: the same pre-16.4 iPhones this codebase already works around */
+  .wkprev-scrim{position:fixed;top:0;right:0;bottom:0;left:0;z-index:100;background:rgba(4,4,12,.74);display:flex;
+    align-items:flex-start;justify-content:center;padding:24px 16px;overflow:auto}
+  .wkprev{width:100%;max-width:780px;background:var(--panel);border:1px solid var(--line);
+    border-radius:var(--rmd);box-shadow:0 18px 60px rgba(0,0,0,.6)}
+  .wkprev-head{display:flex;gap:10px;align-items:center;flex-wrap:wrap;padding:14px 18px;border-bottom:1px solid var(--lineSoft)}
+  .wkprev-body{padding:14px 18px;max-height:60vh;overflow:auto}
+  .wkprev-foot{display:flex;gap:8px;align-items:center;flex-wrap:wrap;padding:12px 18px;border-top:1px solid var(--lineSoft)}
+  .wkprev-n{font-size:10px;text-transform:uppercase;letter-spacing:.06em;color:var(--dim);margin:0 0 4px}
+  /* deliberately Discord's colours, not EDR's: the point of the preview is to look like the
+     place it is going, so a heading that did not take reads as wrong at a glance */
+  .wkmsg{background:#313338;border-radius:8px;padding:14px 16px;margin-bottom:12px;color:#dbdee1;
+    font-family:'Karla',system-ui,sans-serif;font-size:14px;line-height:1.5;word-wrap:break-word}
+  /* everything inside .wkmsg is armored: a WordPress theme styling h1/h2/blockquote/ul is very
+     likely, and a preview that renders differently from Discord because of theme bleed is worse
+     than no preview at all — it would be confidently wrong about the one thing it exists to show */
+  .wkmsg h1{color:#fff!important;font-size:22px!important;font-weight:700!important;margin:0 0 3px!important;line-height:1.25!important;text-transform:none!important;letter-spacing:normal!important}
+  .wkmsg h2{color:#fff!important;font-size:17px!important;font-weight:700!important;margin:14px 0 6px!important;line-height:1.3!important;text-transform:none!important;letter-spacing:normal!important}
+  .wkmsg h3{color:#fff!important;font-size:15px!important;font-weight:700!important;margin:12px 0 5px!important;line-height:1.3!important;text-transform:none!important;letter-spacing:normal!important}
+  .wkmsg h1:first-child,.wkmsg h2:first-child,.wkmsg h3:first-child{margin-top:0!important}
+  .wkmsg p{margin:0!important}
+  .wkmsg .sub{color:#949ba4!important;font-size:12px!important}
+  .wkmsg strong{color:#fff!important;font-weight:700!important}
+  .wkmsg em{font-style:italic!important}
+  .wkmsg blockquote{border-left:4px solid #4e5058!important;padding:0 0 0 12px!important;margin:3px 0!important;background:none!important;font-style:normal!important;quotes:none!important}
+  .wkmsg blockquote:before,.wkmsg blockquote:after{content:none!important}
+  .wkmsg ul{margin:3px 0 3px 20px!important;padding:0!important;list-style:disc outside!important}
+  .wkmsg li{margin:0!important}
+  .wkmsg code{background:#2b2d31!important;border-radius:4px!important;padding:1px 5px!important;font-family:ui-monospace,Menlo,Consolas,monospace!important;font-size:12.5px!important;color:#dbdee1!important}
+  .wkmsg .gap{height:9px}
   .wkser{display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:6px 14px;margin:8px 0}
   .wkser label{display:flex;gap:7px;align-items:flex-start;font-size:12px;color:var(--body);cursor:pointer}
   .wkser .st{color:var(--dim);font-size:10.5px}
@@ -953,7 +992,141 @@ function renderEventTab(){
    When the Claude API step is wired in it consumes weeklyFacts() and replaces weeklyDraft()
    only — nothing else has to move. */
 let _wkMsg='', _wkDraft='', _wkErr=false, _wkAI=false;
+/* The generated draft is a starting point, not the thing that goes out: the write-up is copied
+   out, edited and added to somewhere else, then pasted back. _wkFinal is that pasted-back
+   version, and it is deliberately NOT the same box as the draft — Generate rewrites _wkDraft
+   from scratch, and an accidental click on it must never be able to destroy the edited copy.
+   Empty means "nothing pasted yet", in which case the draft posts as-is. */
+let _wkFinal='', _wkFinalAt=0;
 let _wkCat='all', _wkQ='';   /* pick-list discipline filter and search, display only */
+/* Exactly what a Post to Discord would send, from either box. Also what gets cached
+   server-side, so the scheduled job posts the edited version and not the raw draft. */
+function wkPostText(){ return (_wkFinal&&_wkFinal.trim()) ? _wkFinal : _wkDraft; }
+/* Discord hard-limits one message to 2000 characters and the server splits on blank lines at a
+   1900-BYTE budget (edr_tb_discord_chunks — strlen counts bytes, and an emoji is four of them).
+   This is a line-for-line port of that function so the count on screen is the number of messages
+   the team will actually receive, not an estimate of it. */
+const WK_LIMIT=1900;
+function wkBytes(s){
+  if(typeof TextEncoder==='undefined') return String(s).length;
+  if(!wkBytes._e) wkBytes._e=new TextEncoder();
+  return wkBytes._e.encode(String(s)).length;
+}
+/* mirrors edr_tb_split_utf8: cut on character boundaries, measure in bytes */
+function wkSplitUtf8(s, limit){
+  const out=[]; let cur='', len=0;
+  Array.from(String(s)).forEach(function(ch){      // by code point, like preg_split('//u')
+    const n=wkBytes(ch);
+    if(len+n>limit){ out.push(cur); cur=''; len=0; }
+    cur+=ch; len+=n;
+  });
+  if(cur!=='') out.push(cur);
+  return out;
+}
+function wkChunks(text){
+  const t=String(text||'').replace(/\r\n|\r/g,'\n');
+  const out=[]; let cur='';
+  t.split(/\n{2,}/).forEach(function(p){
+    p=p.replace(/\s+$/,''); if(p==='') return;
+    if(wkBytes(p)>WK_LIMIT){
+      p.split('\n').forEach(function(line){
+        const pieces=(wkBytes(line)>WK_LIMIT)?wkSplitUtf8(line,WK_LIMIT):[line];
+        pieces.forEach(function(piece){
+          if(cur!=='' && wkBytes(cur)+wkBytes(piece)+1>WK_LIMIT){ out.push(cur); cur=''; }
+          cur+=(cur===''?'':'\n')+piece;
+        });
+      });
+      return;
+    }
+    if(cur!=='' && wkBytes(cur)+wkBytes(p)+2>WK_LIMIT){ out.push(cur); cur=''; }
+    cur+=(cur===''?'':'\n\n')+p;
+  });
+  if(cur.trim()!=='') out.push(cur);
+  return out;
+}
+function wkChunkCount(text){ return wkChunks(text).length; }
+
+/* ---- Preview -------------------------------------------------------------------------------
+   Posting is one click that reaches everybody at once and cannot be taken back, so it goes
+   through here first. The value is not decoration: it renders the same markdown subset Discord
+   does, which is the only way to see before sending that a ** never closed, that a heading lost
+   its space and is showing as a literal #, or that the post is about to arrive as three
+   messages split in a place nobody would choose. */
+function wkInline(s){
+  return String(s)
+    .replace(/`([^`\n]+)`/g,'<code>$1</code>')
+    .replace(/\*\*([^*\n]+)\*\*/g,'<strong>$1</strong>')
+    .replace(/__([^_\n]+)__/g,'<u>$1</u>')
+    .replace(/~~([^~\n]+)~~/g,'<s>$1</s>')
+    .replace(/\*([^*\n]+)\*/g,'<em>$1</em>');
+}
+function wkMdToHtml(text){
+  const lines=String(text||'').replace(/\r\n|\r/g,'\n').split('\n');
+  const out=[]; let quote=[], list=[];
+  const flushQuote=function(){ if(quote.length){ out.push('<blockquote>'+quote.join('<br>')+'</blockquote>'); quote=[]; } };
+  const flushList =function(){ if(list.length){ out.push('<ul>'+list.map(function(li){return '<li>'+li+'</li>';}).join('')+'</ul>'); list=[]; } };
+  lines.forEach(function(raw){
+    const body=esc(raw);                                  // escape first: this is pasted-in text
+    if(/^>\s?/.test(raw)){ flushList(); quote.push(wkInline(body.replace(/^&gt;\s?/,''))); return; }
+    flushQuote();
+    if(/^- /.test(raw)){ list.push(wkInline(body.replace(/^- /,''))); return; }   // -# is not a bullet
+    flushList();
+    if(raw===''){ out.push('<div class="gap"></div>'); return; }
+    if(/^-# /.test(raw)){ out.push('<p class="sub">'+wkInline(body.replace(/^-# /,''))+'</p>'); return; }
+    const h=raw.match(/^(#{1,3}) /);
+    if(h){ const n=h[1].length; out.push('<h'+n+'>'+wkInline(body.replace(/^#{1,3} /,''))+'</h'+n+'>'); return; }
+    out.push('<p>'+wkInline(body)+'</p>');
+  });
+  flushQuote(); flushList();
+  return out.join('');
+}
+let _wkPrevEl=null;
+function wkClosePreview(){
+  if(_wkPrevEl&&_wkPrevEl.parentNode) _wkPrevEl.parentNode.removeChild(_wkPrevEl);
+  _wkPrevEl=null;
+  document.removeEventListener('keydown', _wkPrevKey);
+}
+function _wkPrevKey(e){ if(e.key==='Escape') wkClosePreview(); }
+function wkOpenPreview(){
+  if(!isAdmin()) return;
+  /* read the boxes, not the globals: text pasted a keystroke ago has not cleared the debounce,
+     and previewing something other than what Post would send defeats the point */
+  const fin=document.getElementById('wkfinal'), dr=document.getElementById('wkdraft');
+  if(fin) _wkFinal=fin.value||'';
+  if(dr && (dr.value||'').trim()) _wkDraft=dr.value;
+  const text=wkPostText();
+  if(!text.trim()){ _wkMsg='Nothing to preview — generate the draft, or paste your version into the final box.'; _wkErr=true; renderContent(); return; }
+  wkClosePreview();
+  const chunks=wkChunks(text);
+  const src=_wkFinal.trim()?'the final box':'the generated draft';
+  let h='<div class="wkprev" role="dialog" aria-modal="true" aria-label="Preview the Discord post">';
+  h+='<div class="wkprev-head"><div class="head" style="font-size:15px;color:#fff;text-transform:uppercase">Preview</div>'
+    +'<span class="meta" style="font-size:10.5px">This is '+src+', rendered the way Discord will render it'
+    +(chunks.length>1?(' — it is over the 2000-character limit, so it arrives as <b style="color:var(--yellow)">'+chunks.length+' separate messages</b>'):'')+'.</span></div>';
+  h+='<div class="wkprev-body">';
+  chunks.forEach(function(c,i){
+    if(chunks.length>1) h+='<div class="wkprev-n">Message '+(i+1)+' of '+chunks.length+' · '+wkBytes(c)+' bytes</div>';
+    h+='<div class="wkmsg">'+wkMdToHtml(c)+'</div>';
+  });
+  h+='</div>';
+  h+='<div class="wkprev-foot">'
+    +'<button class="btn btn-amber avfree" data-action="wkpost">Post to Discord</button>'
+    +'<button class="quickbtn avfree" data-action="wkprevclose">Back to editing</button>'
+    +'<span class="meta" style="font-size:10.5px;margin-left:auto">'+text.length+' characters · '+wkBytes(text)+' bytes</span>'
+    +'</div></div>';
+  const el=document.createElement('div');
+  el.className='wkprev-scrim';
+  el.innerHTML=h;
+  el.addEventListener('click',function(e){
+    if(e.target===el){ wkClosePreview(); return; }            // click the scrim to dismiss
+    const a=e.target.dataset&&e.target.dataset.action;
+    if(a==='wkprevclose') wkClosePreview();
+    else if(a==='wkpost'){ wkClosePreview(); postDraftToDiscord(); }
+  });
+  (document.getElementById('edr-tb-app')||document.body).appendChild(el);
+  _wkPrevEl=el;
+  document.addEventListener('keydown', _wkPrevKey);
+}
 function catLabel(c){
   const m={'sports_car':'Sports car','formula_car':'Formula','oval':'Oval','dirt_oval':'Dirt oval','dirt_road':'Dirt road','road':'Road'};
   return m[c]||cap(String(c||'').replace(/_/g,' '));
@@ -1384,22 +1557,36 @@ function fmtRaceDist(min, laps){
 function weeklyDraft(f){
   /* Markdown, because the draft is posted straight into Discord — which renders #/##
      headings, bold and block quotes — and still reads fine as plain text if it is pasted
-     anywhere else. Keep lines short: Discord wraps narrow on mobile. */
+     anywhere else. Keep lines short: Discord wraps narrow on mobile.
+
+     House layout, applied to every section so the whole post scans the same way:
+       ## heading   one per section, carrying the only emoji in the body
+       **Name**     the subject of an entry, alone on its line
+       plain line   the facts that decide whether you care (track, car, length, when)
+       -# subtext   the quiet supporting stuff (history, session times, warnings, flare)
+       > quote      the human note
+       blank line   between every entry — it is what gives Discord the spacing, and it is
+                    also where the 1900-char chunker prefers to split
+     Emoji are deliberately rationed to the headings and the top-three medals. Sprinkled
+     through the body they stop reading as signal and the write-up looks like a newsletter. */
   const L=[];
-  L.push('# This week in iRacing');
+  L.push('# 🏁 This week in iRacing');
   L.push('-# Week of '+f.week.from+' to '+f.week.to+' · times in '+f.tz);
   L.push('');
 
   /* Recap first: people read the week they just had before the week they are about to have. */
   const aw=recapAwards(RECAP);
   if(aw){
-    L.push('## Last week');
+    L.push('## 📊 Last week');
     if(aw.starts) L.push('**'+aw.drivers+'** driver'+(aw.drivers===1?'':'s')+' started **'+aw.starts+'** official race'+(aw.starts===1?'':'s')+'.');
     L.push('');
     if(aw.top3.length){
       L.push('**Top three on iRating**');
+      /* medals rather than "1." / "2." / "3.": Discord turns a numbered list into its own
+         indented block, which reads as a nested aside instead of the headline result */
+      const MEDAL=['🥇','🥈','🥉'];
       aw.top3.forEach(function(d,i){
-        let ln=(i+1)+'. **'+d.name+'** `'+sgn(d.irDelta)+'`'+(d.irEnd?' → '+d.irEnd:'');
+        let ln=(MEDAL[i]||'•')+' **'+d.name+'** `'+sgn(d.irDelta)+'`'+(d.irEnd?' → '+d.irEnd:'');
         if(d.races){                       // race counts only exist if the results sweep ran
           ln+=' — '+d.races+' race'+(d.races===1?'':'s')
              +(d.wins?', '+d.wins+' win'+(d.wins===1?'':'s'):'')
@@ -1421,12 +1608,12 @@ function weeklyDraft(f){
     L.push('');
   }
 
-  L.push('## Special events — next four weeks');
+  L.push('## ⭐ Special events — next four weeks');
   if(!f.specials.length) L.push('-# Nothing on the EDR calendar in the next four weeks.');
   f.specials.forEach(function(e){
     const when=e.live?'**live now**':('in '+e.inDays+' day'+(e.inDays===1?'':'s'));
-    L.push('**'+e.name+'** — '+e.track+(e.dur?' · '+e.dur+'h':'')+' · '+e.dates+' · '+when
-           +(e.target?' · *EDR target*':''));
+    L.push('**'+e.name+'**'+(e.target?' · *EDR target*':''));
+    L.push(e.track+(e.dur?' · '+e.dur+'h':'')+' · '+e.dates+' · '+when);
     if(e.cars) L.push('-# '+e.cars);
     if(e.note) L.push('> '+cap(e.note)+'.');
     /* far enough out that there is still runway to build up to it — that is the moment the
@@ -1435,14 +1622,14 @@ function weeklyDraft(f){
     L.push('');
   });
 
-  L.push('## Endurance — on '+draftWeekWord());
+  L.push('## ⏱️ Endurance — on '+draftWeekWord());
   if(!f.enduros.length) L.push('-# No endurance rounds '+draftWeekWord()+'.');
   f.enduros.forEach(function(e){
-    let line='**'+e.series+'** — '+(e.track||'track TBC');
+    L.push('**'+e.series+'**'+(e.team?' · *team event*':''));
+    let line=(e.track||'track TBC');
     if(e.cars&&e.cars.length) line+=' · '+e.cars.join(' / ');
     const elen=fmtRaceDist(e.raceMin, e.raceLaps);
     if(elen) line+=' · '+elen;
-    if(e.team) line+=' · *team event*';
     L.push(line);
     if(!e.carsWeek) L.push('-# Please confirm car for '+draftWeekWord()+' — the schedule did not name one for this round.');
     if(e.hist)      L.push('-# '+e.hist);
@@ -1453,15 +1640,16 @@ function weeklyDraft(f){
                   // gives the Discord chunker a clean place to split
   });
 
-  L.push('## Sprints');
+  L.push('## ⚡ Sprints');
   if(!f.haveIracing){
     L.push('-# No live iRacing schedule — connect the proxy in plugin Settings.');
   } else if(!f.sprints.length){
     L.push('-# No rounds '+draftWeekWord()+' for the series you have ticked.');
   }
   f.sprints.forEach(function(s){
-    if(!s.matched){ L.push('**'+s.series+'** — track TBC'); L.push(''); return; }
-    let line='**'+s.series+'** → '+s.track;
+    if(!s.matched){ L.push('**'+s.series+'**'); L.push('track TBC'); L.push(''); return; }
+    L.push('**'+s.series+'**');
+    let line=s.track;
     /* "in the Toyota GR86" reads well for a one-make series; "in the GTP / LMP2 / GT3" does
        not, so a multi-class round gets the classes in the bracket with the race length */
     const multi=(s.cars||[]).length>1;
@@ -1481,8 +1669,30 @@ function weeklyDraft(f){
     L.push('');
   });
 
-  L.push('-# Draft from the Team Builder — edit it before it goes anywhere public.');
-  return L.join('\n');
+  /* Sign-off, not a warning. This text is now posted verbatim to a team channel, so the old
+     "edit it before it goes anywhere public" line read as an instruction to the whole team;
+     the reminder to edit belongs on the tab, where the person who can act on it is looking. */
+  L.push('');
+  L.push('-# Posted from the EDR Team Builder');
+  return wkTidy(L).join('\n');
+}
+/* One spacing pass over the finished draft, so the gaps do not depend on which sections
+   happened to have entries. Each section emits its own trailing blank line from inside its
+   loop, which means a section with nothing in it emits none at all and its "nothing on this
+   week" line ends up welded to the next heading. Rather than sprinkle more L.push('') around,
+   normalise once at the end: never two blank lines in a row, always exactly one above a
+   heading, none trailing. It is also what gives the chunker a clean split point before every
+   heading — the blank line is what edr_tb_discord_chunks() breaks on. */
+function wkTidy(L){
+  const out=[];
+  L.forEach(function(ln){
+    const s=String(ln==null?'':ln);
+    if(s===''){ if(out.length && out[out.length-1]!=='') out.push(''); return; }
+    if(/^#{1,3}\s/.test(s) && out.length && out[out.length-1]!=='') out.push('');   // -# is not a heading
+    out.push(s);
+  });
+  while(out.length && out[out.length-1]==='') out.pop();
+  return out;
 }
 
 /* ===== Printable PDF brief =====================================================================
@@ -1701,15 +1911,17 @@ function renderWeekly(){
   const f=weeklyFacts();
   let h='<div class="importbox">';
   h+='<div class="head" style="font-size:17px;color:#fff;text-transform:uppercase">This week in iRacing</div>';
-  h+='<div class="meta" style="margin-top:4px">Pick the series to cover, hit Generate, then copy the draft out and add your own flare. '
+  h+='<div class="meta" style="margin-top:4px">Pick the series to cover and hit Generate. Copy the draft out, edit it and add your own flare wherever you like working, then paste it back into the final box at the bottom and hit Post to Discord. '
     +(f.haveIracing?('Tracks come from live iRacing data — '+f.sprints.filter(function(s){return s.matched;}).length+' of '+f.sprints.length+' series matched a round this week.')
                    :'No live iRacing data right now, so tracks will be blank — set the proxy in plugin Settings.')+'</div>';
   h+='<div class="quickrow" style="margin-top:10px">'
     +'<button class="btn btn-amber avfree" data-action="wkgen">Generate the update</button>'
     +'<button class="quickbtn avfree" data-action="wkai"'+(_wkAI?' disabled':'')+' title="rewrite the generated draft in EDR\'s voice with Gemini — needs an API key in plugin Settings">'+(_wkAI?'Composing…':'Compose with AI')+'</button>'
-    +'<button class="quickbtn avfree" data-action="wkcopy">Copy to clipboard</button>'
+    +'<button class="quickbtn avfree" data-action="wkcopy" title="copy the draft so you can edit it somewhere else">Copy the draft</button>'
     +'<button class="quickbtn avfree" data-action="wkpdf" title="open a styled, printable brief and save it as a PDF (uses this week\'s data)">Download brief (PDF)</button>'
-    +'<button class="quickbtn avfree" data-action="wkpost" title="post the box below to the Discord drafting channel">Post to Discord</button>'
+    /* everything routes through the preview: posting reaches the whole team in one click and
+       cannot be undone, so there is no path that sends without showing it first */
+    +'<button class="quickbtn avfree" data-action="wkpreview" title="see exactly what the team will get, then post from there">Preview &amp; post</button>'
     +'<span class="meta" style="display:flex;gap:10px;align-items:center;margin-left:8px" title="which race week the draft covers — iRacing weeks tick over Tuesday 10:00 Melbourne">'
       +'<label style="display:flex;gap:5px;align-items:center"><input type="radio" name="wkscope" data-action="wkscope" data-v="next"'+(w.scope==='next'?' checked':'')+'> next week</label>'
       +'<label style="display:flex;gap:5px;align-items:center"><input type="radio" name="wkscope" data-action="wkscope" data-v="this"'+(w.scope==='this'?' checked':'')+'> this week</label>'
@@ -1822,10 +2034,53 @@ function renderWeekly(){
     });
     h+='</div></div>';
   }
-  h+='<div class="importbox"><div class="meta" style="text-transform:uppercase;letter-spacing:.04em;margin-bottom:6px">The draft</div>';
-  h+='<textarea class="wkbox avfree" id="wkdraft" spellcheck="false">'+esc(_wkDraft||'Hit Generate to build this week\'s update.')+'</textarea>';
+  h+='<div class="importbox"><div class="meta" style="text-transform:uppercase;letter-spacing:.04em;margin-bottom:2px">Step 1 · the draft</div>';
+  h+='<div class="meta" style="font-size:10.5px;margin-bottom:6px">Generated from the data above. Copy it out, edit it and add whatever you want, then paste the finished version into step 2.</div>';
+  /* placeholder, not a value: the hint used to sit in the box as real text, and Post to Discord
+     reads the box — so an un-generated draft would have posted the hint to the team channel */
+  h+='<textarea class="wkbox avfree" id="wkdraft" spellcheck="false" placeholder="Hit Generate to build this week\'s update.">'+esc(_wkDraft)+'</textarea>';
+  h+='</div>';
+
+  /* Step 2 is a separate box on purpose. The edited write-up is the valuable artefact — it has
+     been through someone's hands and picked up things the generator cannot know — and Generate
+     rebuilds the draft from scratch on every click, so sharing one box means one stray click
+     destroys it. Empty means nothing has been pasted, and the draft posts as-is. */
+  h+='<div class="importbox"><div class="meta" style="text-transform:uppercase;letter-spacing:.04em;margin-bottom:2px">Step 2 · the final post</div>';
+  h+='<div class="meta" style="font-size:10.5px;margin-bottom:6px">Paste your edited version here — this is exactly what goes to Discord, character for character. Generate never touches this box. Leave it empty and the draft above is posted as it stands.</div>';
+  h+='<textarea class="wkbox avfree" id="wkfinal" spellcheck="false" placeholder="Paste the edited write-up here, then hit Post to Discord.">'+esc(_wkFinal)+'</textarea>';
+  h+='<div class="quickrow" style="margin-top:8px">'
+    /* repeated from the top of the tab on purpose: this is where you are standing when you
+       finish pasting, and the row up there is a long scroll away by then */
+    +'<button class="btn btn-amber avfree" data-action="wkpreview" title="see exactly what the team will get, then post from there">Preview &amp; post</button>'
+    +'<button class="quickbtn avfree" data-action="wkseed" title="drop the generated draft in here as a starting point">Start from the draft</button>'
+    +'<button class="quickbtn avfree" data-action="wkfinalcopy">Copy this</button>'
+    +'<button class="quickbtn avfree" data-action="wkfinalclear" title="empty this box — Post to Discord then falls back to the draft above">Clear</button>'
+    +'<span class="meta" id="wkcount" style="font-size:10.5px;margin-left:auto">'+wkCountHtml()+'</span>'
+    +'</div>';
   h+='</div>';
   return h;
+}
+/* Which box wins, how long it is, and how many messages Discord will receive. Kept out of
+   renderWeekly so typing can refresh just this line — re-rendering the tab on a keystroke
+   would throw the textarea's caret to the end, which is unusable in a 3000-character post. */
+function wkCountHtml(){
+  const posting=wkPostText();
+  if(!posting.trim()) return 'Nothing to post yet.';
+  const chunks=wkChunkCount(posting);
+  return (_wkFinal.trim()?'Will post <b style="color:var(--yellow)">this box</b>':'Will post <b style="color:var(--yellow)">the draft above</b>')
+    +' · '+posting.length+' characters · '+chunks+' Discord message'+(chunks===1?'':'s')
+    +(_wkFinalAt?' · saved '+wkSavedLabel():'');
+}
+function wkSyncCount(){ const el=document.getElementById('wkcount'); if(el) el.innerHTML=wkCountHtml(); }
+/* How long ago the server's copy of the post was stored. It matters because the scheduled job
+   posts that copy with no browser involved, and /weekly/post refuses one more than 8 days old. */
+function wkSavedLabel(){
+  const mins=Math.max(0, Math.round((Date.now()/1000-_wkFinalAt)/60));
+  if(mins<1) return 'just now';
+  if(mins<60) return mins+' min ago';
+  const hrs=Math.round(mins/60);
+  if(hrs<24) return hrs+'h ago';
+  return Math.round(hrs/24)+'d ago';
 }
 /* ===== Availability tab ===== */
 function canEditAvail(name){ return isAdmin()||(!!state.me&&name===state.me&&!lockedForMe(name)); }
@@ -2515,7 +2770,7 @@ function markStintsSeen(){ try{ localStorage.setItem(stintSeenKey(), stintFinger
 function pruneOldEvents(){}
 /* WP build overrides: the results sweep needs the iRacing proxy, which the standalone has no
    access to. Left as a no-op so the button is inert rather than throwing. */
-function cacheDraft(text){ return Promise.resolve(); }   /* WP build overrides: stores the draft for the scheduled Discord post */
+function cacheDraft(text){ return Promise.resolve(false); }   /* WP build overrides: stores the draft for the scheduled Discord post. false = nothing was stored, so the tab shows no "saved" stamp */
 function postDraftToDiscord(){ _wkMsg='Posting to Discord needs the WordPress build.'; _wkErr=true; renderContent(); }
 function snapshotRatings(){ _wkMsg='Ratings snapshots need the WordPress build.'; _wkErr=true; renderContent(); }
 function refreshRecap(){ RECAP_ERR='Last week\'s results need the iRacing proxy — WordPress build only.'; renderContent(); }
@@ -2532,13 +2787,35 @@ function tabFromHash(){
 /* The search box re-renders the whole tab on every keystroke, which throws focus and caret
    away with the old DOM — put both back or it is unusable after one character. */
 document.getElementById('content').addEventListener('input',function(e){
-  if(!e.target||!e.target.dataset||e.target.dataset.action!=='wkq') return;
+  if(!e.target) return;
+  /* Both write-up boxes are captured on every keystroke, and neither re-renders: the tab is
+     rebuilt from a string, so a re-render replaces the textarea and drops the caret at the end.
+     Only the one-line counter is refreshed. */
+  if(e.target.id==='wkfinal'){ _wkFinal=e.target.value||''; wkSyncCount(); wkPersistPost(); return; }
+  if(e.target.id==='wkdraft'){ _wkDraft=e.target.value||''; wkSyncCount(); wkPersistPost(); return; }
+  if(!e.target.dataset||e.target.dataset.action!=='wkq') return;
   _wkQ=e.target.value||'';
   const pos=e.target.selectionStart;
   renderContent();
   const el=document.getElementById('wkq');
   if(el){ el.focus(); try{ el.setSelectionRange(pos,pos); }catch(_e){} }
 });
+/* Push whichever box is winning up to the server, debounced. Two reasons it cannot wait for
+   the Post button: the scheduled Discord job posts the server's copy with no browser involved,
+   and an edited write-up that only ever existed in one tab's memory is gone the moment that
+   tab reloads. cacheDraft is a no-op in the standalone build. */
+let _wkSaveT=null;
+function wkPersistPost(){
+  clearTimeout(_wkSaveT);
+  _wkSaveT=setTimeout(function(){
+    _wkSaveT=null;
+    const t=wkPostText();
+    if(!t||!t.trim()) return;
+    /* only stamp on a write the server confirmed — the standalone build stores nothing at all,
+       and in WordPress a failed write must not read back as "saved" */
+    cacheDraft(t).then(function(ok){ if(ok){ _wkFinalAt=Math.round(Date.now()/1000); wkSyncCount(); } });
+  }, 1200);
+}
 document.getElementById('content').addEventListener('keydown',e=>{
   if(e.key==='Enter' && e.target.id==='iridbox'){ const b=document.querySelector('[data-action="iridgo"]'); if(b) b.click(); }
 });
@@ -2641,7 +2918,11 @@ document.getElementById('content').addEventListener('click',e=>{
   }
   if(e.target.dataset.action==='wkgen'){
     if(!isAdmin()) return;
-    _wkDraft=weeklyDraft(weeklyFacts()); _wkMsg='Draft built.'; _wkErr=false; cacheDraft(_wkDraft); save(); renderContent(); return;
+    /* cache what would POST, not what was just generated: if an edited version is sitting in the
+       final box, rebuilding the draft must not quietly hand the scheduled job the raw one */
+    _wkDraft=weeklyDraft(weeklyFacts());
+    _wkMsg=_wkFinal.trim()?'Draft rebuilt — the final box below is untouched.':'Draft built.';
+    _wkErr=false; cacheDraft(wkPostText()); save(); renderContent(); return;
   }
   if(e.target.dataset.action==='wkai'){ if(isAdmin()) composeDraft(); return; }
   if(e.target.dataset.action==='wkpdf'){ if(isAdmin()) openWeeklyBrief(); return; }
@@ -2656,7 +2937,33 @@ document.getElementById('content').addEventListener('click',e=>{
     else { try{ ta.select(); document.execCommand('copy'); done(true); }catch(_e){ done(false); } }
     return;
   }
+  if(e.target.dataset.action==='wkseed'){
+    if(!isAdmin()) return;
+    const src=(document.getElementById('wkdraft')||{}).value||_wkDraft;
+    if(!src.trim()){ _wkMsg='Generate the draft first.'; _wkErr=true; renderContent(); return; }
+    const fin=document.getElementById('wkfinal');
+    /* refuse to overwrite work already pasted in — the whole point of the second box is that
+       nothing else on this tab can wipe it */
+    if(fin && fin.value.trim()){ _wkMsg='The final box already has something in it — clear it first.'; _wkErr=true; renderContent(); return; }
+    _wkFinal=src; _wkMsg='Draft copied into the final box.'; _wkErr=false; wkPersistPost(); renderContent(); return;
+  }
+  if(e.target.dataset.action==='wkfinalcopy'){
+    if(!isAdmin()) return;
+    const fa=document.getElementById('wkfinal');
+    const txt=(fa&&fa.value)||'';
+    if(!txt.trim()){ _wkMsg='The final box is empty.'; _wkErr=true; renderContent(); return; }
+    const done=function(ok){ _wkMsg=ok?'Copied.':'Could not copy — select the text and copy manually.'; _wkErr=!ok; renderContent(); };
+    if(navigator.clipboard&&navigator.clipboard.writeText) navigator.clipboard.writeText(txt).then(function(){done(true);},function(){done(false);});
+    else { try{ fa.select(); document.execCommand('copy'); done(true); }catch(_e){ done(false); } }
+    return;
+  }
+  if(e.target.dataset.action==='wkfinalclear'){
+    if(!isAdmin()) return;
+    if(!_wkFinal.trim()){ _wkMsg='Already empty.'; _wkErr=false; renderContent(); return; }
+    _wkFinal=''; _wkMsg='Cleared — Post to Discord will send the draft above.'; _wkErr=false; wkPersistPost(); renderContent(); return;
+  }
   if(e.target.dataset.action==='wkcat'){ if(isAdmin()){ _wkCat=e.target.dataset.c; renderContent(); } return; }
+  if(e.target.dataset.action==='wkpreview'){ if(isAdmin()) wkOpenPreview(); return; }
   if(e.target.dataset.action==='wkpost'){ if(isAdmin()) postDraftToDiscord(); return; }
   if(e.target.dataset.action==='wksnap'){ if(isAdmin()) snapshotRatings(); return; }
   if(e.target.dataset.action==='wkrecap'){ if(isAdmin()) refreshRecap(); return; }
