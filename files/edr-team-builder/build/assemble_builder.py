@@ -272,7 +272,14 @@ function composeDraft(){
 function cacheDraft(text){
   if(!text||!text.trim()) return Promise.resolve(false);
   return fetch(API+'weekly/draft',{method:'POST',headers:_hdrs(true),body:JSON.stringify({text:text})})
-    .then(function(r){ return !!(r&&r.ok); }).catch(function(){ return false; });
+    .then(function(r){ if(!r||!r.ok) return false;
+      return r.json().catch(function(){ return {}; }).then(function(j){
+        /* the server compares what it stored against what it was sent — a database still on
+           3-byte utf8 eats every emoji on the way in, and the scheduled job posts that copy */
+        _wkStripped = (j && j.intact === false);
+        return true;
+      });
+    }).catch(function(){ return false; });
 }
 /* The final box wins over the draft. The write-up is copied out of the Team Builder, edited
    elsewhere and pasted back, so the version a human last touched is the one that goes out —
@@ -286,8 +293,12 @@ function postDraftToDiscord(){
   var text=wkPostText();
   if(!text.trim()){ _wkMsg='Nothing to post — generate the draft, or paste your version into the final box.'; _wkErr=true; renderContent(); return; }
   _wkMsg='Posting…'; _wkErr=false; renderContent();
-  cacheDraft(text).then(function(){          // post exactly what is on screen, edits included
-    return fetch(API+'weekly/post',{method:'POST',headers:_hdrs(true),body:'{}'})
+  /* Send the text with the request. It is the exact string that was just previewed, so nothing
+     between the preview and Discord can alter it — in particular it never goes near the options
+     table, which on a 3-byte-utf8 database strips every emoji in the write-up. cacheDraft still
+     runs (the scheduled job needs a stored copy) but the post no longer depends on what it kept. */
+  cacheDraft(text).then(function(){
+    return fetch(API+'weekly/post',{method:'POST',headers:_hdrs(true),body:JSON.stringify({text:text})})
       .then(function(r){ return r.json().catch(function(){return {};}).then(function(j){
         if(!r.ok) throw new Error((j&&j.message)||'Discord post failed'); return j; }); });
   }).then(function(j){
@@ -295,14 +306,15 @@ function postDraftToDiscord(){
     _wkMsg='Posted to Discord'+(j&&j.messages>1?(' in '+j.messages+' messages'):'')+'.'; _wkErr=false; renderContent();
   }).catch(function(err){ _wkMsg=(err&&err.message)||'Discord post failed'; _wkErr=true; renderContent(); });
 }
-/* Restore the server's copy of the post into the final box. Without this an edited write-up
-   survives only as long as the tab that typed it — reload, or open the tab on a phone, and the
-   work is gone even though the server has been holding it for the scheduled job all along. */
+/* Fetch the server's copy so an edited write-up is not lost to a reload — but OFFER it, never
+   drop it into the final box unasked. Auto-filling looked helpful and was a trap: the stored
+   copy is whatever was last posted, so after an upgrade the box silently pre-loaded LAST week's
+   write-up, in the old format, and the final box wins over the draft. The result was a freshly
+   generated update sitting untouched above a stale one that was what actually posted. */
 function loadStoredPost(){
   return apiGET('weekly/draft').then(function(j){
     if(!j||!j.text||!String(j.text).trim()) return;
-    if(_wkFinal.trim()||_wkDraft.trim()) return;      // never clobber what this tab already has
-    _wkFinal=String(j.text); _wkFinalAt=parseInt(j.at,10)||0;
+    _wkStored={text:String(j.text), at:parseInt(j.at,10)||0};
   }).catch(function(){});
 }
 function pruneOldEvents(){

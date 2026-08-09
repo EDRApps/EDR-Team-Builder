@@ -2,7 +2,7 @@
 /**
  * Plugin Name: EDR Team Builder
  * Description: Endurotech Racing endurance team + stint planner. Pulls Garage 61 pace and official iRacing session times, collects driver availability in-house, and builds Pro/Casual teams and stint rotations. Add the [edr_team_builder] shortcode to a page.
- * Version: 2.4.37
+ * Version: 2.4.38
  * Author: Endurotech Racing
  * License: GPL-2.0-or-later
  */
@@ -11,7 +11,7 @@ if (!defined('ABSPATH')) exit; // no direct access
 
 define('EDR_TB_DIR', plugin_dir_path(__FILE__));
 define('EDR_TB_URL', plugin_dir_url(__FILE__));
-define('EDR_TB_VER', '2.4.37');
+define('EDR_TB_VER', '2.4.38');
 
 require_once EDR_TB_DIR . 'includes/garage61.php';
 require_once EDR_TB_DIR . 'includes/iracing.php';
@@ -340,7 +340,19 @@ function edr_tb_rest_draft_set(WP_REST_Request $req) {
     if (trim($text) === '') return new WP_Error('empty', 'Nothing to store.', array('status' => 400));
     $text = substr($text, 0, 20000);
     update_option('edr_tb_weekly_draft', array('text' => $text, 'at' => time()), false);
-    return rest_ensure_response(array('ok' => true, 'at' => time()));
+    /* Read it straight back. On a database still on 3-byte "utf8" rather than utf8mb4, WordPress
+       strips 4-byte characters on the way in without raising anything - which silently eats every
+       emoji in the write-up. The scheduled post sends this stored copy, so if it came back short
+       the tab has to say so rather than let a Sunday job quietly post a de-emojied update. */
+    $back = (array) get_option('edr_tb_weekly_draft', array());
+    $kept = isset($back['text']) ? (string) $back['text'] : '';
+    return rest_ensure_response(array(
+        'ok'    => true,
+        'at'    => time(),
+        'intact' => ($kept === $text),
+        'stored' => strlen($kept),
+        'sent'   => strlen($text),
+    ));
 }
 
 /**
@@ -354,11 +366,18 @@ function edr_tb_rest_draft_set(WP_REST_Request $req) {
  * a hard byte chop instead of splitting at a blank line.
  */
 function edr_tb_discord_chunks($text, $limit = 1900) {
-    $text  = str_replace(array("\r\n", "\r"), "\n", (string) $text);
-    $paras = preg_split("/\n{2,}/", $text);
-    $out = array(); $cur = '';
-    foreach ($paras as $p) {
-        $p = rtrim($p);
+    $text = str_replace(array("\r\n", "\r"), "\n", (string) $text);
+    /* Capture the separators, do not just split on them. The write-up puts a wider gap before
+       a section heading than between entries, and rejoining every paragraph with a flat "\n\n"
+       silently flattened that back out - the spacing survived the browser and died here. */
+    $parts = preg_split("/(\n{2,})/", $text, -1, PREG_SPLIT_DELIM_CAPTURE);
+    $out = array(); $cur = ''; $sep = "\n\n";
+    foreach ($parts as $i => $part) {
+        if ($i % 2 === 1) {                                     // a captured separator
+            $sep = (strlen($part) > 3) ? "\n\n\n" : $part;      // at most one extra blank line
+            continue;
+        }
+        $p = rtrim($part);
         if ($p === '') continue;
         if (strlen($p) > $limit) {                       // one huge block: fall back to line splitting
             foreach (explode("\n", $p) as $line) {
@@ -376,8 +395,9 @@ function edr_tb_discord_chunks($text, $limit = 1900) {
             }
             continue;
         }
-        if ($cur !== '' && strlen($cur) + strlen($p) + 2 > $limit) { $out[] = $cur; $cur = ''; }
-        $cur .= ($cur === '' ? '' : "\n\n") . $p;
+        $join = ($cur === '') ? '' : $sep;
+        if ($cur !== '' && strlen($cur) + strlen($join) + strlen($p) > $limit) { $out[] = $cur; $cur = ''; $join = ''; }
+        $cur .= $join . $p;
     }
     if (trim($cur) !== '') $out[] = $cur;
     return $out;
@@ -408,16 +428,26 @@ function edr_tb_rest_draft_post(WP_REST_Request $req) {
     if (empty($s['discord_webhook'])) {
         return new WP_Error('no_webhook', 'Set the Discord webhook in plugin Settings first.', array('status' => 400));
     }
-    $d = (array) get_option('edr_tb_weekly_draft', array());
-    $text = isset($d['text']) ? trim((string) $d['text']) : '';
-    if ($text === '') {
-        return new WP_Error('no_draft', 'No weekly draft stored yet — open the Weekly tab and hit Generate.', array('status' => 409));
-    }
-    $ageDays = (time() - intval($d['at'])) / DAY_IN_SECONDS;
-    $maxAge  = $req->get_param('max_age_days');
-    $maxAge  = ($maxAge === null) ? 8 : max(1, intval($maxAge));
-    if ($ageDays > $maxAge) {
-        return new WP_Error('stale_draft', sprintf('The stored draft is %d days old — refusing to post it. Regenerate it on the Weekly tab.', (int) $ageDays), array('status' => 409));
+    /* A manual post carries its own text: it is the exact string the admin just previewed, so
+       nothing between the preview and Discord can alter it. Reading it back out of the option
+       instead means a round trip through the database, and a database on 3-byte "utf8" strips
+       every 4-byte emoji on the way through - the post then arrives without the formatting the
+       preview promised. The scheduled job has no browser, so it still uses the stored copy. */
+    $direct = (string) $req->get_param('text');
+    if (trim($direct) !== '') {
+        $text = trim(substr($direct, 0, 20000));
+    } else {
+        $d = (array) get_option('edr_tb_weekly_draft', array());
+        $text = isset($d['text']) ? trim((string) $d['text']) : '';
+        if ($text === '') {
+            return new WP_Error('no_draft', 'No weekly draft stored yet - open the Weekly tab and hit Generate.', array('status' => 409));
+        }
+        $ageDays = (time() - intval($d['at'])) / DAY_IN_SECONDS;
+        $maxAge  = $req->get_param('max_age_days');
+        $maxAge  = ($maxAge === null) ? 8 : max(1, intval($maxAge));
+        if ($ageDays > $maxAge) {
+            return new WP_Error('stale_draft', sprintf('The stored draft is %d days old - refusing to post it. Regenerate it on the Weekly tab.', (int) $ageDays), array('status' => 409));
+        }
     }
 
     $chunks = edr_tb_discord_chunks($text);
@@ -439,7 +469,8 @@ function edr_tb_rest_draft_post(WP_REST_Request $req) {
         if ($i < count($chunks) - 1) sleep(1);   // stay clear of the webhook rate limit
     }
     update_option('edr_tb_weekly_posted', time(), false);
-    return rest_ensure_response(array('ok' => true, 'messages' => $sent, 'draft_age_days' => round($ageDays, 1)));
+    return rest_ensure_response(array('ok' => true, 'messages' => $sent,
+        'draft_age_days' => isset($ageDays) ? round($ageDays, 1) : 0));
 }
 
 /**
@@ -882,11 +913,12 @@ function edr_tb_gemini_compose($draft, $voice) {
         . "- Rewrite the intro, the award wording and the one-line driver mentions for flow and character, using the "
         . "personality notes. Those notes are voice only: never state them as facts.\n"
         . "- Only mention a driver the draft already mentions.\n"
-        . "- It is posted straight into Discord, which renders #/## headings, -# subtext, **bold** and > quotes. "
-        . "Keep that layout: one ## heading per section, the subject of an entry bold and alone on its line, its "
-        . "facts on the next line, quiet supporting detail on a -# line, and a blank line between entries. Keep the "
-        . "medal emoji on the top three. Do not add emoji anywhere else. Keep lines short - Discord wraps narrow on "
-        . "mobile.";
+        . "- It is posted straight into Discord. Keep the layout exactly: ## for the title, ### for each section "
+        . "heading, the subject of an entry **bold** and alone on its line, its facts on the next line, quiet "
+        . "supporting detail in *italics*, the human note as a > quote, one blank line between entries and two "
+        . "above a section heading. Keep the medal emoji on the top three; do not add emoji anywhere else. "
+        . "NEVER use -# subtext and never use a single # heading: older Discord clients render -# as a large "
+        . "heading, which inverts the whole post. Keep lines short - Discord wraps narrow on mobile.";
 
     $voiceTxt = '';
     if (is_array($voice) && $voice) {

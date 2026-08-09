@@ -186,16 +186,48 @@ refreshes. Edits are pushed to `POST /weekly/draft` on a 1.2s debounce, because 
 posts the server's copy with no browser involved and an edited write-up that lived only in one
 tab's memory dies with that tab. `cacheDraft()` resolves **true only on a confirmed write** — the
 "saved" stamp is a promise that the text exists outside this browser, so it must not appear on a
-failed one (the standalone stub returns false: it stores nothing). `loadStoredPost()` restores the
-server's copy into `#wkfinal` on boot, and never over anything the tab already holds.
+failed one (the standalone stub returns false: it stores nothing). `loadStoredPost()` fetches the
+server's copy but **offers** it as a "Restore saved" button rather than filling the box. It used
+to auto-fill, which looked helpful and was a trap: the stored copy is whatever was last posted,
+so after an upgrade the box silently pre-loaded *last* week's write-up in the old format — and
+the final box wins over the draft, so a freshly generated update sat untouched above the stale
+one that actually posted.
 
-**Draft layout is fixed and Discord-specific**: one `##` heading per section (the only place
-emoji appear, plus 🥇🥈🥉 on the top three), the subject of an entry bold and alone on its line,
-its facts on the next line, quiet detail on `-#`, the human note as `>`, blank line between
-entries. `wkTidy()` normalises the spacing in one pass at the end — never two blank lines, always
-exactly one above a heading, none trailing — because each section emits its own trailing blank
-from inside its loop, so an *empty* section emitted none and welded its "nothing on this week"
-line to the next heading. The Gemini compose prompt states the same layout, or it rewrites it away.
+**A manual post carries its own text.** `POST /weekly/post` takes an optional `text` param and
+uses it when present; only the scheduled job (which has no browser) falls back to the stored
+option, and only that path enforces the 8-day staleness refusal. This exists because the option
+is a **round trip through the database**, and a `wp_options` table still on 3-byte `utf8` rather
+than `utf8mb4` silently strips every 4-byte character on the way in — which is exactly 🏁📊⭐🥇🥈🥉.
+The post arrived with no emoji while the preview had shown them. `POST /weekly/draft` now reads
+back what it stored and returns `intact:false` when they differ, and the tab shows a warning
+naming utf8mb4, because the scheduled post still sends the stored copy.
+
+**Draft layout is fixed and Discord-specific** (settled in 2.4.38, after seeing real posts):
+`##` for the title once, `###` per section (the only headings, and the only emoji besides
+🥇🥈🥉), the subject of an entry bold and alone on its line, its facts on the next line, quiet
+detail in `*italics*`, the human note as `>`, one blank line between entries and **two above a
+section heading**. `wkTidy()` enforces that spacing in one pass at the end — each section emits
+its own trailing blank from inside its loop, so an *empty* section emitted none and welded its
+"nothing on this week" line to the next heading. The Gemini compose prompt states the same
+layout, or it rewrites it away.
+
+Two rules that came from what the team actually saw, both worth not relitigating:
+
+- **Never emit `-#`.** It is Discord's subtext marker on a current client, but a client without
+  subtext support parses `-#` as a *list item whose content is `# heading`* — so the quietest
+  line in an entry (the car list) rendered as the biggest thing on screen while the event name
+  above it looked like a caption. Every other marker in the write-up fails safe: unsupported
+  `**` shows literal asterisks. `-#` fails by **inverting the hierarchy**, which is worse than
+  no styling. Quiet lines are italic instead. `wkMdToHtml()` still *understands* `-#` because
+  pasted-back text may contain it, and the preview raises a warning when it does.
+- **Headings start at `##`.** Discord's H1 is enormous next to body text; one per section made
+  the post read as a stack of banners.
+
+**Spacing survives the chunker.** `edr_tb_discord_chunks()` captures its separators
+(`PREG_SPLIT_DELIM_CAPTURE`) instead of splitting on them, because rejoining every paragraph
+with a flat `"\n\n"` flattened the double gap back out — the layout survived the browser and
+died on the server. Separators are clamped to at most `\n\n\n`. `wkChunks()` mirrors it, and the
+fuzz asserts the heading gaps survive.
 
 ### Preview before post (2.4.37)
 
