@@ -246,7 +246,7 @@ function pollHistory(n){
    plain draft is always one click away (Generate), so a model slip is caught before anything posts. */
 function composeDraft(){
   if(!isAdmin()) return;
-  if(!_wkDraft || !_wkDraft.trim()){ _wkDraft=weeklyDraft(weeklyFacts()); cacheDraft(_wkDraft); }
+  if(!_wkDraft || !_wkDraft.trim()){ _wkDraft=weeklyDraft(weeklyFacts()); cacheDraft(wkPostText()); }
   var plain=_wkDraft;
   var notes=Object.assign({}, DRIVER_NOTES, (weeklyState().driver||{}));
   var voice={};                                   // only the notes for drivers the draft actually names
@@ -256,7 +256,7 @@ function composeDraft(){
     .then(function(r){ return r.json().catch(function(){return {};}).then(function(j){
       if(!r.ok) throw new Error((j&&j.message)||'compose failed'); return j; }); })
     .then(function(j){
-      if(j&&j.text){ _wkDraft=j.text; cacheDraft(_wkDraft); _wkMsg='Composed — check it against the facts, and hit Generate to get the plain version back.'; _wkErr=false; }
+      if(j&&j.text){ _wkDraft=j.text; cacheDraft(wkPostText()); _wkMsg='Composed — check it against the facts, and hit Generate to get the plain version back.'; _wkErr=false; }
       else { _wkMsg='Compose returned nothing.'; _wkErr=true; }
       _wkAI=false; renderContent();
     })
@@ -265,23 +265,45 @@ function composeDraft(){
 /* Keep the server's copy of the draft in step with what the admin sees. The scheduled
    Discord post has no browser to render with, so whatever was last generated here IS what
    gets posted — see cacheDraft callers. */
+/* Resolves true only when the server actually took it. The Weekly tab shows a "saved" stamp
+   beside the final post, and that stamp is a promise about the scheduled job: it means the
+   text now exists somewhere other than this browser tab. Resolving true on a failed write
+   would make it a lie at exactly the moment it matters. */
 function cacheDraft(text){
-  if(!text||!text.trim()) return Promise.resolve();
+  if(!text||!text.trim()) return Promise.resolve(false);
   return fetch(API+'weekly/draft',{method:'POST',headers:_hdrs(true),body:JSON.stringify({text:text})})
-    .then(function(){}).catch(function(){});
+    .then(function(r){ return !!(r&&r.ok); }).catch(function(){ return false; });
 }
+/* The final box wins over the draft. The write-up is copied out of the Team Builder, edited
+   elsewhere and pasted back, so the version a human last touched is the one that goes out —
+   and it is read from the DOM, not from _wkFinal, so text pasted a keystroke ago cannot be
+   missed by the input handler's debounce. */
 function postDraftToDiscord(){
+  var fin=document.getElementById('wkfinal');
   var ta=document.getElementById('wkdraft');
-  var text=(ta&&ta.value)||'';
-  if(!text.trim()){ _wkMsg='Generate it first.'; _wkErr=true; renderContent(); return; }
+  if(fin) _wkFinal=fin.value||'';
+  if(ta && (ta.value||'').trim()) _wkDraft=ta.value;
+  var text=wkPostText();
+  if(!text.trim()){ _wkMsg='Nothing to post — generate the draft, or paste your version into the final box.'; _wkErr=true; renderContent(); return; }
   _wkMsg='Posting…'; _wkErr=false; renderContent();
   cacheDraft(text).then(function(){          // post exactly what is on screen, edits included
     return fetch(API+'weekly/post',{method:'POST',headers:_hdrs(true),body:'{}'})
       .then(function(r){ return r.json().catch(function(){return {};}).then(function(j){
         if(!r.ok) throw new Error((j&&j.message)||'Discord post failed'); return j; }); });
   }).then(function(j){
+    _wkFinalAt=Math.round(Date.now()/1000);
     _wkMsg='Posted to Discord'+(j&&j.messages>1?(' in '+j.messages+' messages'):'')+'.'; _wkErr=false; renderContent();
   }).catch(function(err){ _wkMsg=(err&&err.message)||'Discord post failed'; _wkErr=true; renderContent(); });
+}
+/* Restore the server's copy of the post into the final box. Without this an edited write-up
+   survives only as long as the tab that typed it — reload, or open the tab on a phone, and the
+   work is gone even though the server has been holding it for the scheduled job all along. */
+function loadStoredPost(){
+  return apiGET('weekly/draft').then(function(j){
+    if(!j||!j.text||!String(j.text).trim()) return;
+    if(_wkFinal.trim()||_wkDraft.trim()) return;      // never clobber what this tab already has
+    _wkFinal=String(j.text); _wkFinalAt=parseInt(j.at,10)||0;
+  }).catch(function(){});
 }
 function pruneOldEvents(){
   var days=90;
@@ -657,9 +679,13 @@ async function bootSetup(){
     try{ var rc=await apiGET('recap'); if(rc){ RECAP=rc.recap||null; RECAP_RUNNING=!!rc.running; RECAP_ERR=rc.error||''; RECAP_PROG=rc.progress||null; } }catch(e){}
     try{ var hh=await apiGET('history'); if(hh){ applyHistory(hh.history||null); HIST_RUNNING=!!hh.running; HIST_ERR=hh.error||''; HIST_PROG=hh.progress||null; } }catch(e){}
     try{ RATINGS=await apiGET('ratings'); }catch(e){}
+    await loadStoredPost();                 // the edited write-up, if one is waiting on the server
     try{ TRACKS=await apiGET('tracks'); }catch(e){ TRACKS=[]; } if(!Array.isArray(TRACKS)) TRACKS=[];
     preselectNearest();
-    if(state.tab==='setup') renderContent();
+    /* the weekly tab is fed by all four of the admin pulls above (recap, history, ratings and
+       the stored post) — landing on it via #weekly used to show the pre-pull version until
+       something else forced a render */
+    if(state.tab==='setup'||state.tab==='weekly') renderContent();
     loadIracing().then(function(){ autoApplyTiming(); autoApplyWeather(); if(state.tab==='setup') renderContent(); });
   }
 }
