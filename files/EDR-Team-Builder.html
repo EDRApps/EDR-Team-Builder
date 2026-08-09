@@ -998,6 +998,9 @@ let _wkMsg='', _wkDraft='', _wkErr=false, _wkAI=false;
    from scratch, and an accidental click on it must never be able to destroy the edited copy.
    Empty means "nothing pasted yet", in which case the draft posts as-is. */
 let _wkFinal='', _wkFinalAt=0;
+/* The server's copy of the last stored post, offered as a restore rather than pre-loaded, and
+   whether the database gave it back intact (see cacheDraft — a 3-byte-utf8 column eats emoji). */
+let _wkStored=null, _wkStripped=false;
 let _wkCat='all', _wkQ='';   /* pick-list discipline filter and search, display only */
 /* Exactly what a Post to Discord would send, from either box. Also what gets cached
    server-side, so the scheduled job posts the edited version and not the raw draft. */
@@ -1025,9 +1028,13 @@ function wkSplitUtf8(s, limit){
 }
 function wkChunks(text){
   const t=String(text||'').replace(/\r\n|\r/g,'\n');
-  const out=[]; let cur='';
-  t.split(/\n{2,}/).forEach(function(p){
-    p=p.replace(/\s+$/,''); if(p==='') return;
+  /* split KEEPING the separators: the wider gap above a section heading is part of the layout,
+     and rejoining everything with a flat '\n\n' flattens it back out */
+  const parts=t.split(/(\n{2,})/);
+  const out=[]; let cur='', sep='\n\n';
+  parts.forEach(function(part,i){
+    if(i%2===1){ sep=(part.length>3)?'\n\n\n':part; return; }   // at most one extra blank line
+    const p=part.replace(/\s+$/,''); if(p==='') return;
     if(wkBytes(p)>WK_LIMIT){
       p.split('\n').forEach(function(line){
         const pieces=(wkBytes(line)>WK_LIMIT)?wkSplitUtf8(line,WK_LIMIT):[line];
@@ -1038,8 +1045,9 @@ function wkChunks(text){
       });
       return;
     }
-    if(cur!=='' && wkBytes(cur)+wkBytes(p)+2>WK_LIMIT){ out.push(cur); cur=''; }
-    cur+=(cur===''?'':'\n\n')+p;
+    let join=(cur==='')?'':sep;
+    if(cur!=='' && wkBytes(cur)+join.length+wkBytes(p)>WK_LIMIT){ out.push(cur); cur=''; join=''; }
+    cur+=join+p;
   });
   if(cur.trim()!=='') out.push(cur);
   return out;
@@ -1103,6 +1111,19 @@ function wkOpenPreview(){
   h+='<div class="wkprev-head"><div class="head" style="font-size:15px;color:#fff;text-transform:uppercase">Preview</div>'
     +'<span class="meta" style="font-size:10.5px">This is '+src+', rendered the way Discord will render it'
     +(chunks.length>1?(' — it is over the 2000-character limit, so it arrives as <b style="color:var(--yellow)">'+chunks.length+' separate messages</b>'):'')+'.</span></div>';
+  /* The write-up is edited outside the builder, so the two markers that misfire in Discord can
+     come back in at any time. Say so here rather than after the whole team has seen it. */
+  const risky=[];
+  const lines=text.replace(/\r\n|\r/g,'\n').split('\n');
+  if(lines.some(function(l){ return /^-#\s/.test(l); }))
+    risky.push('<b>-# subtext</b> — on a Discord client without subtext support this renders as a <b>large heading</b>, which flips the line from the quietest thing in the entry to the loudest. Use <b>*italics*</b> instead.');
+  if(lines.some(function(l){ return /^#\s/.test(l); }))
+    risky.push('<b># heading</b> — Discord\'s H1 is enormous next to body text. Use <b>##</b> for the title and <b>###</b> for sections.');
+  if(risky.length){
+    h+='<div style="padding:10px 18px;border-bottom:1px solid var(--lineSoft)">';
+    risky.forEach(function(r){ h+='<div class="meta" style="font-size:10.5px;color:var(--red)">'+r+'</div>'; });
+    h+='</div>';
+  }
   h+='<div class="wkprev-body">';
   chunks.forEach(function(c,i){
     if(chunks.length>1) h+='<div class="wkprev-n">Message '+(i+1)+' of '+chunks.length+' · '+wkBytes(c)+' bytes</div>';
@@ -1560,24 +1581,38 @@ function weeklyDraft(f){
      anywhere else. Keep lines short: Discord wraps narrow on mobile.
 
      House layout, applied to every section so the whole post scans the same way:
-       ## heading   one per section, carrying the only emoji in the body
+       ## title     once, at the top
+       ### heading  one per section — the only headings in the body, and the only emoji
        **Name**     the subject of an entry, alone on its line
        plain line   the facts that decide whether you care (track, car, length, when)
-       -# subtext   the quiet supporting stuff (history, session times, warnings, flare)
+       *italic*     the quiet supporting stuff (history, session times, warnings, flare)
        > quote      the human note
-       blank line   between every entry — it is what gives Discord the spacing, and it is
-                    also where the 1900-char chunker prefers to split
-     Emoji are deliberately rationed to the headings and the top-three medals. Sprinkled
-     through the body they stop reading as signal and the write-up looks like a newsletter. */
+       blank line   between entries; two above a section heading. That spacing IS the
+                    formatting in Discord, and it is where the chunker prefers to split.
+
+     Two rules learned the hard way, both from what the team actually saw:
+
+     **No `-#`.** It is Discord's subtext marker on a current client, but a client without
+     subtext support parses `-#` as a list item whose content is `# heading` — so the quietest
+     line in an entry (the car list) rendered as the biggest thing on screen while the event
+     name above it looked like a caption. Every other marker here fails safe: an unsupported
+     `**` shows literal asterisks. `-#` fails by inverting the hierarchy, which is worse than
+     no styling at all, so the quiet lines are italic instead.
+
+     **Headings start at `##`, not `#`.** Discord's H1 is enormous next to body text; with one
+     per section the post read as a stack of banners.
+
+     Emoji are rationed to the headings and the top-three medals. Sprinkled through the body
+     they stop reading as signal and the write-up looks like a newsletter. */
   const L=[];
-  L.push('# 🏁 This week in iRacing');
-  L.push('-# Week of '+f.week.from+' to '+f.week.to+' · times in '+f.tz);
+  L.push('## 🏁 This week in iRacing');
+  L.push('*Week of '+f.week.from+' to '+f.week.to+' · times in '+f.tz+'*');
   L.push('');
 
   /* Recap first: people read the week they just had before the week they are about to have. */
   const aw=recapAwards(RECAP);
   if(aw){
-    L.push('## 📊 Last week');
+    L.push('### 📊 Last week');
     if(aw.starts) L.push('**'+aw.drivers+'** driver'+(aw.drivers===1?'':'s')+' started **'+aw.starts+'** official race'+(aw.starts===1?'':'s')+'.');
     L.push('');
     if(aw.top3.length){
@@ -1608,13 +1643,13 @@ function weeklyDraft(f){
     L.push('');
   }
 
-  L.push('## ⭐ Special events — next four weeks');
-  if(!f.specials.length) L.push('-# Nothing on the EDR calendar in the next four weeks.');
+  L.push('### ⭐ Special events — next four weeks');
+  if(!f.specials.length) L.push('*Nothing on the EDR calendar in the next four weeks.*');
   f.specials.forEach(function(e){
     const when=e.live?'**live now**':('in '+e.inDays+' day'+(e.inDays===1?'':'s'));
     L.push('**'+e.name+'**'+(e.target?' · *EDR target*':''));
     L.push(e.track+(e.dur?' · '+e.dur+'h':'')+' · '+e.dates+' · '+when);
-    if(e.cars) L.push('-# '+e.cars);
+    if(e.cars) L.push(e.cars);
     if(e.note) L.push('> '+cap(e.note)+'.');
     /* far enough out that there is still runway to build up to it — that is the moment the
        nudge is useful, not the week before when it is already too late to start */
@@ -1622,8 +1657,8 @@ function weeklyDraft(f){
     L.push('');
   });
 
-  L.push('## ⏱️ Endurance — on '+draftWeekWord());
-  if(!f.enduros.length) L.push('-# No endurance rounds '+draftWeekWord()+'.');
+  L.push('### ⏱️ Endurance — on '+draftWeekWord());
+  if(!f.enduros.length) L.push('*No endurance rounds '+draftWeekWord()+'.*');
   f.enduros.forEach(function(e){
     L.push('**'+e.series+'**'+(e.team?' · *team event*':''));
     let line=(e.track||'track TBC');
@@ -1631,20 +1666,20 @@ function weeklyDraft(f){
     const elen=fmtRaceDist(e.raceMin, e.raceLaps);
     if(elen) line+=' · '+elen;
     L.push(line);
-    if(!e.carsWeek) L.push('-# Please confirm car for '+draftWeekWord()+' — the schedule did not name one for this round.');
-    if(e.hist)      L.push('-# '+e.hist);
-    if(e.times)     L.push('-# Sessions: '+e.times);
-    else if(e.when) L.push('-# Races '+e.when);
+    if(!e.carsWeek) L.push('*Please confirm car for '+draftWeekWord()+' — the schedule did not name one for this round.*');
+    if(e.hist)      L.push('*'+e.hist+'*');
+    if(e.times)     L.push('Sessions: '+e.times);
+    else if(e.when) L.push('Races '+e.when);
     if(e.note) L.push('> '+cap(e.note)+'.');
     L.push('');   // blank line between entries: keeps the quotes off the next heading, and
                   // gives the Discord chunker a clean place to split
   });
 
-  L.push('## ⚡ Sprints');
+  L.push('### ⚡ Sprints');
   if(!f.haveIracing){
-    L.push('-# No live iRacing schedule — connect the proxy in plugin Settings.');
+    L.push('*No live iRacing schedule — connect the proxy in plugin Settings.*');
   } else if(!f.sprints.length){
-    L.push('-# No rounds '+draftWeekWord()+' for the series you have ticked.');
+    L.push('*No rounds '+draftWeekWord()+' for the series you have ticked.*');
   }
   f.sprints.forEach(function(s){
     if(!s.matched){ L.push('**'+s.series+'**'); L.push('track TBC'); L.push(''); return; }
@@ -1662,10 +1697,10 @@ function weeklyDraft(f){
     if(s.when) line+=' — '+s.when;
     else if(s.times) line+=' — '+s.times;
     L.push(line);
-    if(!s.carsWeek) L.push('-# Please confirm car for '+draftWeekWord()+' — the schedule did not name one for this round.');
-    if(s.hist) L.push('-# '+s.hist);
+    if(!s.carsWeek) L.push('*Please confirm car for '+draftWeekWord()+' — the schedule did not name one for this round.*');
+    if(s.hist) L.push('*'+s.hist+'*');
     if(s.note) L.push('> '+cap(s.note)+'.');
-    if(s.flare) L.push('-# One for '+s.flare.name+' — '+s.flare.note+'.');
+    if(s.flare) L.push('*One for '+s.flare.name+' — '+s.flare.note+'.*');
     L.push('');
   });
 
@@ -1673,7 +1708,7 @@ function weeklyDraft(f){
      "edit it before it goes anywhere public" line read as an instruction to the whole team;
      the reminder to edit belongs on the tab, where the person who can act on it is looking. */
   L.push('');
-  L.push('-# Posted from the EDR Team Builder');
+  L.push('*Posted from the EDR Team Builder*');
   return wkTidy(L).join('\n');
 }
 /* One spacing pass over the finished draft, so the gaps do not depend on which sections
@@ -1685,10 +1720,17 @@ function weeklyDraft(f){
    heading — the blank line is what edr_tb_discord_chunks() breaks on. */
 function wkTidy(L){
   const out=[];
+  const blanks=function(){ let n=0; for(let i=out.length-1;i>=0&&out[i]==='';i--) n++; return n; };
   L.forEach(function(ln){
     const s=String(ln==null?'':ln);
-    if(s===''){ if(out.length && out[out.length-1]!=='') out.push(''); return; }
-    if(/^#{1,3}\s/.test(s) && out.length && out[out.length-1]!=='') out.push('');   // -# is not a heading
+    if(s===''){ if(out.length && blanks()<1) out.push(''); return; }
+    /* A section heading gets a DOUBLE gap above it and an entry gets a single one. Discord
+       renders headings tight against whatever precedes them, so with one blank line everywhere
+       the whole post reads as an unbroken wall — the section breaks are what make it scannable
+       on a phone. `-#` is subtext, not a heading. */
+    if(/^#{1,3}\s/.test(s) && out.length){
+      while(blanks()<2) out.push('');
+    }
     out.push(s);
   });
   while(out.length && out[out.length-1]==='') out.pop();
@@ -2055,10 +2097,28 @@ function renderWeekly(){
     +'<button class="quickbtn avfree" data-action="wkseed" title="drop the generated draft in here as a starting point">Start from the draft</button>'
     +'<button class="quickbtn avfree" data-action="wkfinalcopy">Copy this</button>'
     +'<button class="quickbtn avfree" data-action="wkfinalclear" title="empty this box — Post to Discord then falls back to the draft above">Clear</button>'
+    /* offered, never auto-loaded: the stored copy is whatever was last posted, so it can easily
+       be last week's, and silently seeding the box that wins would post it */
+    +((_wkStored&&_wkStored.text&&!_wkFinal.trim())
+        ? '<button class="quickbtn avfree" data-action="wkrestore" title="load the copy the server is holding — this is what a scheduled post would send">Restore saved ('+esc(wkAgo(_wkStored.at))+')</button>'
+        : '')
     +'<span class="meta" id="wkcount" style="font-size:10.5px;margin-left:auto">'+wkCountHtml()+'</span>'
     +'</div>';
+  if(_wkStripped){
+    h+='<div class="meta" style="font-size:10.5px;color:var(--red);margin-top:8px">'
+      +'This site\'s database is dropping characters from the saved copy — almost always a table still on 3-byte <b>utf8</b> instead of <b>utf8mb4</b>, which silently eats emoji. '
+      +'Posting from this tab is unaffected (the text goes straight to Discord), but a <b>scheduled</b> post sends the saved copy and would arrive without them. '
+      +'Converting the database to utf8mb4 fixes it.</div>';
+  }
   h+='</div>';
   return h;
+}
+function wkAgo(at){
+  const mins=Math.max(0, Math.round((Date.now()/1000-(at||0))/60));
+  if(mins<60) return mins+' min ago';
+  const hrs=Math.round(mins/60);
+  if(hrs<24) return hrs+'h ago';
+  return Math.round(hrs/24)+'d ago';
 }
 /* Which box wins, how long it is, and how many messages Discord will receive. Kept out of
    renderWeekly so typing can refresh just this line — re-rendering the tab on a keystroke
@@ -2956,6 +3016,14 @@ document.getElementById('content').addEventListener('click',e=>{
     if(navigator.clipboard&&navigator.clipboard.writeText) navigator.clipboard.writeText(txt).then(function(){done(true);},function(){done(false);});
     else { try{ fa.select(); document.execCommand('copy'); done(true); }catch(_e){ done(false); } }
     return;
+  }
+  if(e.target.dataset.action==='wkrestore'){
+    if(!isAdmin()||!_wkStored||!_wkStored.text) return;
+    const fin=document.getElementById('wkfinal');
+    if(fin && fin.value.trim()){ _wkMsg='The final box already has something in it — clear it first.'; _wkErr=true; renderContent(); return; }
+    _wkFinal=_wkStored.text; _wkFinalAt=_wkStored.at||0;
+    _wkMsg='Restored the saved copy — check it is this week\'s before posting.'; _wkErr=false;
+    renderContent(); return;
   }
   if(e.target.dataset.action==='wkfinalclear'){
     if(!isAdmin()) return;
