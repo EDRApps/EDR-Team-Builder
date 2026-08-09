@@ -25,6 +25,13 @@ OUT = os.environ.get("EDR_ZIP", os.path.join(REPO, "Admin Folder", "edr-team-bui
 EXCLUDE_DIRS = {"build", "__pycache__"}
 EXCLUDE_FILES = {".DS_Store"}
 
+# Text going into the zip is normalised to LF, which is what the repo stores and what a zip
+# built on Linux contains. Without this the artifact depends on the packager's git settings:
+# a Windows clone with core.autocrlf=true has a CRLF working tree, so the zip picks up CRLF
+# while CI's Linux checkout does not — and CI's version check then compares "2.4.37" against
+# "2.4.37\r" and fails with the two looking identical in the log. Binary stays untouched.
+TEXT_EXT = {".php", ".js", ".css", ".md", ".txt", ".json", ".html", ".po", ".pot"}
+
 
 def plugin_version():
     """Read the version out of the plugin header — the single source of truth for it."""
@@ -54,7 +61,17 @@ def main():
                 full = os.path.join(root, name)
                 # entries are prefixed with edr-team-builder/ so WordPress unpacks a plugin folder
                 rel = os.path.join("edr-team-builder", os.path.relpath(full, PLUGIN))
-                z.write(full, rel.replace(os.sep, "/"))
+                arc = rel.replace(os.sep, "/")
+                if os.path.splitext(name)[1].lower() in TEXT_EXT:
+                    with open(full, "rb") as fh:
+                        data = fh.read()
+                    data = data.replace(b"\r\n", b"\n").replace(b"\r", b"\n")
+                    # keep the on-disk mtime so the entry does not churn between builds
+                    info = zipfile.ZipInfo.from_file(full, arc)
+                    info.compress_type = zipfile.ZIP_DEFLATED
+                    z.writestr(info, data)
+                else:
+                    z.write(full, arc)
                 count += 1
 
     print("wrote %s (v%s, %d files, %d b)" % (OUT, ver, count, os.path.getsize(OUT)))
