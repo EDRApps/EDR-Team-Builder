@@ -482,7 +482,7 @@ const CAL_EVENTS=[
   {n:"NEC Round 10", s:"2026-11-07", e:"2026-11-08", track:"Nürburgring Combined VLN", cars:"GT3 // Cup // GT4 // TCR // M2", cat:"endurance", series:"NEC", round:"10 / 10", dur:4, g61Tracks:[94]},
   {n:"SFL Mountain Showdown", s:"2026-11-13", e:"2026-11-15", track:"Mount Panorama Circuit", cars:"Super Formula Lights", cat:"other"},
   {n:"SCCA Runoffs", s:"2026-11-17", e:"2026-11-21", track:"Various / 6 classes", cars:"6 Classes", cat:"other"},
-  {n:"992 Endurance Cup", s:"2026-11-27", e:"2026-11-29", track:"TBD", cars:"Porsche Cup 992.2", cat:"endurance", dur:3},
+  {n:"992 Endurance Cup", s:"2026-11-27", e:"2026-11-29", track:"Circuit de Spa-Francorchamps", cars:"Porsche Cup 992.2", cat:"endurance", dur:12, g61Tracks:[444, 446]},
   {n:"Winter Derby", s:"2026-12-02", e:"2026-12-07", track:"Five Flags Speedway", cars:"Super Late Model", cat:"other"},
   {n:"Chili Bowl", s:"2026-12-15", e:"2026-12-20", track:"Tulsa Expo Center", cars:"Dirt Midget", cat:"other"},
   {n:"Production Car Challenge @ViR", s:"2026-12-18", e:"2026-12-19", track:"VIR Grand Course", cars:"Production Car Challenge cars", cat:"endurance", dur:2, g61Tracks:[394]}
@@ -527,7 +527,7 @@ const WEEKLY_SERIES=[
   {n:"GT4 Challenge by Falken Tyre",cat:"SPORTS CAR",st:16,on:false,who:["John Nyhouse","Dominic Bou-Samra","Aaron Werth"]}];
 function isTarget(ev){ return !!ev.special || (ev.cat==='endurance' && (ev.dur||0)>=3); }
 function evKey(ev){ return ev.n+'|'+ev.s; }
-function calendar(){ const at={}, out=[]; CAL_EVENTS.concat(state.customEvents||[], state.irEvents||[]).forEach(e=>{ const k=evKey(e); if(at[k]!==undefined) out[at[k]]=e; else { at[k]=out.length; out.push(e); } }); return out; }  // seed + custom + imported, deduped by key (later wins)
+function calendar(){ const at={}, out=[]; CAL_EVENTS.concat(state.customEvents||[], state.irEvents||[]).forEach(e=>{ const k=evKey(e); if(at[k]!==undefined){ const m=Object.assign({}, out[at[k]], e); if(e.track && out[at[k]].track && e.track!==out[at[k]].track && !e.g61Tracks) delete m.g61Tracks; out[at[k]]=m; } else { at[k]=out.length; out.push(e); } }); return out; }  // seed + custom + imported, deduped by key (later fields win; fields it leaves out, like g61Tracks, are kept)
 function calEvent(key){ return calendar().find(e=>evKey(e)===key)||null; }
 function addCustomEvent(o){ o.src='custom'; state.customEvents.push(o); save(); }
 function deleteCustomEvent(key){ state.customEvents=(state.customEvents||[]).filter(e=>evKey(e)!==key); state.irEvents=(state.irEvents||[]).filter(e=>evKey(e)!==key); save(); }

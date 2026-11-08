@@ -2,7 +2,7 @@
 /**
  * Plugin Name: EDR Team Builder
  * Description: Endurotech Racing endurance team + stint planner. Pulls Garage 61 pace and official iRacing session times, collects driver availability in-house, and builds Pro/Casual teams and stint rotations. Add the [edr_team_builder] shortcode to a page.
- * Version: 2.4.38
+ * Version: 2.4.39
  * Author: Endurotech Racing
  * License: GPL-2.0-or-later
  */
@@ -11,7 +11,7 @@ if (!defined('ABSPATH')) exit; // no direct access
 
 define('EDR_TB_DIR', plugin_dir_path(__FILE__));
 define('EDR_TB_URL', plugin_dir_url(__FILE__));
-define('EDR_TB_VER', '2.4.38');
+define('EDR_TB_VER', '2.4.39');
 
 require_once EDR_TB_DIR . 'includes/garage61.php';
 require_once EDR_TB_DIR . 'includes/iracing.php';
@@ -95,6 +95,42 @@ function edr_tb_bump_avail_rev() {
 define('EDR_TB_PACE_NEAR_SECS', HOUR_IN_SECONDS);
 define('EDR_TB_PACE_FAR_SECS',  DAY_IN_SECONDS);
 define('EDR_TB_PACE_NEAR_DAYS', 10);
+define('EDR_TB_PACE_SETS_MAX', 8);
+
+/* Pace is cached per track set, not as one global slot. The plan only ever planned one event at a
+   time, so a single cache keyed to "whatever was imported last" looked fine — but it meant the
+   background refresh kept pulling Road Atlanta weeks after everyone had moved on to Spa, and a
+   driver viewing the next event saw nothing new however much they practised. Each set is keyed
+   by its sorted track ids, so viewers on different events keep separate, independently warm
+   caches. Capped so stale events age out instead of growing the option forever. */
+function edr_tb_pace_tracks_clean($tracks) {
+    if (is_string($tracks)) $tracks = explode(',', $tracks);
+    $ids = array_values(array_unique(array_filter(array_map('intval', (array) $tracks), function ($t) { return $t > 0; })));
+    sort($ids);
+    return count($ids) > 10 ? array() : $ids;   // Garage 61 rejects more than ~10 tracks per request
+}
+function edr_tb_pace_key($tracks) { return implode(',', edr_tb_pace_tracks_clean($tracks)); }
+function edr_tb_pace_get($tracks) {
+    $key = edr_tb_pace_key($tracks);
+    if ($key === '') return array();
+    $sets = (array) get_option('edr_tb_pace_sets', array());
+    if (isset($sets[$key])) return (array) $sets[$key];
+    // pre-2.4.39 single-slot cache: still valid if it happens to cover these tracks
+    $legacy = (array) get_option('edr_tb_pace', array());
+    if (isset($legacy['tracks']) && edr_tb_pace_key($legacy['tracks']) === $key) return $legacy;
+    return array();
+}
+function edr_tb_pace_put($tracks, $data) {
+    $key = edr_tb_pace_key($tracks);
+    if ($key === '') return;
+    $sets = (array) get_option('edr_tb_pace_sets', array());
+    $sets[$key] = $data;
+    if (count($sets) > EDR_TB_PACE_SETS_MAX) {
+        uasort($sets, function ($a, $b) { return intval($b['at'] ?? 0) - intval($a['at'] ?? 0); });
+        $sets = array_slice($sets, 0, EDR_TB_PACE_SETS_MAX, true);
+    }
+    update_option('edr_tb_pace_sets', $sets, false);
+}
 
 /**
  * Editing is allowed for logged-in users, or for anyone presenting the admin
@@ -235,6 +271,12 @@ add_action('rest_api_init', function () {
     // heartbeat: a few bytes, polled every ~20s by every open tab. Public, like /plan and /avail.
     register_rest_route('edr/v1', '/rev', array(
         'methods' => 'GET', 'permission_callback' => '__return_true', 'callback' => 'edr_tb_rest_rev',
+    ));
+    // warm Garage 61 pace for a track set, so every viewer (drivers included) sees fresh pace
+    // without an admin import. Cache-only: it never calls Garage 61 itself. The plan already
+    // publishes each driver's pace, so this exposes nothing new.
+    register_rest_route('edr/v1', '/pace', array(
+        'methods' => 'GET', 'permission_callback' => '__return_true', 'callback' => 'edr_tb_rest_pace',
     ));
     // full Garage 61 membership (every EDR team) for the availability roster —
     // names only, cached; public so drivers can find themselves without an account
@@ -989,6 +1031,16 @@ function edr_tb_gemini_compose($draft, $voice) {
     return $text;
 }
 
+function edr_tb_rest_pace(WP_REST_Request $req) {
+    $tracks = edr_tb_pace_tracks_clean((string) $req->get_param('tracks'));
+    $pace = edr_tb_pace_get($tracks);
+    return rest_ensure_response(array(
+        'key'    => edr_tb_pace_key($tracks),
+        'at'     => isset($pace['at']) ? intval($pace['at']) : 0,
+        'roster' => isset($pace['roster']) ? $pace['roster'] : array(),
+    ));
+}
+
 function edr_tb_rest_compose(WP_REST_Request $req) {
     $voice = $req->get_param('voice');
     $out = edr_tb_gemini_compose((string) $req->get_param('draft'), is_array($voice) ? $voice : array());
@@ -997,13 +1049,18 @@ function edr_tb_rest_compose(WP_REST_Request $req) {
 }
 
 function edr_tb_rest_rev(WP_REST_Request $req) {
-    $pace = (array) get_option('edr_tb_pace', array());
-    edr_tb_maybe_schedule_pace($req->get_param('ev'));
+    // the viewer's selected event sends its Garage 61 tracks; older clients send none, so fall
+    // back to whatever was imported last (the pre-2.4.39 behaviour)
+    $tracks = edr_tb_pace_tracks_clean((string) $req->get_param('tracks'));
+    if (!$tracks) $tracks = edr_tb_pace_tracks_clean(get_option('edr_tb_pace_tracks', array()));
+    $pace = edr_tb_pace_get($tracks);
+    edr_tb_maybe_schedule_pace($req->get_param('ev'), $tracks);
     return rest_ensure_response(array(
         'plan'    => intval(get_option('edr_tb_plan_rev', 0)),
         'avail'   => intval(get_option('edr_tb_avail_rev', 0)),
         'paceAt'  => isset($pace['at']) ? intval($pace['at']) : 0,
         'paceErr' => isset($pace['err']) ? (string) $pace['err'] : '',
+        'paceKey' => edr_tb_pace_key($tracks),
         'recapAt' => intval((array) get_option('edr_tb_recap', array()) ? (get_option('edr_tb_recap')['at'] ?? 0) : 0),
         'recapRunning' => (bool) get_transient('edr_tb_recap_running'),
     ));
@@ -1017,14 +1074,18 @@ function edr_tb_rest_rev(WP_REST_Request $req) {
  * The transient is a debounce: without it every heartbeat from every open tab would queue
  * another job, and Garage 61 rate-limits hard enough to firewall the site's IP.
  */
-function edr_tb_maybe_schedule_pace($ev = '') {
+function edr_tb_maybe_schedule_pace($ev = '', $tracks = array()) {
     $s = edr_tb_settings();
     if (empty($s['g61_token'])) return;
-    $tracks = (array) get_option('edr_tb_pace_tracks', array());
-    if (!$tracks) return;                       // nothing imported yet — nothing to keep warm
-    if (get_transient('edr_tb_pace_queued')) return;
+    $tracks = edr_tb_pace_tracks_clean($tracks);
+    if (!$tracks) return;                       // event has no Garage 61 tracks — nothing to keep warm
+    // one debounce per track set, plus a site-wide one: at most one Garage 61 pull every 10
+    // minutes however many events are being viewed (or however many track sets someone sends to
+    // this public route) — the old single-slot cache had exactly this ceiling
+    $qkey = 'edr_tb_pace_q_' . md5(edr_tb_pace_key($tracks));
+    if (get_transient($qkey) || get_transient('edr_tb_pace_queued')) return;
 
-    $pace = (array) get_option('edr_tb_pace', array());
+    $pace = edr_tb_pace_get($tracks);
     $age  = time() - (isset($pace['at']) ? intval($pace['at']) : 0);
 
     // hourly while the event is close, daily otherwise — the date lives in the ev key
@@ -1038,6 +1099,7 @@ function edr_tb_maybe_schedule_pace($ev = '') {
     }
     if ($age < $window) return;
 
+    set_transient($qkey, 1, 10 * MINUTE_IN_SECONDS);
     set_transient('edr_tb_pace_queued', 1, 10 * MINUTE_IN_SECONDS);
     wp_schedule_single_event(time(), 'edr_tb_pace_refresh', array($tracks));
 }
@@ -1048,22 +1110,23 @@ add_action('edr_tb_pace_refresh', 'edr_tb_do_pace_refresh', 10, 1);
 function edr_tb_do_pace_refresh($tracks) {
     $s = edr_tb_settings();
     if (empty($s['g61_token'])) return;
-    $tracks = array_values(array_map('intval', (array) $tracks));
+    $tracks = edr_tb_pace_tracks_clean($tracks);
     if (!$tracks) return;
     $roster = edr_g61_roster($s['g61_token'], $tracks, ($s['team_slug'] ?: 'edr-endurotech'));
     if (is_wp_error($roster)) {
-        $prev = (array) get_option('edr_tb_pace', array());
+        $prev = edr_tb_pace_get($tracks);
         $prev['err'] = $roster->get_error_message();
-        update_option('edr_tb_pace', $prev, false);
+        $prev['tracks'] = $tracks;
+        edr_tb_pace_put($tracks, $prev);
         return;
     }
-    update_option('edr_tb_pace', array(
+    edr_tb_pace_put($tracks, array(
         'at'     => time(),
         'tracks' => $tracks,
         'roster' => $roster,
         'err'    => '',
-    ), false);
-    delete_transient('edr_tb_pace_queued');
+    ));
+    delete_transient('edr_tb_pace_q_' . md5(edr_tb_pace_key($tracks)));
 }
 
 function edr_tb_rest_avail_get() {
@@ -1264,8 +1327,8 @@ function edr_tb_rest_import(WP_REST_Request $req) {
     // Serve the warm cache when it covers these tracks and is recent. Imports are the one
     // moment an admin is waiting on Garage 61, and it is also the easiest moment to trip the
     // rate limiter; the scheduled refresh exists so this is usually instant. `fresh=1` forces.
-    $pace = (array) get_option('edr_tb_pace', array());
-    $sameTracks = isset($pace['tracks']) && array_values((array) $pace['tracks']) == array_values($trackIds);
+    $pace = edr_tb_pace_get($trackIds);
+    $sameTracks = !empty($pace['tracks']);
     $fresh = (bool) $req->get_param('fresh');
     if (!$fresh && $sameTracks && !empty($pace['roster']) && (time() - intval($pace['at'])) < EDR_TB_PACE_NEAR_SECS) {
         return rest_ensure_response(array(
@@ -1277,9 +1340,9 @@ function edr_tb_rest_import(WP_REST_Request $req) {
     // pure Garage 61 pace pull; availability is collected in-house (Availability tab)
     $roster = edr_g61_roster($s['g61_token'], $trackIds, $teamSlug);   // [{name, cars}]
     if (is_wp_error($roster)) return $roster;
-    update_option('edr_tb_pace', array(
-        'at' => time(), 'tracks' => array_values($trackIds), 'roster' => $roster, 'err' => '',
-    ), false);
+    edr_tb_pace_put($trackIds, array(
+        'at' => time(), 'tracks' => edr_tb_pace_tracks_clean($trackIds), 'roster' => $roster, 'err' => '',
+    ));
     return rest_ensure_response(array(
         'roster' => $roster, 'needs_availability' => false, 'cached' => false, 'at' => time(),
     ));

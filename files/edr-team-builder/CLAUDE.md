@@ -355,10 +355,24 @@ costly because it must find *other* EDR drivers in races it did not know about.
   the fetch/poll/`applyHistory()` live in the WP `APPEND` layer. "Pull team history" button sits
   beside "Pull last week's results" on the Weekly tab.
 
-**Pace is never auto-applied.** The warm cache only makes the *next* import instant; it does not
-rewrite `state.drivers` behind anyone's back. Silently re-running the split could reshuffle a
-line-up an admin had already settled — the same class of surprise the plan's 409 guard exists to
-prevent. The Setup tab shows how old the pace is (`paceAgeLabel()`) and the admin decides.
+**Pace follows the event automatically (2.4.39).** The pace cache is per track set
+(`edr_tb_pace_sets`, capped at 8, legacy single-slot `edr_tb_pace` still read as a fallback).
+Each `/rev` poll sends the tracks of the viewer's selected event (`_paceKeyNow()`: an admin
+import made *for this event*, i.e. `plan.trackEv === evsel`, wins so manual track picks stick;
+otherwise the event's `g61Tracks`), and the server keeps that set warm (per-set 10-min debounce
+plus a site-wide 10-min gap between Garage 61 pulls). When `paceAt` moves, every open page pulls
+the public cache-only `GET /pace` and `mergePace()` folds it in: cars/assignedCar/irating by
+`nameKey`, new roster drivers get fresh ids, drivers with no laps at these tracks lose the
+previous track's pace. It never runs Generate, never wipes stints and never renumbers drivers,
+so a settled line-up stays put (unlike `applyImport`). Invariants, each from a review finding:
+admin tabs persist only when `state.evsel === _planEvsel` **and** the tab holds the latest rev
+(`_revSeen.plan === PLAN_REV`, no save pending), otherwise the adopt path re-merges and saves
+from the current rev (no 409 ping-pong between admin tabs); the plan carries `paceAt`, and
+`_adoptPlan` re-applies cached pace only when it is newer than the plan's, so an adopt can never
+rewind pace another device already saved; `_planEvsel` is updated after our own successful
+POST. `calendar()` now merges overrides field-by-field, so a custom event keeps the built-in
+`g61Tracks` unless it moves the event to a different track.
+
 - `GET /iracing` (edit-gated, cached 12h in `edr_tb_iracing`) — official iRacing session
   start times + race lengths via a teammate's proxy (`includes/iracing.php`, same
   server-side pattern as `garage61.php`; proxy URL + key in Settings). Returns only the

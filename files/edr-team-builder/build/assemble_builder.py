@@ -336,15 +336,16 @@ function releaseLock(name){
     if(r&&r.ok){ LOCKED_NAMES=LOCKED_NAMES.filter(function(n){return n!==name;}); renderContent(); }
   }).catch(function(){});
 }
-let lastTrackIds=[], _saveT=null;
-function serializePlan(){ return {drivers:state.drivers,w:state.w,proPct:state.proPct,teams:state.teams,stint:state.stint,stintAssign:state.stintAssign,stintWin:state.stintWin,stintSig:state.stintSig,overrides:overrides,meta:IMPORT_META,winStart:WIN_START_MS,startOffsets:START_OFFSETS,startLabels:START_LABELS,matches:lastMatches,trackIds:lastTrackIds,evsel:state.evsel,evWinMin:EV_WIN_MIN,evTiming:state.evTiming,teamsLocked:state.teamsLocked,stintsLocked:state.stintsLocked,teamNames:state.teamNames,fuelCfg:state.fuelCfg,customEvents:state.customEvents,irEvents:state.irEvents,evWeather:state.evWeather,swapNote:state.swapNote,excluded:state.excluded}; }
+let lastTrackIds=[], lastTrackEv=null, _saveT=null;
+function serializePlan(){ return {drivers:state.drivers,w:state.w,proPct:state.proPct,teams:state.teams,stint:state.stint,stintAssign:state.stintAssign,stintWin:state.stintWin,stintSig:state.stintSig,overrides:overrides,meta:IMPORT_META,winStart:WIN_START_MS,startOffsets:START_OFFSETS,startLabels:START_LABELS,matches:lastMatches,trackIds:lastTrackIds,trackEv:lastTrackEv,paceAt:_planPaceAt,evsel:state.evsel,evWinMin:EV_WIN_MIN,evTiming:state.evTiming,teamsLocked:state.teamsLocked,stintsLocked:state.stintsLocked,teamNames:state.teamNames,fuelCfg:state.fuelCfg,customEvents:state.customEvents,irEvents:state.irEvents,evWeather:state.evWeather,swapNote:state.swapNote,excluded:state.excluded}; }
 var _postBusy=false, _postAgain=false;
 function _flushPlan(){
   if(_postBusy){ _postAgain=true; return; }              // serialize: the retry below re-posts the LATEST state with the updated rev
   _postBusy=true;
-  apiPOST('plan',{plan:serializePlan(), baseRev:PLAN_REV}).then(function(r){
+  var _sent=serializePlan();
+  apiPOST('plan',{plan:_sent, baseRev:PLAN_REV}).then(function(r){
     _postBusy=false;
-    if(r&&r.ok&&typeof r.rev==='number'){ PLAN_REV=r.rev; _postRetried=false; if(_postAgain){ _postAgain=false; _flushPlan(); } }
+    if(r&&r.ok&&typeof r.rev==='number'){ PLAN_REV=r.rev; _planEvsel=_sent.evsel||null; _postRetried=false; if(_postAgain){ _postAgain=false; _flushPlan(); } }
     else if(r&&r.code==='stale_plan'){ _postAgain=false; clearTimeout(_saveT); _saveT=null; refreshShared(true); }   // adopt latest; message shown after the pull actually lands
     else if(_postAgain){ _postAgain=false; _flushPlan(); }
   }).catch(function(){ _postBusy=false; if(!_postRetried){ _postRetried=true; setTimeout(_flushPlan, 1500); } else { _postAgain=false; } });
@@ -385,8 +386,12 @@ function _adoptPlan(p, keepEvsel){
      bit, but the duplicate was one reordering away from silently reverting driver choices.
      Only read the legacy copy, as a fallback for plans saved before 2.4.11. */
   if(p.prefStore && !Object.keys(state.prefStore||{}).length) state.prefStore=p.prefStore;
-  lastMatches=p.matches||[]; lastTrackIds=p.trackIds||[];
+  lastMatches=p.matches||[]; lastTrackIds=p.trackIds||[]; lastTrackEv=p.trackEv||null; _planEvsel=p.evsel||null;
   if(_localEv && _localEv!==state.evsel && calEvent(_localEv)){ state.evsel=_localEv; }   // don't yank the viewer off their selected event
+  /* the adopted plan may lag the warm cache (re-apply ours) or be AHEAD of it (another device
+     saved a newer refresh) — compare refresh times so an adopt can never rewind pace */
+  _planPaceAt=p.paceAt||0; _paceDirty=false;
+  if(_paceLast && _paceLast.key===_paceKeyNow() && _paceLast.at>_planPaceAt){ _paceDirty=mergePace(_paceLast.roster); _planPaceAt=_paceLast.at; }
 }
 function loadPlan(){ return apiGET('plan').then(function(r){ if(r&&typeof r.rev==='number') PLAN_REV=r.rev; var p=r&&r.plan; if(!p||!p.drivers||!p.drivers.length) return false; _adoptPlan(p); return true; }).catch(function(){return false;}); }
 /* Multi-device convergence: when this tab wakes up (phone unlocked, tab refocused), pull the
@@ -413,6 +418,7 @@ function refreshShared(force){
     _adoptPlan(r.plan, true);
     var _renamedBack=false; Object.keys(_localNames).forEach(function(k){ if(_localNames[k] && !state.teamNames[k]){ state.teamNames[k]=_localNames[k]; _renamedBack=true; } });   // a rename in flight when another device saved must survive the adopt
     if(_renamedBack && isAdmin()) save();
+    if(_paceDirty && isAdmin() && state.evsel===_planEvsel) save();   // adopted plan lagged the pace cache; we're on the latest rev now, so this can't 409
     if(state.evsel){ var _ev=calEvent(state.evsel); if(_ev){ var _r0=state.stint.race; applyEventTiming(_ev); if(_r0>0) state.stint.race=_r0; } }
     apiGET('avail').then(function(av){
       if(av&&av.store){
@@ -577,8 +583,65 @@ function applyImport(payload){
   applyAvailToDrivers();  // in-house per-event availability is the single source of truth
   generate(); save();
 }
+/* ---- automatic pace -------------------------------------------------------------------
+   The server keeps Garage 61 pace warm for the tracks of whichever event a viewer has open
+   (/rev sends them; see edr_tb_maybe_schedule_pace). When that cache moves, every open page
+   folds it in: a driver who ticks Spa availability and then practises at Spa sees their pace
+   update without anyone pressing Import. Unlike applyImport this only ever touches pace —
+   no Generate, no stint wipe, no new ids for existing drivers — so a settled line-up and stint
+   plan never move. Admin browsers persist it, and only while viewing the event the shared plan
+   is on (saving from another event would silently switch the plan to it). */
+var _planEvsel=null, _paceLast=null, _pacePulling=false, _paceDirty=false, _planPaceAt=0;
+function _paceKeyNow(){
+  var ev=state.evsel?calEvent(state.evsel):null;
+  // an admin's import for THIS event wins (manual track picker overrides must stick); otherwise
+  // the event's own Garage 61 tracks. Track ids imported for another event never carry over.
+  var ids=(state.evsel && lastTrackEv===state.evsel && lastTrackIds.length)?lastTrackIds:((ev&&ev.g61Tracks)||[]);
+  return (ids||[]).map(Number).filter(function(x){return x>0;}).sort(function(a,b){return a-b;}).join(',');
+}
+function pullPace(key){
+  if(_pacePulling) return; _pacePulling=true;
+  apiGET('pace?tracks='+key).then(function(r){
+    _pacePulling=false;
+    if(!(r&&r.key===key&&r.at&&Array.isArray(r.roster))) return;   // at=0: never pulled yet, nothing to apply
+    if(key!==_paceKeyNow()) return;                      // viewer switched event while this was in flight
+    _paceLast={key:key, at:r.at, roster:r.roster};
+    if(r.at<=_planPaceAt) return;                        // the plan already holds this refresh (or a newer one)
+    var changed=mergePace(r.roster); _planPaceAt=r.at;
+    if(!changed) return;
+    applyAvailToDrivers();
+    /* Only a tab that holds the latest plan may save: if another admin tab already saved this
+       pace, our rev is behind, the save would 409 and lose any edit in flight. The adopt that
+       refreshShared is about to do re-merges and saves from the current rev instead. */
+    if(isAdmin() && state.evsel===_planEvsel && _revSeen.plan===PLAN_REV && !_saveT && !_postBusy) save();
+    if(!_editingNow()) renderContent();
+  }).catch(function(){ _pacePulling=false; });
+}
+function mergePace(roster){
+  if(!Array.isArray(roster)) return false;             // a failed refresh keeps the previous roster server-side; an empty one means nobody has laps here
+  var byKey={}, changed=false;
+  (state.drivers||[]).forEach(function(d){ byKey[nameKey(d.name)]=d; });
+  var seen={};
+  roster.forEach(function(r){
+    if(isExcluded(r.name)) return;
+    var k=nameKey(r.name), d=byKey[k]; seen[k]=1;
+    var cars=r.cars||{};
+    if(!d){
+      var id=state.drivers.reduce(function(m,x){return Math.max(m,x.id);},0)+1;
+      d={id:id, name:r.name, cars:cars, assignedCar:lastCar(cars), avail:null, irating:(typeof r.irating==='number'?r.irating:null), carLock:false};
+      state.drivers.push(d); byKey[k]=d; changed=true; return;
+    }
+    if(JSON.stringify(d.cars||{})!==JSON.stringify(cars)){ d.cars=cars; changed=true; }
+    if(!d.carLock && d.assignedCar && !cars[d.assignedCar] && Object.keys(cars).length){ d.assignedCar=lastCar(cars); changed=true; }
+    if(!d.assignedCar && Object.keys(cars).length){ d.assignedCar=lastCar(cars); changed=true; }
+    if(typeof r.irating==='number' && d.irating!==r.irating){ d.irating=r.irating; changed=true; }
+  });
+  // no laps at this event's tracks: pace from the previous event's track must not linger
+  (state.drivers||[]).forEach(function(d){ if(!seen[nameKey(d.name)] && Object.keys(d.cars||{}).length){ d.cars={}; changed=true; } });
+  return changed;
+}
 async function doImport(trackIds){
-  lastTrackIds=trackIds; setSetupMsg('Pulling Garage 61 pace…');
+  lastTrackIds=trackIds; lastTrackEv=state.evsel; setSetupMsg('Pulling Garage 61 pace…');
   try{
     const payload=await apiPOST('import',{trackIds:trackIds});
     if(payload.code){ setSetupMsg('Error: '+(payload.message||payload.code)); return; }
@@ -716,6 +779,7 @@ var _revTimer=null, _revFail=0, _revSeen={plan:null, avail:null};
 function _revTick(){
   if(document.visibilityState!=='visible') return _revArm(REV_POLL_MS);
   var q=state.evsel?('?ev='+encodeURIComponent(state.evsel)):'';
+  var _pk=_paceKeyNow(); if(_pk) q+=(q?'&':'?')+'tracks='+_pk;
   fetch(API+'rev'+q,{headers:{'Accept':'application/json'}})
     .then(function(r){ if(!r.ok) throw new Error('rev '+r.status); return r.json(); })
     .then(function(j){
@@ -725,6 +789,7 @@ function _revTick(){
       _revSeen.plan=j.plan; _revSeen.avail=j.avail;
       PACE_AT=j.paceAt||0; PACE_ERR=j.paceErr||'';
       if(moved) refreshShared();       // refreshShared has its own edit-in-progress guard
+      if(j.paceAt && j.paceKey && j.paceKey===_paceKeyNow() && !(_paceLast && _paceLast.key===j.paceKey && _paceLast.at>=j.paceAt)) pullPace(j.paceKey);
       _revArm(REV_POLL_MS);
     })
     .catch(function(){
