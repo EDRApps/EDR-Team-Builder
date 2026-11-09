@@ -280,6 +280,45 @@ Condensed has **no true italic on Google Fonts** — request `wght@900` only and
 Condensed (display, italic 900) + Saira Semi Condensed (labels) + Karla (body). House style:
 Australian English, no emojis, no em-dashes, sentence case in body.
 
+### Deliverables are DARK — the canvas, not just the accents
+
+"Black and yellow" reads as a light page with black text, and that is wrong. Every existing
+deliverable is a **dark canvas**; measured across `EDR-This-Week-in-iRacing`, `EDR-Spa-Pre-Race-Brief`
+and `EDR-June-Month-Review`, the page fill is 40–71% of pixels. Match this:
+
+| element | spec |
+|---|---|
+| page background | `#0a0a0a` |
+| panel / card | `#151515`, 4px `#f0f000` left border (or 3px top border for stat cards) |
+| callout slab | `#f0f000` fill with `#0a0a0a` text, for the one line that must land |
+| body text | `#c4c4c4`; `#fff` for `<strong>`; `#7d7d7d` for labels, tags and notes |
+| hairlines | `#2c2c2c` (footer rule), `#3a3a3a` (section rule), `#262626` (table rows) |
+| table header | `#f0f000` fill, `#0a0a0a` uppercase Saira Semi Condensed |
+| section heading | yellow Saira Condensed italic caps + `flex:1` grey 1px rule + right-aligned grey caps tag |
+| masthead | `Logos/EDR logo.png` left, then yellow kicker / white italic title / grey dek, then a 2.5px yellow rule |
+| footer | three columns, grey left, **yellow** centre, grey right, uppercase, `letter-spacing:.14em` |
+
+Render gotchas, all hit in practice:
+
+- **`print-color-adjust:exact`** (plus `-webkit-` prefix) on `body`, or Chrome can drop the dark fills
+  and you get a white page with yellow text.
+- **Never use negative margins to full-bleed a header.** Chrome clips anything outside the `@page`
+  content box, which silently ate the first character of every line in the masthead. Instead set
+  `@page { margin:0 }` and put the padding on a `.sheet` wrapper (`width:210mm; min-height:297mm`,
+  `page-break-before:always` on subsequent sheets).
+- **Inline the logo as a base64 data URI**, not a `file://` src, so a failed load can't leave a blank
+  masthead in a shipped PDF.
+- **Chrome stamps its own identity into the PDF metadata** (`creator: HeadlessChrome/…`,
+  `producer: Skia/PDF`). Overwrite with `fitz`: `doc.set_metadata({...})` then
+  `doc.save(path, incremental=True, encryption=fitz.PDF_ENCRYPT_KEEP)` — incremental keeps the page
+  content byte-identical so the layout cannot shift.
+- **Karla is a variable font**, so Chrome embeds the body text as Type3. Text stays selectable and
+  searchable; do not treat it as a fallback failure. Check for `Times`/serif names instead.
+- **Verify the page count, and measure any overflow** rather than nudging CSS blind: compare
+  `page.get_text("blocks")` y-coordinates (×`25.4/72` for mm) against the page height to get the exact
+  spill in mm. Blocks such as panels do not split, so a panel that does not fit jumps whole to the next
+  page; either shorten it by the measured amount or fold its content into an adjacent list.
+
 ## Conventions & gotchas
 
 - **Timezone:** the user is in **Brisbane (UTC+10, no DST)**. Garage 61 `startTime` is UTC —
