@@ -73,6 +73,28 @@ function lastCar(cars){   // most recently driven car (lastDriven ISO from the G
   Object.keys(cars||{}).forEach(c=>{ const t=cars[c]&&cars[c].lastDriven; if(t && t>bt){ bt=t; best=c; } });
   return best || fastestCar(cars);
 }
+/* The car a driver races at the selected event when nobody has locked one by hand. An event
+   that names its classes ("Porsche Cup 992.2") only gets cars of those classes (a declared class
+   preference first): the driver's current pick if it fits and has laps, else their most recent
+   car in that class, else a teammate's car in it ("no laps"), else null. Never a car from another
+   class just because it was driven at this track more recently. Events with no classes keep the
+   plain most-recent-car rule. */
+function autoCar(d){
+  const cars=d.cars||{};
+  const cls=state.evsel?evClasses(calEvent(state.evsel)):[];
+  if(!cls.length) return cars[d.assignedCar] ? d.assignedCar : lastCar(cars);
+  const pref=prefsFor(d.name).cls, want=(pref&&cls.indexOf(pref)>=0)?[pref]:cls;
+  const fits=c=>want.indexOf(classOf(c))>=0;
+  if(d.assignedCar && cars[d.assignedCar] && fits(d.assignedCar)) return d.assignedCar;
+  const pick=o=>{ const f={}; Object.keys(o).forEach(c=>{ if(fits(c)) f[c]=o[c]; }); return Object.keys(f).length?lastCar(f):null; };
+  const team={}; (state.drivers||[]).forEach(x=>Object.keys(x.cars||{}).forEach(c=>{ if(!team[c]) team[c]={}; }));
+  return pick(cars) || pick(team);
+}
+function autoClass(d, car){   // class for the model when the driver has no car in the event's class at all
+  if(car) return classOf(car);
+  const cls=state.evsel?evClasses(calEvent(state.evsel)):[], pref=prefsFor(d.name).cls;
+  return (pref&&cls.indexOf(pref)>=0)?pref:(cls[0]||'Other');
+}
 function seed(list){
   let id=1;
   state.drivers = list.map(d => ({ id:id++, name:d.name, cars:d.cars||{}, assignedCar:lastCar(d.cars), avail:d.avail||null }));
@@ -141,10 +163,10 @@ function eventPool(){
 }
 function computeModel(){
   const enriched = eventPool().map(d=>{
-    const car = (d.cars && d.cars[d.assignedCar]) ? d.assignedCar : ((d.carLock && d.assignedCar) ? d.assignedCar : lastCar(d.cars));   // a hand-picked (locked) car sticks; otherwise default to the car they drove most recently
+    const car = (d.carLock && d.assignedCar) ? d.assignedCar : autoCar(d);   // a hand-picked (locked) car sticks; otherwise the event's class decides
     const st = (d.cars && d.cars[car]) || {laps:0,medianLap:null,cleanPct:0};
     const _dcls=prefsFor(d.name).cls;
-    return Object.assign({}, d, {_car:car,_class:_dcls||classOf(car),_laps:st.laps,_median:st.medianLap,_clean:st.cleanPct});
+    return Object.assign({}, d, {_car:car,_class:_dcls||autoClass(d,car),_laps:st.laps,_median:st.medianLap,_clean:st.cleanPct});
   });
   const groups={};
   enriched.forEach(d=>{(groups[d._class]=groups[d._class]||[]).push(d);});
@@ -2262,9 +2284,9 @@ function renderDrivers(model){
     html+='<div style="margin-bottom:18px"><div class="classhdr">'+esc(cls)+' <small>· '+grp.length+' drivers · ranked within class</small></div><div style="display:flex;flex-direction:column;gap:8px">';
     grp.forEach((d,i)=>{
       const cars=Object.keys(d.cars||{}).sort((a,b)=>((d.cars[a].medianLap==null?1e9:d.cars[a].medianLap)-(d.cars[b].medianLap==null?1e9:d.cars[b].medianLap)));
-      let opts=cars.map(c=>'<option value="'+esc(c)+'"'+(c===d.assignedCar?' selected':'')+'>'+esc(c)+'</option>').join('');
+      let opts=(d._car?'':'<option value="" selected disabled>— no '+esc(d._class)+' car yet —</option>')+cars.map(c=>'<option value="'+esc(c)+'"'+(c===d._car?' selected':'')+'>'+esc(c)+'</option>').join('');
       const others=allCars.filter(c=>!(d.cars&&d.cars[c]));
-      if(others.length) opts+='<optgroup label="— any car at this track —">'+others.map(c=>'<option value="'+esc(c)+'"'+(c===d.assignedCar?' selected':'')+'>'+esc(c)+' (no laps)</option>').join('')+'</optgroup>';
+      if(others.length) opts+='<optgroup label="— any car at this track —">'+others.map(c=>'<option value="'+esc(c)+'"'+(c===d._car?' selected':'')+'>'+esc(c)+' (no laps)</option>').join('')+'</optgroup>';
       html+='<div class="row '+d._tier+'"><span class="meta" style="width:20px">#'+(i+1)+'</span><span style="font-size:13px;min-width:110px">'+esc(d.name)+'</span><select data-action="assign" data-id="'+d.id+'">'+opts+'</select>'+(isAdmin()?'<span data-action="carlock" data-id="'+d.id+'" title="'+(d.carLock?'car locked — imports keep this choice; click to unlock':'lock this car choice so imports keep it')+'" style="cursor:pointer;font-size:12px;opacity:'+(d.carLock?'1':'.4')+'">'+(d.carLock?'🔒':'🔓')+'</span>':(d.carLock?'<span title="car locked by admin" style="font-size:12px">🔒</span>':''))+'<span class="meta">'+fmtLap(d._median)+' · '+d._laps+' laps · '+Math.round(d._clean*100)+'% clean'+(d.avail?' · '+d.avail.pct+'% avail':'')+'</span><span class="tier '+d._tier+'">'+d._tier.toUpperCase()+' · '+(d._score*100).toFixed(0)+'</span><button class="x" data-action="remove" data-id="'+d.id+'">✕</button></div>';
     });
     html+='</div></div>';
