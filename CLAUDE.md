@@ -84,6 +84,21 @@ Tab order is the planning flow: **Instructions → Event → Availability → Dr
 Stints** (WP adds an admin-only Setup tab in front). Instructions is the landing tab and is the
 driver-facing how-to, including the swap contact (2.4.8). Key facts:
 
+- **Driver steps (2.5.0)**: non-admins land on a 4-step flow instead of the tabs (`renderWizard`,
+  `.simple` on the app root hides header/controls/tabs): 1 iRacing ID → 2 pick an upcoming team
+  race → 3 block picker + Submit → 4 their car, own stints, driving order. "Full planner" (persisted
+  `edrTB_view`) shows the old read-only tabs, "My steps" goes back. Picking a race calls
+  `wizPickEvent`, which never touches teams/stints (unlike `selectEvent`); the line-up only shows
+  for the plan's event (`wizTeamEvent`). Quick add and start/finish + wet/dry preferences were
+  removed from the form; the class picker stays on multi-class events only.
+- **Stint confirmations (2.5.0)**: open 4 days before the race (`CF_OPEN_DAYS`). Drivers answer ✓ /
+  ✗ (with stint numbers) in step 4; answers live in `edr_tb_confirm` via public `POST /confirm` and
+  come back on `GET /avail`. Each answer stores `stintSig` (car key + start window + stint times),
+  so it lapses to "not yet" when their stints change. Admin saves publish `plan.confirm`
+  (`confirmPlan()`: per-driver sig, earliest start); the hourly `edr_tb_confirm_tick` cron posts the
+  4-day and 2-day Discord reminders to the `confirm_webhook` setting, once each per event, and only
+  with line-up and stints both locked. Admin Preview/Send buttons hit `POST /confirm/remind`.
+
 - **Events** come from the `CAL_EVENTS` array in the HTML (shared by both builds — edit it there).
   Each event can carry `winStart/winMin/raceMin/offsets/labels` (Spa has the survey-accurate set),
   `g61Tracks` (Garage 61 track ids the Setup import pulls automatically; a manual-picker override

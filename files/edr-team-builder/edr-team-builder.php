@@ -2,7 +2,7 @@
 /**
  * Plugin Name: EDR Team Builder
  * Description: Endurotech Racing endurance team + stint planner. Pulls Garage 61 pace and official iRacing session times, collects driver availability in-house, and builds Pro/Casual teams and stint rotations. Add the [edr_team_builder] shortcode to a page.
- * Version: 2.4.40
+ * Version: 2.5.0
  * Author: Endurotech Racing
  * License: GPL-2.0-or-later
  */
@@ -11,7 +11,7 @@ if (!defined('ABSPATH')) exit; // no direct access
 
 define('EDR_TB_DIR', plugin_dir_path(__FILE__));
 define('EDR_TB_URL', plugin_dir_url(__FILE__));
-define('EDR_TB_VER', '2.4.40');
+define('EDR_TB_VER', '2.5.0');
 
 require_once EDR_TB_DIR . 'includes/garage61.php';
 require_once EDR_TB_DIR . 'includes/iracing.php';
@@ -29,6 +29,7 @@ function edr_tb_settings() {
         'iracing_url' => '',
         'iracing_key' => '',
         'discord_webhook' => '',
+        'confirm_webhook' => '',
         'gemini_key'   => '',
         'gemini_model' => 'gemini-3.5-flash',
     ));
@@ -155,6 +156,7 @@ add_action('admin_init', function () {
             'iracing_url' => esc_url_raw($in['iracing_url'] ?? ''),
             'iracing_key' => sanitize_text_field($in['iracing_key'] ?? ''),
             'discord_webhook' => esc_url_raw($in['discord_webhook'] ?? ''),
+            'confirm_webhook' => esc_url_raw($in['confirm_webhook'] ?? ''),
             'gemini_key'   => sanitize_text_field($in['gemini_key'] ?? ''),
             'gemini_model' => sanitize_text_field($in['gemini_model'] ?? 'gemini-3.5-flash'),
         );
@@ -188,6 +190,9 @@ function edr_tb_settings_page() {
           <tr><th scope="row">Discord webhook (weekly update)</th>
             <td><input type="text" name="edr_tb_settings[discord_webhook]" value="<?php echo esc_attr($s['discord_webhook']); ?>" class="regular-text" autocomplete="off" placeholder="https://discord.com/api/webhooks/...">
             <p class="description">Where the weekly write-up gets posted. Use a <strong>private drafting channel</strong> &mdash; what is posted is a draft to edit, not a finished announcement. Leave blank to disable posting.</p></td></tr>
+          <tr><th scope="row">Discord webhook (stint confirmations)</th>
+            <td><input type="text" name="edr_tb_settings[confirm_webhook]" value="<?php echo esc_attr($s['confirm_webhook']); ?>" class="regular-text" autocomplete="off" placeholder="https://discord.com/api/webhooks/...">
+            <p class="description">The <strong>team channel</strong> drivers read. Once the line-up and stints are locked, the builder posts here 4 days before the race asking everyone to confirm their stints, and again 2 days before naming whoever has not. Leave blank to turn the reminders off.</p></td></tr>
           <tr><th scope="row">Gemini API key (optional)</th>
             <td><input type="text" name="edr_tb_settings[gemini_key]" value="<?php echo esc_attr($s['gemini_key']); ?>" class="regular-text" autocomplete="off">
             <p class="description">Enables the <strong>Compose with AI</strong> button on the Weekly tab, which rewrites the generated draft in EDR&rsquo;s voice. Only the draft and the sanitised driver one-liners are sent &mdash; never the source profile briefs. <strong>Use a billing-enabled key:</strong> Google&rsquo;s free tier trains on your prompts and has human reviewers; the paid tier does not, and weekly use costs next to nothing. Leave blank to hide the button.</p></td></tr>
@@ -231,6 +236,14 @@ add_action('rest_api_init', function () {
         array('methods' => 'POST', 'permission_callback' => '__return_true', 'callback' => 'edr_tb_rest_avail_set'),
     ));
     // tidying up past events is an admin job, not a public one
+    // stint confirmations: drivers confirm (or flag) their own stints from the page, public like
+    // /avail; the reminder post is admin-only
+    register_rest_route('edr/v1', '/confirm', array(
+        'methods' => 'POST', 'permission_callback' => '__return_true', 'callback' => 'edr_tb_rest_confirm_set',
+    ));
+    register_rest_route('edr/v1', '/confirm/remind', array(
+        'methods' => 'POST', 'permission_callback' => 'edr_tb_req_can_edit', 'callback' => 'edr_tb_rest_confirm_remind',
+    ));
     register_rest_route('edr/v1', '/avail/prune', array(
         'methods' => 'POST', 'permission_callback' => 'edr_tb_req_can_edit', 'callback' => 'edr_tb_rest_avail_prune',
     ));
@@ -1138,6 +1151,8 @@ function edr_tb_rest_avail_get() {
         'locked' => array(),   // advisory model (2.4.2): no hard per-device locks — see below
         'prefs'  => empty($prefs) ? new stdClass() : $prefs,
         'seen'   => empty($seen) ? new stdClass() : $seen,   // {ev: {name: {at, n}}} — last submission
+        'confirm'       => (object) get_option('edr_tb_confirm', array()),          // {ev: {name: {st, sig, cant, at}}}
+        'confirmPosted' => (object) get_option('edr_tb_confirm_posted', array()),   // {ev: {d4: ts, d2: ts}}
     ));
 }
 
@@ -1233,7 +1248,7 @@ function edr_tb_rest_avail_prune(WP_REST_Request $req) {
     if ((int) $locked !== 1) {
         return new WP_Error('busy', 'Another save is in progress — try again.', array('status' => 503));
     }
-    foreach (array('edr_tb_avail', 'edr_tb_prefs', 'edr_tb_avail_seen') as $opt) {
+    foreach (array('edr_tb_avail', 'edr_tb_prefs', 'edr_tb_avail_seen', 'edr_tb_confirm', 'edr_tb_confirm_posted') as $opt) {
         wp_cache_delete($opt, 'options');
     }
 
@@ -1246,7 +1261,7 @@ function edr_tb_rest_avail_prune(WP_REST_Request $req) {
         if ($when !== false && $when < $cutoff) $removed[] = $ev;
     }
     if ($removed) {
-        foreach (array('edr_tb_avail', 'edr_tb_prefs', 'edr_tb_avail_seen') as $opt) {
+        foreach (array('edr_tb_avail', 'edr_tb_prefs', 'edr_tb_avail_seen', 'edr_tb_confirm', 'edr_tb_confirm_posted') as $opt) {
             $data = (array) get_option($opt, array());
             foreach ($removed as $ev) unset($data[$ev]);
             update_option($opt, $data, false);
@@ -1261,6 +1276,171 @@ function edr_tb_rest_avail_prune(WP_REST_Request $req) {
         'remaining' => count($avail) - count($removed),
     ));
 }
+
+/* ----------------------------------------------------------------
+ * Stint confirmations (2.5.0)
+ *
+ * A driver confirms the stints they have been given ("ok") or flags that they cannot make some
+ * of them ("no", with the stint numbers). Each record carries the signature of the stints it was
+ * made against; the admin's plan save publishes the current signature per driver (plan.confirm),
+ * so a confirmation silently lapses back to "not yet" the moment their stints change.
+ * Advisory, like availability: the page is the team's private page and runs on trust.
+ * ---------------------------------------------------------------- */
+function edr_tb_rest_confirm_set(WP_REST_Request $req) {
+    global $wpdb;
+    $name = substr(sanitize_text_field((string) $req->get_param('name')), 0, 80);
+    $ev   = substr(sanitize_text_field((string) $req->get_param('ev')), 0, 120);
+    $st   = (string) $req->get_param('st');
+    if ($name === '' || $ev === '') return new WP_Error('bad_req', 'Need a driver name and event.', array('status' => 400));
+    if (!edr_tb_valid_ev($ev)) return new WP_Error('bad_ev', 'Unrecognised event.', array('status' => 400));
+    if (!in_array($st, array('ok', 'no', 'clear'), true)) return new WP_Error('bad_req', 'Unknown answer.', array('status' => 400));
+    $sig  = substr(sanitize_text_field((string) $req->get_param('sig')), 0, 600);
+    $cant = array_slice(array_values(array_unique(array_filter(
+        array_map('intval', (array) $req->get_param('cant')),
+        function ($v) { return $v >= 1 && $v < 500; }
+    ))), 0, 100);
+
+    $locked = $wpdb->get_var("SELECT GET_LOCK('edr_tb_avail_write', 5)");
+    if ((int) $locked !== 1) {
+        return new WP_Error('busy', 'Someone else is saving right now — try again in a moment.', array('status' => 503));
+    }
+    wp_cache_delete('edr_tb_confirm', 'options');
+    $all = (array) get_option('edr_tb_confirm', array());
+    if (!isset($all[$ev]) && count($all) >= EDR_TB_MAX_EVENTS) {
+        $wpdb->query("SELECT RELEASE_LOCK('edr_tb_avail_write')");
+        return new WP_Error('ev_full', 'Too many events stored — an admin needs to clear out old ones.', array('status' => 409));
+    }
+    if (!isset($all[$ev]) || !is_array($all[$ev])) $all[$ev] = array();
+    if (!isset($all[$ev][$name]) && count($all[$ev]) >= EDR_TB_MAX_DRIVERS) {
+        $wpdb->query("SELECT RELEASE_LOCK('edr_tb_avail_write')");
+        return new WP_Error('ev_full', 'Too many drivers on this event.', array('status' => 409));
+    }
+    if ($st === 'clear') unset($all[$ev][$name]);
+    else $all[$ev][$name] = array('st' => $st, 'sig' => $sig, 'cant' => ($st === 'no' ? $cant : array()), 'at' => current_time('mysql'));
+    update_option('edr_tb_confirm', $all, false);
+    edr_tb_bump_avail_rev();   // admins see it on their next heartbeat
+    $wpdb->query("SELECT RELEASE_LOCK('edr_tb_avail_write')");
+    return rest_ensure_response(array('ok' => true, 'rec' => $all[$ev][$name] ?? null));
+}
+
+/** Who has confirmed what, against the stints the plan currently gives them. */
+function edr_tb_confirm_status($plan) {
+    $c   = (isset($plan['confirm']) && is_array($plan['confirm'])) ? $plan['confirm'] : array();
+    $ev  = (string) ($c['ev'] ?? '');
+    $drv = (isset($c['drivers']) && is_array($c['drivers'])) ? $c['drivers'] : array();
+    $store = (array) get_option('edr_tb_confirm', array());
+    $recs = isset($store[$ev]) ? (array) $store[$ev] : array();
+    $out = array('ev' => $ev, 'ok' => array(), 'no' => array(), 'pending' => array());
+    foreach ($drv as $name => $d) {
+        $r = isset($recs[$name]) ? (array) $recs[$name] : null;
+        $live = $r && (string) ($r['sig'] ?? '') === (string) ($d['sig'] ?? '');
+        if ($live && ($r['st'] ?? '') === 'ok') $out['ok'][] = $name;
+        elseif ($live && ($r['st'] ?? '') === 'no') $out['no'][$name] = array_map('intval', (array) ($r['cant'] ?? array()));
+        else $out['pending'][] = $name;
+    }
+    return $out;
+}
+
+function edr_tb_confirm_text($stage, $plan) {
+    $c = edr_tb_confirm_status($plan);
+    $evName = explode('|', $c['ev'])[0];
+    $url = (string) get_option('edr_tb_page_url', '');
+    $link = $url ? "\n" . $url . '#stints' : '';
+    $total = count($c['ok']) + count($c['no']) + count($c['pending']);
+    $cant = array();
+    foreach ($c['no'] as $n => $st) $cant[] = $n . ($st ? ' (stint ' . implode(', ', $st) . ')' : '');
+    $lines = array();
+    if ($stage === 'd4') {
+        $lines[] = '🏁 **' . $evName . '** — the stints are set.';
+        $lines[] = 'Check yours and tap **I\'m good for these**, or **I can\'t make one** so we can sort a swap early.' . $link;
+        $lines[] = '';
+        if ($c['pending']) $lines[] = '⏳ Still to confirm: ' . implode(', ', $c['pending']);
+        if ($cant)         $lines[] = '✗ Can\'t make one: ' . implode(', ', $cant);
+        $lines[] = '✓ Confirmed: ' . count($c['ok']) . ' of ' . $total;
+    } else {
+        if (!$c['pending'] && !$cant) {
+            $lines[] = '✅ Everyone has confirmed their stints for **' . $evName . '**. See you on track.';
+        } else {
+            $lines[] = '⏳ **' . $evName . '** is 2 days away.';
+            if ($c['pending']) $lines[] = 'Still waiting on: ' . implode(', ', $c['pending']) . ' — please confirm your stints.' . $link;
+            if ($cant)         $lines[] = '✗ Can\'t make one: ' . implode(', ', $cant) . ' — admins, these need a swap.';
+        }
+    }
+    return array('text' => implode("\n", $lines), 'status' => $c);
+}
+
+function edr_tb_confirm_post($text) {
+    $s = edr_tb_settings();
+    if (empty($s['confirm_webhook'])) return new WP_Error('no_webhook', 'Set the stint-confirmation Discord webhook in plugin Settings first.', array('status' => 400));
+    $sent = 0;
+    $chunks = edr_tb_discord_chunks($text);
+    foreach ($chunks as $i => $chunk) {
+        $res = wp_remote_post($s['confirm_webhook'], array(
+            'timeout' => 20,
+            'headers' => array('Content-Type' => 'application/json'),
+            'body'    => wp_json_encode(array('content' => $chunk, 'allowed_mentions' => array('parse' => array()))),
+        ));
+        if (is_wp_error($res)) return new WP_Error('discord', 'Discord post failed: ' . $res->get_error_message(), array('status' => 502));
+        $code = wp_remote_retrieve_response_code($res);
+        if ($code < 200 || $code >= 300) return new WP_Error('discord', 'Discord returned HTTP ' . $code, array('status' => 502));
+        $sent++;
+        if ($i < count($chunks) - 1) sleep(1);
+    }
+    return $sent;
+}
+
+function edr_tb_confirm_mark($ev, $stages) {
+    $posted = (array) get_option('edr_tb_confirm_posted', array());
+    if (!isset($posted[$ev]) || !is_array($posted[$ev])) $posted[$ev] = array();
+    foreach ($stages as $st) $posted[$ev][$st] = time();
+    update_option('edr_tb_confirm_posted', $posted, false);
+    edr_tb_bump_avail_rev();
+}
+
+/** Admin: preview (dry) or send a reminder now. Sending also counts as that stage's post. */
+function edr_tb_rest_confirm_remind(WP_REST_Request $req) {
+    $stage = ($req->get_param('stage') === 'd2') ? 'd2' : 'd4';
+    $plan = (array) get_option('edr_tb_plan', array());
+    if (empty($plan['confirm']['ev'])) return new WP_Error('no_plan', 'No stints in the saved plan yet.', array('status' => 409));
+    $msg = edr_tb_confirm_text($stage, $plan);
+    if ($req->get_param('dry')) return rest_ensure_response(array('ok' => true, 'text' => $msg['text']));
+    $sent = edr_tb_confirm_post($msg['text']);
+    if (is_wp_error($sent)) return $sent;
+    edr_tb_confirm_mark($plan['confirm']['ev'], $stage === 'd2' ? array('d4', 'd2') : array('d4'));
+    return rest_ensure_response(array('ok' => true, 'text' => $msg['text'], 'messages' => $sent));
+}
+
+/**
+ * Hourly: post the 4-day and 2-day reminders for the plan's event. Only once the line-up and
+ * stints are both locked — a plan still being shuffled must not ask people to confirm it. If the
+ * lock lands late (inside 2 days), only the 2-day post goes out. Each stage posts once per event.
+ */
+add_action('edr_tb_confirm_tick', 'edr_tb_confirm_run');
+function edr_tb_confirm_run() {
+    $s = edr_tb_settings();
+    if (empty($s['confirm_webhook'])) return;
+    $plan = (array) get_option('edr_tb_plan', array());
+    $c = (isset($plan['confirm']) && is_array($plan['confirm'])) ? $plan['confirm'] : array();
+    $ev = (string) ($c['ev'] ?? '');
+    if ($ev === '' || $ev !== (string) ($plan['evsel'] ?? '') || empty($c['drivers'])) return;
+    if (empty($plan['teamsLocked']) || empty($plan['stintsLocked'])) return;
+    $start = intval($c['start'] ?? 0) / 1000;
+    $now = time();
+    if ($start <= $now) return;
+    $posted = (array) get_option('edr_tb_confirm_posted', array());
+    $done = isset($posted[$ev]) ? (array) $posted[$ev] : array();
+    $stage = null;
+    if (empty($done['d2']) && $now >= $start - 2 * DAY_IN_SECONDS) $stage = 'd2';
+    elseif (empty($done['d4']) && empty($done['d2']) && $now >= $start - 4 * DAY_IN_SECONDS) $stage = 'd4';
+    if (!$stage) return;
+    $msg = edr_tb_confirm_text($stage, $plan);
+    if (is_wp_error(edr_tb_confirm_post($msg['text']))) return;   // try again next hour
+    edr_tb_confirm_mark($ev, $stage === 'd2' ? array('d4', 'd2') : array('d4'));
+}
+add_action('init', function () {
+    if (!wp_next_scheduled('edr_tb_confirm_tick')) wp_schedule_event(time() + 300, 'hourly', 'edr_tb_confirm_tick');
+});
+register_deactivation_hook(__FILE__, function () { wp_clear_scheduled_hook('edr_tb_confirm_tick'); });
 
 function edr_tb_rest_plan_get() {
     return rest_ensure_response(array(
@@ -1352,6 +1532,9 @@ function edr_tb_rest_import(WP_REST_Request $req) {
  * Shortcode  [edr_team_builder]
  * ---------------------------------------------------------------- */
 add_shortcode('edr_team_builder', function () {
+    // the reminder posts link drivers back here, and a cron job has no page of its own to ask
+    $url = get_permalink();
+    if ($url && $url !== get_option('edr_tb_page_url')) update_option('edr_tb_page_url', $url, false);
     wp_enqueue_style('edr-tb', EDR_TB_URL . 'assets/builder.css', array(), EDR_TB_VER);
     wp_enqueue_script('edr-tb', EDR_TB_URL . 'assets/builder.js', array(), EDR_TB_VER, true);
     wp_localize_script('edr-tb', 'EDR_TB', array(

@@ -176,6 +176,23 @@ function persistAvail(evk,name){
       });
     });
 }
+/* stint confirmations sync through their own public route, like availability */
+function persistConfirm(evk,name){
+  const rec=((state.confirmStore[evk]||{})[name])||null;
+  return fetch(API+'confirm',{method:'POST',headers:_hdrs(true),body:JSON.stringify({ev:evk,name:name,st:rec?rec.st:'clear',sig:rec?rec.sig:'',cant:rec?rec.cant:[]})})
+    .then(function(r){ return r.json().catch(function(){ return {}; }).then(function(j){ if(!r.ok) throw new Error((j&&j.message)||'confirm save failed'); return j; }); });
+}
+/* admin: preview or post the confirmation reminder to the team channel */
+function sendConfirmReminder(stage,dry){
+  _cfAdminMsg=dry?'Building preview…':'Posting to Discord…'; renderContent();
+  apiPOST('confirm/remind',{stage:stage,dry:dry?1:0}).then(function(j){
+    if(j&&j.ok){ _cfPreview=j.text||''; _cfAdminMsg=dry?'Preview of what would be posted:':'Posted to Discord.'; if(!dry) pullAvail().then(renderContent); }
+    else { _cfAdminMsg=(j&&j.message)||'Could not reach the server.'; }
+    renderContent();
+  }).catch(function(){ _cfAdminMsg='Could not reach the server.'; renderContent(); });
+}
+/* the plan carries what the reminders check confirmations against (see edr_tb_confirm_run) */
+function _confirmForPlan(){ try{ return confirmPlan(modelById()); }catch(e){ return null; } }
 /* Admin tidy-up: drop availability for events that finished long ago. This is the only way the
    server's store caps are ever reached in normal use, so it needs to be doable from the page. */
 /* Kick the results sweep and watch for it to finish. It is a search per driver plus a fetch
@@ -337,7 +354,7 @@ function releaseLock(name){
   }).catch(function(){});
 }
 let lastTrackIds=[], lastTrackEv=null, _saveT=null;
-function serializePlan(){ return {drivers:state.drivers,w:state.w,proPct:state.proPct,teams:state.teams,stint:state.stint,stintAssign:state.stintAssign,stintWin:state.stintWin,stintSig:state.stintSig,overrides:overrides,meta:IMPORT_META,winStart:WIN_START_MS,startOffsets:START_OFFSETS,startLabels:START_LABELS,matches:lastMatches,trackIds:lastTrackIds,trackEv:lastTrackEv,paceAt:_planPaceAt,evsel:state.evsel,evWinMin:EV_WIN_MIN,evTiming:state.evTiming,teamsLocked:state.teamsLocked,stintsLocked:state.stintsLocked,teamNames:state.teamNames,fuelCfg:state.fuelCfg,customEvents:state.customEvents,irEvents:state.irEvents,evWeather:state.evWeather,swapNote:state.swapNote,excluded:state.excluded}; }
+function serializePlan(){ return {confirm:_confirmForPlan(),drivers:state.drivers,w:state.w,proPct:state.proPct,teams:state.teams,stint:state.stint,stintAssign:state.stintAssign,stintWin:state.stintWin,stintSig:state.stintSig,overrides:overrides,meta:IMPORT_META,winStart:WIN_START_MS,startOffsets:START_OFFSETS,startLabels:START_LABELS,matches:lastMatches,trackIds:lastTrackIds,trackEv:lastTrackEv,paceAt:_planPaceAt,evsel:state.evsel,evWinMin:EV_WIN_MIN,evTiming:state.evTiming,teamsLocked:state.teamsLocked,stintsLocked:state.stintsLocked,teamNames:state.teamNames,fuelCfg:state.fuelCfg,customEvents:state.customEvents,irEvents:state.irEvents,evWeather:state.evWeather,swapNote:state.swapNote,excluded:state.excluded}; }
 var _postBusy=false, _postAgain=false;
 function _flushPlan(){
   if(_postBusy){ _postAgain=true; return; }              // serialize: the retry below re-posts the LATEST state with the updated rev
@@ -401,6 +418,20 @@ function loadPlan(){ return apiGET('plan').then(function(r){ if(r&&typeof r.rev=
    while an inline edit has focus, and a force mode for 409 recovery. */
 var _refreshLast=0;
 function _editingNow(){ try{ if(typeof _renaming!=='undefined'&&_renaming!==null) return true; var ae=document.activeElement, c=document.getElementById('content'); return !!(ae&&c&&c.contains(ae)&&/^(INPUT|TEXTAREA|SELECT)$/.test(ae.tagName)); }catch(e){ return false; } }
+/* availability, preferences and stint confirmations — everything behind the avail revision */
+function pullAvail(){
+  return apiGET('avail').then(function(av){
+    if(av&&av.store){
+      var dirty={}; Object.keys(_availDirty||{}).forEach(function(k){ if(Object.keys(_availDirty[k]||{}).length) dirty[k]=1; });
+      Object.keys(av.store).forEach(function(evk){ if(!dirty[evk]) state.availStore[evk]=av.store[evk]; });   // never wipe staged, unsubmitted ticks — any event
+      if(av.prefs) Object.keys(av.prefs).forEach(function(evk){ if(!dirty[evk]) state.prefStore[evk]=av.prefs[evk]; });
+      if(av.seen) AV_SEEN=av.seen;
+      if(av.confirm) state.confirmStore=av.confirm;
+      if(av.confirmPosted) CONFIRM_POSTED=av.confirmPosted;
+      LOCKED_NAMES=av.locked||[];
+    }
+  }).catch(function(){});
+}
 function refreshShared(force){
   var now=Date.now();
   if(!force && now-_refreshLast<2500) return;           // visibilitychange+focus both fire on wake — one fetch is enough
@@ -420,15 +451,7 @@ function refreshShared(force){
     if(_renamedBack && isAdmin()) save();
     if(_paceDirty && isAdmin() && state.evsel===_planEvsel) save();   // adopted plan lagged the pace cache; we're on the latest rev now, so this can't 409
     if(state.evsel){ var _ev=calEvent(state.evsel); if(_ev){ var _r0=state.stint.race; applyEventTiming(_ev); if(_r0>0) state.stint.race=_r0; } }
-    apiGET('avail').then(function(av){
-      if(av&&av.store){
-        var dirty={}; Object.keys(_availDirty||{}).forEach(function(k){ if(Object.keys(_availDirty[k]||{}).length) dirty[k]=1; });
-        Object.keys(av.store).forEach(function(evk){ if(!dirty[evk]) state.availStore[evk]=av.store[evk]; });   // never wipe staged, unsubmitted ticks — any event
-        if(av.prefs) Object.keys(av.prefs).forEach(function(evk){ if(!dirty[evk]) state.prefStore[evk]=av.prefs[evk]; });
-        if(av.seen) AV_SEEN=av.seen;
-        LOCKED_NAMES=av.locked||[];
-      }
-    }).catch(function(){}).then(function(){ applyAvailToDrivers(); renderContent(); setStatus(force?'Another device updated the plan — showing the latest; re-apply your last change.':'Synced the latest plan from the server.'); });
+    pullAvail().then(function(){ applyAvailToDrivers(); renderContent(); setStatus(force?'Another device updated the plan — showing the latest; re-apply your last change.':'Synced the latest plan from the server.'); });
   }).catch(function(){});
 }
 var IR_SEASONS=[], IR_STATUS='';
@@ -728,10 +751,14 @@ async function bootSetup(){
     if(a==='unlock') unlockAdmin();
     else if(a==='go') submitUnlock();
     else if(a==='cancel'){ _unlockOpen=false; _unlockMsg=''; renderRolebar(); }
+    else if(a==='simple') setFullView(false);
     else lockAdmin();
   });
   document.getElementById('rolebar').addEventListener('keydown',function(e){
     if(e.key==='Enter' && e.target.id==='adminpass') submitUnlock();
+  });
+  document.getElementById('rolebar').addEventListener('change',function(e){   /* the timezone picker had no listener on the WP build */
+    if(e.target.dataset.tzpick!==undefined){ setTZ(e.target.value); renderContent(); renderRolebar(); }
   });
   renderRolebar();
   syncControls();
@@ -740,7 +767,7 @@ async function bootSetup(){
   if(state.evsel){ var _bev=calEvent(state.evsel); if(_bev){ var _br=state.stint.race; applyEventTiming(_bev); if(_br>0) state.stint.race=_br; } }  // rebuild timing globals from the restored event (don't trust persisted globals)
   try{
     const av=await apiGET('avail');
-    if(av&&av.store){ state.availStore=av.store; LOCKED_NAMES=av.locked||[]; if(av.prefs)state.prefStore=av.prefs; if(av.seen)AV_SEEN=av.seen; }
+    if(av&&av.store){ state.availStore=av.store; LOCKED_NAMES=av.locked||[]; if(av.prefs)state.prefStore=av.prefs; if(av.seen)AV_SEEN=av.seen; if(av.confirm)state.confirmStore=av.confirm; if(av.confirmPosted)CONFIRM_POSTED=av.confirmPosted; }
     else if(av&&typeof av==='object'&&!Array.isArray(av)) state.availStore=av;  /* pre-2.1.4 server shape */
   }catch(e){}
   try{ const tr=await apiGET('roster');
@@ -786,9 +813,13 @@ function _revTick(){
       _revFail=0;
       var first=(_revSeen.plan===null);
       var moved=(!first) && (j.plan!==_revSeen.plan || j.avail!==_revSeen.avail);
+      var planMoved=(!first) && j.plan!==_revSeen.plan;
       _revSeen.plan=j.plan; _revSeen.avail=j.avail;
       PACE_AT=j.paceAt||0; PACE_ERR=j.paceErr||'';
-      if(moved) refreshShared();       // refreshShared has its own edit-in-progress guard
+      /* an availability-only move used to go through refreshShared, which returns early when the
+         plan revision has not changed — so another driver's submit never reached open tabs */
+      if(moved && planMoved) refreshShared();       // refreshShared has its own edit-in-progress guard
+      else if(moved) pullAvail().then(function(){ applyAvailToDrivers(); if(!_editingNow()) renderContent(); });
       if(j.paceAt && j.paceKey && j.paceKey===_paceKeyNow() && !(_paceLast && _paceLast.key===j.paceKey && _paceLast.at>=j.paceAt)) pullPace(j.paceKey);
       _revArm(REV_POLL_MS);
     })
