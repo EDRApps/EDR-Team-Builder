@@ -866,6 +866,7 @@ function renderConfirmCard(car,mine,byId){
    avsubmit); the read-only planner is one tap away ("Full planner"), and admins never see this. */
 let _fullView=false; try{ _fullView=localStorage.getItem('edrTB_view')==='full'; }catch(e){}
 let _wizStep=0;   /* 0 = work it out from who you are and what the link asked for */
+let _wizShown=0;  /* step last drawn, so only a real step change animates */
 /* The line-up (teams, stints, start times) belongs to one event: the plan's. A driver may pick
    another upcoming race to give times for, so remember the plan's event and its race length
    before the first switch, and only show a car in "Your stints" for that event. */
@@ -909,6 +910,23 @@ function wizFoot(){
     +'<span style="margin-left:auto" class="alt" data-action="wizfull">Full planner</span>'
     +'<span class="alt" data-action="wizadmin">Admin</span></div>';
 }
+/* Steps view: a single sticky button. It used to sit beside the tab's own "Submit availability",
+   which saved but stayed put — so a driver who used that one had to tap again to move on. */
+function wizSubmitBar(){
+  const dirty=!!(_availDirty[state.evsel]||{})[state.me];
+  return '<div class="subbar">'
+    +(dirty?'<button class="btn btn-amber avfree" data-action="avsubmit" data-next="4">Submit &amp; see my stints</button>'
+           :'<button class="btn btn-amber avfree" data-action="wizstep" data-step="4">Next · your stints</button>')
+    +(_avMsg?'<span class="meta" style="color:'+(_avErr?'var(--red)':'var(--green)')+'">'+esc(_avMsg)+'</span>'
+      :(dirty?'<span class="meta" style="color:var(--amber)">Not saved yet</span>':''))
+    +'</div>';
+}
+/* a block tap changes one button and the bar — redraw just those, not the whole page */
+function refreshAvBits(cell){
+  if(cell) cell.classList.toggle('on', ((state.availStore[state.evsel]||{})[cell.dataset.name]||[]).indexOf(+cell.dataset.slot)>=0);
+  const bar=document.querySelector('#content .subbar');
+  if(bar) bar.outerHTML=simpleView()?wizSubmitBar():avSubmitBar();
+}
 function wizCar(byId){
   const me=Object.values(byId).find(function(d){ return nameKey(d.name)===nameKey(state.me); });
   if(!me) return {me:null, car:null};
@@ -925,7 +943,7 @@ function renderWizard(byId){
   const ev=state.evsel?calEvent(state.evsel):null;
   const evLine=ev?'<b>'+esc(ev.n)+'</b> · '+esc(ev.track)+' · '+fmtDates(ev.s,ev.e)+(ev.dur?' · '+ev.dur+'h race':''):'';
   if(_wizTeamEv===undefined){ _wizTeamEv=state.evsel; _wizTeamRace=state.stint.race; }
-  let h='<div class="wiz"><div class="wiz-eyebrow">Step '+step+' of 4</div>';
+  let h='<div class="wiz'+(step!==_wizShown?' enter':'')+'"><div class="wiz-eyebrow">Step '+step+' of 4</div>'; _wizShown=step;
   if(step===1){
     h+='<div class="wiz-title">Who are<br>you?</div>';
     if(state.me){
@@ -966,11 +984,7 @@ function renderWizard(byId){
         +'<div class="wiz-hint" style="margin:-8px 0 14px">Times shown in '+tzSel+' · <span class="wiz-link" data-action="wizstep" data-step="2">other race</span> · <span class="wiz-link" data-action="iridchange">not '+first+'?</span></div>';
       const a=state.availStore[state.evsel]=state.availStore[state.evsel]||{};
       h+=renderMyBlocks(a);
-      h+=avSubmitBar();
-      const dirty=!!(_availDirty[state.evsel]||{})[state.me];
-      h+=dirty
-        ?'<button class="btn btn-ghost avfree wiz-cta" data-action="avsubmit" data-next="4">Submit &amp; see my stints</button>'
-        :'<button class="btn btn-ghost avfree wiz-cta" data-action="wizstep" data-step="4">Next · your stints</button>';
+      h+=wizSubmitBar();
     }
   } else {
     h+='<div class="wiz-title">Your<br>stints</div>';
@@ -3066,7 +3080,7 @@ document.addEventListener('pointermove',function(e){
   if(toggleAvail(_dragName,+c.dataset.slot,_dragMode)){ c.classList.toggle('on',_dragMode); _dragDid=true; }
 });
 document.addEventListener('pointerup',function(){
-  if(_dragOn && _dragDid) renderContent();
+  if(_dragOn && _dragDid){ if(simpleView()) refreshAvBits(null); else renderContent(); }
   _dragOn=false;
 });
 
@@ -3110,7 +3124,7 @@ document.getElementById('content').addEventListener('click',e=>{
   if(e.target.dataset.action==='wizadmin'){ setFullView(true); unlockAdmin(); return; }
   const bcell=e.target.closest&&e.target.closest('button[data-avtoggle]');
   if(bcell){ if(_dragDid){ _dragDid=false; return; }   // a drag already applied this run; don't undo its last cell
-    if(toggleAvail(bcell.dataset.name,+bcell.dataset.slot)) renderContent(); return; }
+    if(toggleAvail(bcell.dataset.name,+bcell.dataset.slot)){ if(simpleView()) refreshAvBits(bcell); else renderContent(); } return; }
   const bulk=e.target.closest&&e.target.closest('[data-bulk]');
   if(bulk){
     const nm=bulk.dataset.name, kind=bulk.dataset.bulk;

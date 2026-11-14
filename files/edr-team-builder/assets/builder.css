@@ -217,7 +217,8 @@
   /* ===== Driver steps: drivers land on one question at a time, not the whole planner.
      .simple sits on the app root (body / #edr-tb-app) while a driver is in the steps view. ===== */
   .simple .header,.simple .controls,.simple .tabs{display:none}
-  .wiz{max-width:560px;margin:0 auto;padding:10px 2px 0;animation:up .25s ease}
+  .wiz{max-width:560px;margin:0 auto;padding:10px 2px 0}
+  .wiz.enter{animation:up .25s ease}   /* only when the step changes — on every redraw it made each tap look like a page reload */
   .wiz-eyebrow{font-family:'Prompt',sans-serif;font-weight:600;font-size:12px;letter-spacing:.2em;color:var(--yellow);text-transform:uppercase}
   .wiz-title{font-family:'Prompt',sans-serif;font-weight:800;font-style:italic;font-size:clamp(42px,12vw,64px);line-height:.95;text-transform:uppercase;color:#fff;margin:12px 0 16px}
   .wiz-lead{font-size:17px;line-height:1.5;color:var(--body);margin:0 0 18px}
