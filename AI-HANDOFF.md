@@ -34,15 +34,15 @@ CI runs the parse check and fails on stale committed assets or a stale zip.
 
 ## Hard facts (do not relearn these the hard way)
 
-1. **Garage 61 and iRacePlan both block direct browser calls (no CORS).** Every pull is
+1. **Garage 61 blocks direct browser calls (no CORS).** Every pull is
    server-side (the plugin) or a local script. The browser owns the merge and the scoring.
 2. **Garage 61:** base `https://garage61.net/api/v1`, `Authorization: Bearer <token>` with the
    `driving_data` scope, team slug `edr-endurotech`. Pull `/laps` with `tracks`, `teams`,
    `unclean=true`, `group=none`, `age=-1`. The key must be **team-scoped** or the import returns
    only the key owner's laps. Driver names come from `firstName`+`lastName`; the `name` field is
    empty or a digit-suffixed iRacing name that never matches.
-3. **iRacePlan is gone** (removed in 2.3.0). Its API could not export survey responses, which is
-   why availability was brought in-house. `files/iraceplan-api-notes.md` is history only.
+3. **Availability is collected in the Team Builder itself** (drivers tick 2-hour blocks per
+   event); there is no outside availability tool.
 4. **iRacing data** comes through a teammate's proxy (GET-only, one shared account, cached).
    `invalid_grant: expired` on every call means the bot's session lapsed — the proxy owner has
    to re-authenticate it, nothing local will fix it.

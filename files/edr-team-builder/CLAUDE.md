@@ -8,7 +8,7 @@ A self-contained **WordPress plugin** (`edr-team-builder/`) that plans iRacing
 endurance line-ups for Endurotech Racing (endurotechracing.com). It pulls **pace** from
 Garage 61, collects **availability** in-house (drivers tick 2h blocks), and pulls **official
 session times** from an iRacing proxy, then builds Pro/Casual teams and stint rotations.
-iRacePlan was fully removed in 2.3.0 — imports are pure Garage 61 pace. Activated by the
+Imports are pure Garage 61 pace. Activated by the
 `[edr_team_builder]` shortcode. Workflow (tab order):
 **Event (season calendar) → Availability (drivers tick 2h blocks) → Drivers → Teams →
 Stints**, with a role model on top:
@@ -391,9 +391,8 @@ POST. `calendar()` now merges overrides field-by-field, so a custom event keeps 
   (same server-side/cached pattern as `garage61.php`) for official session start times +
   race lengths; detects the expired-proxy-session case and surfaces it.
 
-(iRacePlan is gone as of 2.3.0: `iraceplan.php`, `merge.php`, the `/events` route, the
-`irp_key` setting, and the bookmarklet assets were all removed. `POST /import` returns the
-Garage 61 roster and nothing else; the browser folds in the in-house availability.)
+`POST /import` returns the Garage 61 roster and nothing else; the browser folds in the
+in-house availability.
 
 **Client (generated `builder.js`).** The browser owns all scoring. Key flow:
 - `applyImport(payload)` rebuilds `state.drivers` from the Garage 61 roster (pace only),

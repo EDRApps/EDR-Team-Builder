@@ -189,10 +189,8 @@ driver-facing how-to, including the swap contact (2.4.8). Key facts:
   carry `accounts[]` with each driver's **iRacing customer ID** plus current iRating/Safety Rating
   in all six licence categories — this is the join key between Garage 61 names and official
   iRacing results.
-- **iRacePlan** (availability) — base `https://iraceplan.com/api/v1`. **Survey responses are NOT
-  in the API** (only counts). Full availability is reachable only via the **plannings API** once
-  a team planning exists, or by the **bookmarklet** that scrapes the logged-in survey timeline
-  (`files/edr-team-builder/assets/bookmarklet.js`). See `files/iraceplan-api-notes.md`.
+- **Availability** — collected in the Team Builder itself; read it live from
+  `GET https://endurotechracing.com/wp-json/edr/v1/avail` (per event, per driver, 2-hour slots).
 - **iRacing** (official results/schedules/iRatings) — via a **teammate's proxy** (shared on the
   team Discord; it runs off *their* iRacing account, not the user's) — `IRACING_PROXY_URL` /
   `IRACING_PROXY_KEY` in `~/.config/edr/secrets.env`; currently `https://iracing-bot.fly.dev`,
@@ -221,23 +219,19 @@ driver-facing how-to, including the swap contact (2.4.8). Key facts:
   as a local password_limited client but requires valid member credentials and allows exactly one
   login attempt per run.)
 
-Both Garage 61 and iRacePlan **block direct browser calls (no CORS)** — pulls must be server-side
+Garage 61 **blocks direct browser calls (no CORS)** — pulls must be server-side
 (the plugin) or local scripts. The browser owns the **merge + scoring**; the PHP backend is thin.
-Name matching (Garage 61 `firstName+lastName` ↔ iRacePlan/survey name) is fragile — normalise,
+Name matching (Garage 61 `firstName+lastName` ↔ the name a driver gave with their availability) is fragile — normalise,
 match **case-insensitively** (some Garage 61 profiles are all-lowercase, e.g. `matt blee`), strip
-the iRacing digit suffixes from scraped survey names (`Luke Hay3`), and keep an override map.
-Known survey→Garage 61 overrides: `Joey Tavora→Joseph Tavora`, `Stipe Ljubic→Stipe Ljubić`,
+the iRacing digit suffixes (`Luke Hay3`), and keep an override map.
+Known name→Garage 61 overrides: `Joey Tavora→Joseph Tavora`, `Stipe Ljubic→Stipe Ljubić`,
 `Matt Halden→Matthew Halden`, `Chris Wilson→Chris w`, `Zach Martin→Zachary Martin`,
 `Michael S Cullen→Michael Cullen`.
 
-**The survey changes constantly** — drivers add, edit and withdraw responses between pulls, so
-never decide who is in or out of an event from a saved snapshot or a hardcoded list: re-check the
-live survey at task time. Cheap freshness probe: `GET /surveys/:id` (`responses_count` +
-`updated_at`) — but counts miss edited responses, so when in doubt re-scrape the timeline.
-A driver is in the event pool iff they have availability with hours > 0. **iRacePlan has been
-fully removed from the Team Builder plugin (v2.3.0)** — availability is collected in-house on the
-Availability tab and the hours>0 pool rule lives in the builder. The iRacePlan API notes below are
-retained only as historical reference for local scripts; the plugin no longer calls it.
+**Availability changes constantly** — drivers add, edit and withdraw blocks at any time, so never
+decide who is in or out of an event from a saved snapshot or a hardcoded list: re-read the live
+`GET /avail` at task time. A driver is in the event pool iff they have availability with
+hours > 0; the hours>0 pool rule lives in the builder.
 
 ## Refreshing the standalone Team Builder with live data (local, no WordPress)
 
@@ -249,9 +243,9 @@ To "bring up the team builder with fresh data": re-pull, rebuild the embedded `S
 2. Per driver per GT3 car compute `{laps: total, medianLap: median clean lap (s), cleanPct:
    clean/total}` (clean = `clean && !incomplete && 128<lapTime<150 && !pitIn/Out && !discontinuity`;
    require ≥3 clean laps to include the car).
-3. Merge each **survey** driver's pace with their availability from a **fresh live scrape** of the
-   iRacePlan survey (save it as a new dated `files/spa-availability-live-YYYY-MM-DD.json`; do not
-   reuse an old snapshot — see the survey-freshness rule above). `avail = {hours, pct, starts,
+3. Merge each driver's pace with their availability from a **fresh live read** of `GET /avail`
+   (save it as a new dated `files/spa-availability-live-YYYY-MM-DD.json`; do not reuse an old
+   snapshot — see the freshness rule above). `avail = {hours, pct, starts,
    windows}`; "available" means `hours > 0`. Roster item shape:
    `{name, cars:{car:{laps,medianLap,cleanPct}}, avail}`.
 4. Back up, then replace the single `const SAMPLE = [...]` line and bump `const KEY = '..._spa_vN'`
@@ -369,7 +363,7 @@ Render gotchas, all hit in practice:
 ## Reference docs
 
 `README.md` (overview + release flow), `PROJECT.md` (full architecture + data-access reference),
-`AI-HANDOFF.md` (resume brief), `files/iraceplan-api-notes.md` (iRacePlan API limits),
+`AI-HANDOFF.md` (resume brief),
 `files/edr-team-builder/CLAUDE.md` (plugin internals).
 
 ## Innovation

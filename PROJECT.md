@@ -3,9 +3,8 @@
 A complete record of how the EDR team-planning system works, so any teammate (or a future
 chat) can pick it up with full context.
 
-> **Status:** current as of plugin **2.4.10**. Availability was brought in-house in 2.3.0 and
-> iRacePlan was removed entirely — if you are reading an older note that says availability
-> lives in iRacePlan, that note is out of date. See §9 for what changed.
+> **Status:** current as of plugin **2.4.10**. Availability is collected in the tool itself;
+> see §9 for why.
 
 ---
 
@@ -155,13 +154,8 @@ Pro (default **40%**), the rest Casual.
 - If every call returns `invalid_grant: expired`, the bot's own iRacing session has lapsed.
   Nothing local is wrong; the proxy owner must re-authenticate it.
 
-### iRacePlan (historical — no longer used)
-Removed from the plugin in 2.3.0. Its API could never export individual survey responses, which
-is exactly why availability was brought in-house. `files/iraceplan-api-notes.md` is kept only as
-a record for old local scripts.
-
 ### CORS
-Both Garage 61 and iRacePlan block direct browser calls, so every pull happens server-side (the
+Garage 61 blocks direct browser calls, so every pull happens server-side (the
 plugin) or in a local script. The browser owns the merge and the scoring.
 
 ---
@@ -197,10 +191,9 @@ There is no test suite, linter or package manifest for the repo as a whole.
 
 ## 9. Key decisions and why
 
-- **Availability is ours, not iRacePlan's.** iRacePlan's API cannot export survey responses and
-  the visual timeline cannot be scraped, so the data was never reachable. Collecting 2-hour
-  blocks in-house made availability a first-class input to scoring and stints instead of
-  something living in another tool. iRacePlan was removed in 2.3.0.
+- **Availability is collected in-house.** Drivers tick 2-hour blocks in the tool, which makes
+  availability a first-class input to scoring and stints instead of something living in
+  another tool.
 - **Advisory availability writes, not hard locks.** See §5 — the lock hurt real drivers more
   than it stopped anything.
 - **Class-only comparisons.** GTP/LMP2/GT3 pace differs hugely, so pace, prep and clean are
@@ -222,4 +215,3 @@ There is no test suite, linter or package manifest for the repo as a whole.
 | `AI-HANDOFF.md` | Short resume brief |
 | `files/edr-team-builder/INSTALL.md` | Plugin install and settings |
 | `Admin Folder/HANDOFF.md` | The note for whoever manages the website, plus the zip to upload |
-| `files/iraceplan-api-notes.md` | Historical iRacePlan API limits |

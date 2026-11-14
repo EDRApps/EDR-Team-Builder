@@ -1743,8 +1743,7 @@ function edr_tb_rest_tracks() {
 
 function edr_tb_rest_import(WP_REST_Request $req) {
     $s = edr_tb_settings();
-    // only the Garage 61 token is required — iRacePlan is optional legacy (availability
-    // now comes from the builder's own Availability tab)
+    // only the Garage 61 token is needed — availability comes from the builder's own Availability tab
     if (!$s['g61_token']) return new WP_Error('no_creds', 'Set the Garage 61 token in plugin settings.', array('status' => 400));
     $trackIds = array_map('intval', (array) $req->get_param('trackIds'));
     if (!$trackIds) return new WP_Error('no_track', 'Pick a track first.', array('status' => 400));

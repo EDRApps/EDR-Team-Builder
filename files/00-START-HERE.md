@@ -10,9 +10,6 @@ build a stint plan around when people can actually drive.
 - **The Team Builder** merges the two into a Pro/Casual split per car class, car entries, and a
   stint rotation.
 
-Availability used to live in iRacePlan. It does not any more — iRacePlan could never export
-survey responses, so collection was brought in-house in 2.3.0.
-
 ## Where the tool lives
 
 | Thing | What it is |
@@ -21,7 +18,6 @@ survey responses, so collection was brought in-house in 2.3.0.
 | `edr-team-builder/` | The same tool as a WordPress plugin for endurotechracing.com. Its assets are **generated** from the HTML — never hand-edit them. |
 | `../Admin Folder/` | The zip to upload to WordPress, plus the note for whoever manages the site. |
 | `colab_pull_garage61.py` | Reference Garage 61 pull (Google Colab). The plugin does this server-side now. |
-| `iraceplan-api-notes.md` | Historical iRacePlan API notes. Kept for reference only. |
 
 ## To plan an event
 

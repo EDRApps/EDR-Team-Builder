@@ -44,13 +44,13 @@ const KEY = 'edrTeamBuilder_spa_v15'; /* Spa 24h — S3 pace, survey 2307 availa
 
 // --- Spa 24h event timing (for the Stints tab) ---
 // Availability window starts 2026-07-10 22:00 UTC (= 11 Jul 08:00 Brisbane). All offsets in minutes from there.
-// 4 candidate start slots (iRacePlan survey 2307 session_times).
+// 4 candidate start slots (the Spa 24h session times).
 let WIN_START_MS = Date.parse('2026-07-10T22:00:00Z');
 let START_OFFSETS = {1:0, 2:540, 3:840, 4:1080};
 let START_LABELS = {1:'Sat 08:00 · 22:00Z', 2:'Sat 17:00 · 07:00Z', 3:'Sat 22:00 · 12:00Z', 4:'Sun 02:00 · 16:00Z'};
 
-// Spa 24h: Garage 61 pace (iRacing 2026 Season 3 only, from 2026-06-16; age=-1) for the 18 drivers in iRacePlan survey 2307.
-// Availability merged from iRacePlan survey 2307 timeline (green = available). Empty cars = no Spa data shared.
+// Spa 24h: Garage 61 pace (iRacing 2026 Season 3 only, from 2026-06-16; age=-1) for the 18 drivers who entered Spa.
+// Availability as the drivers gave it for Spa (green = available). Empty cars = no Spa data shared.
 const SAMPLE = [];
 
 let state = { drivers:[], w:{pace:50,clean:30,prep:20}, proPct:40, tab:'event', teams:{}, stint:{window:1,len:60,race:1440}, stintAssign:{}, stintWin:{}, stintSig:'', evsel:null, role:'driver', me:'', pass:'', availStore:{}, evWinMin:0, evTiming:{}, teamsLocked:false, stintsLocked:false, teamNames:{}, fuelCfg:{pitLossSec:60,byCar:{},byClass:{}}, customEvents:[], irEvents:[], evWeather:{}, prefStore:{}, confirmStore:{}, swapNote:'' };
@@ -227,7 +227,7 @@ function generate(){
 function esc(s){ return String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
 
 /* ===== Season calendar =====
-   iRacing specials + endurance events (team calendar + iRacePlan surveys). Edit here to
+   iRacing specials + endurance events (the team calendar). Edit here to
    add or correct events. target = special OR (endurance AND dur>=3h). Optional per-event
    overrides: winStart (ISO — when the availability window opens), winMin (window length,
    minutes), offsets/labels (candidate race starts), raceMin (race length, minutes). */

@@ -18,14 +18,12 @@ team line-ups and stint rotations for events.
   `HANDOFF.md` with the install steps. Both are produced by `build/package_plugin.py`.
 - **Deliverables (PDFs)** — race debriefs and car-selection briefs in the EDR brand
   (e.g. the Glen 6h debrief, the Spa car-selection indications).
-- **Reference** — `PROJECT.md` (full architecture), `AI-HANDOFF.md` (resume brief), and
-  `files/iraceplan-api-notes.md` (historical).
+- **Reference** — `PROJECT.md` (full architecture) and `AI-HANDOFF.md` (resume brief).
 
 ## Data sources
 
 - **Garage 61** — performance (practice/race laps to pace, lap count, clean-lap %, iRating).
-- **Availability** — collected in the tool itself, in 2-hour blocks, per event. iRacePlan was
-  removed in 2.3.0: its API could never export survey responses.
+- **Availability** — collected in the tool itself, in 2-hour blocks, per event.
 - **iRacing** — official session times and results, via a teammate's Data API proxy.
 
 Pace data is pulled for the current iRacing season only (Season 3 onwards).
@@ -34,7 +32,7 @@ Pace data is pulled for the current iRacing season only (Season 3 onwards).
 
 API keys are **never** committed. They are entered into the WordPress plugin settings
 (server-side) for production, or supplied at run time for local pulls. See `.gitignore`.
-Rotate keys in Garage 61 / iRacePlan if ever exposed.
+Rotate keys (Garage 61, Discord bot) if ever exposed.
 
 ## Building & releasing the plugin
 
