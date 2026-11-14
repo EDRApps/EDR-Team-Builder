@@ -191,6 +191,13 @@ function sendConfirmReminder(stage,dry){
     renderContent();
   }).catch(function(){ _cfAdminMsg='Could not reach the server.'; renderContent(); });
 }
+/* admin: car voice channels — test the bot, make/repost now, delete now */
+function vcAction(act){
+  _vcMsg=act==='test'?'Testing the bot…':act==='delete'?'Deleting channels…':'Making channels…'; renderContent();
+  apiPOST('vc',{action:act}).then(function(j){ _vcMsg=(j&&j.message)||'Could not reach the server.'; pullAvail().then(renderContent); })
+    .catch(function(){ _vcMsg='Could not reach the server.'; renderContent(); });
+}
+function _channelsForPlan(){ try{ return channelPlan(modelById()); }catch(e){ return null; } }
 /* the plan carries what the reminders check confirmations against (see edr_tb_confirm_run) */
 function _confirmForPlan(){ try{ return confirmPlan(modelById()); }catch(e){ return null; } }
 /* Admin tidy-up: drop availability for events that finished long ago. This is the only way the
@@ -354,7 +361,7 @@ function releaseLock(name){
   }).catch(function(){});
 }
 let lastTrackIds=[], lastTrackEv=null, _saveT=null;
-function serializePlan(){ return {confirm:_confirmForPlan(),drivers:state.drivers,w:state.w,proPct:state.proPct,teams:state.teams,stint:state.stint,stintAssign:state.stintAssign,stintWin:state.stintWin,stintSig:state.stintSig,overrides:overrides,meta:IMPORT_META,winStart:WIN_START_MS,startOffsets:START_OFFSETS,startLabels:START_LABELS,matches:lastMatches,trackIds:lastTrackIds,trackEv:lastTrackEv,paceAt:_planPaceAt,evsel:state.evsel,evWinMin:EV_WIN_MIN,evTiming:state.evTiming,teamsLocked:state.teamsLocked,stintsLocked:state.stintsLocked,teamNames:state.teamNames,fuelCfg:state.fuelCfg,customEvents:state.customEvents,irEvents:state.irEvents,evWeather:state.evWeather,swapNote:state.swapNote,excluded:state.excluded}; }
+function serializePlan(){ return {confirm:_confirmForPlan(),channels:_channelsForPlan(),drivers:state.drivers,w:state.w,proPct:state.proPct,teams:state.teams,stint:state.stint,stintAssign:state.stintAssign,stintWin:state.stintWin,stintSig:state.stintSig,overrides:overrides,meta:IMPORT_META,winStart:WIN_START_MS,startOffsets:START_OFFSETS,startLabels:START_LABELS,matches:lastMatches,trackIds:lastTrackIds,trackEv:lastTrackEv,paceAt:_planPaceAt,evsel:state.evsel,evWinMin:EV_WIN_MIN,evTiming:state.evTiming,teamsLocked:state.teamsLocked,stintsLocked:state.stintsLocked,teamNames:state.teamNames,fuelCfg:state.fuelCfg,customEvents:state.customEvents,irEvents:state.irEvents,evWeather:state.evWeather,swapNote:state.swapNote,excluded:state.excluded}; }
 var _postBusy=false, _postAgain=false;
 function _flushPlan(){
   if(_postBusy){ _postAgain=true; return; }              // serialize: the retry below re-posts the LATEST state with the updated rev
@@ -428,6 +435,7 @@ function pullAvail(){
       if(av.seen) AV_SEEN=av.seen;
       if(av.confirm) state.confirmStore=av.confirm;
       if(av.confirmPosted) CONFIRM_POSTED=av.confirmPosted;
+      if(av.vc) VC_STATE=av.vc;
       LOCKED_NAMES=av.locked||[];
     }
   }).catch(function(){});
@@ -767,7 +775,7 @@ async function bootSetup(){
   if(state.evsel){ var _bev=calEvent(state.evsel); if(_bev){ var _br=state.stint.race; applyEventTiming(_bev); if(_br>0) state.stint.race=_br; } }  // rebuild timing globals from the restored event (don't trust persisted globals)
   try{
     const av=await apiGET('avail');
-    if(av&&av.store){ state.availStore=av.store; LOCKED_NAMES=av.locked||[]; if(av.prefs)state.prefStore=av.prefs; if(av.seen)AV_SEEN=av.seen; if(av.confirm)state.confirmStore=av.confirm; if(av.confirmPosted)CONFIRM_POSTED=av.confirmPosted; }
+    if(av&&av.store){ state.availStore=av.store; LOCKED_NAMES=av.locked||[]; if(av.prefs)state.prefStore=av.prefs; if(av.seen)AV_SEEN=av.seen; if(av.confirm)state.confirmStore=av.confirm; if(av.confirmPosted)CONFIRM_POSTED=av.confirmPosted; if(av.vc)VC_STATE=av.vc; }
     else if(av&&typeof av==='object'&&!Array.isArray(av)) state.availStore=av;  /* pre-2.1.4 server shape */
   }catch(e){}
   try{ const tr=await apiGET('roster');

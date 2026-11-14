@@ -2,7 +2,7 @@
 /**
  * Plugin Name: EDR Team Builder
  * Description: Endurotech Racing endurance team + stint planner. Pulls Garage 61 pace and official iRacing session times, collects driver availability in-house, and builds Pro/Casual teams and stint rotations. Add the [edr_team_builder] shortcode to a page.
- * Version: 2.5.0
+ * Version: 2.6.0
  * Author: Endurotech Racing
  * License: GPL-2.0-or-later
  */
@@ -11,7 +11,7 @@ if (!defined('ABSPATH')) exit; // no direct access
 
 define('EDR_TB_DIR', plugin_dir_path(__FILE__));
 define('EDR_TB_URL', plugin_dir_url(__FILE__));
-define('EDR_TB_VER', '2.5.0');
+define('EDR_TB_VER', '2.6.0');
 
 require_once EDR_TB_DIR . 'includes/garage61.php';
 require_once EDR_TB_DIR . 'includes/iracing.php';
@@ -30,6 +30,9 @@ function edr_tb_settings() {
         'iracing_key' => '',
         'discord_webhook' => '',
         'confirm_webhook' => '',
+        'discord_bot_token'   => '',
+        'discord_guild_id'    => '',
+        'discord_category_id' => '',
         'gemini_key'   => '',
         'gemini_model' => 'gemini-3.5-flash',
     ));
@@ -157,6 +160,9 @@ add_action('admin_init', function () {
             'iracing_key' => sanitize_text_field($in['iracing_key'] ?? ''),
             'discord_webhook' => esc_url_raw($in['discord_webhook'] ?? ''),
             'confirm_webhook' => esc_url_raw($in['confirm_webhook'] ?? ''),
+            'discord_bot_token'   => sanitize_text_field($in['discord_bot_token'] ?? ''),
+            'discord_guild_id'    => preg_replace('/\D/', '', (string) ($in['discord_guild_id'] ?? '')),
+            'discord_category_id' => preg_replace('/\D/', '', (string) ($in['discord_category_id'] ?? '')),
             'gemini_key'   => sanitize_text_field($in['gemini_key'] ?? ''),
             'gemini_model' => sanitize_text_field($in['gemini_model'] ?? 'gemini-3.5-flash'),
         );
@@ -193,6 +199,15 @@ function edr_tb_settings_page() {
           <tr><th scope="row">Discord webhook (stint confirmations)</th>
             <td><input type="text" name="edr_tb_settings[confirm_webhook]" value="<?php echo esc_attr($s['confirm_webhook']); ?>" class="regular-text" autocomplete="off" placeholder="https://discord.com/api/webhooks/...">
             <p class="description">The <strong>team channel</strong> drivers read. Once the line-up and stints are locked, the builder posts here 4 days before the race asking everyone to confirm their stints, and again 2 days before naming whoever has not. Leave blank to turn the reminders off.</p></td></tr>
+          <tr><th scope="row">Discord bot token (car voice channels)</th>
+            <td><input type="password" name="edr_tb_settings[discord_bot_token]" value="<?php echo esc_attr($s['discord_bot_token']); ?>" class="regular-text" autocomplete="off">
+            <p class="description">Lets the builder make one <strong>voice channel per car</strong> the day before an endurance race, post that car's stints in the channel's chat, and delete the channels after the race. The bot needs <em>View Channels</em>, <em>Manage Channels</em> and <em>Send Messages</em> in the category below. Leave blank to turn it off. Never share this token.</p></td></tr>
+          <tr><th scope="row">Discord server ID</th>
+            <td><input type="text" name="edr_tb_settings[discord_guild_id]" value="<?php echo esc_attr($s['discord_guild_id']); ?>" class="regular-text" autocomplete="off">
+            <p class="description">Discord &rarr; Settings &rarr; Advanced &rarr; Developer Mode on, then right-click the EDR server icon &rarr; Copy Server ID.</p></td></tr>
+          <tr><th scope="row">Discord category ID</th>
+            <td><input type="text" name="edr_tb_settings[discord_category_id]" value="<?php echo esc_attr($s['discord_category_id']); ?>" class="regular-text" autocomplete="off">
+            <p class="description">Right-click the <strong>Racing Preparation and Events</strong> category &rarr; Copy Channel ID. Leave blank to find that category by name.</p></td></tr>
           <tr><th scope="row">Gemini API key (optional)</th>
             <td><input type="text" name="edr_tb_settings[gemini_key]" value="<?php echo esc_attr($s['gemini_key']); ?>" class="regular-text" autocomplete="off">
             <p class="description">Enables the <strong>Compose with AI</strong> button on the Weekly tab, which rewrites the generated draft in EDR&rsquo;s voice. Only the draft and the sanitised driver one-liners are sent &mdash; never the source profile briefs. <strong>Use a billing-enabled key:</strong> Google&rsquo;s free tier trains on your prompts and has human reviewers; the paid tier does not, and weekly use costs next to nothing. Leave blank to hide the button.</p></td></tr>
@@ -243,6 +258,9 @@ add_action('rest_api_init', function () {
     ));
     register_rest_route('edr/v1', '/confirm/remind', array(
         'methods' => 'POST', 'permission_callback' => 'edr_tb_req_can_edit', 'callback' => 'edr_tb_rest_confirm_remind',
+    ));
+    register_rest_route('edr/v1', '/vc', array(
+        'methods' => 'POST', 'permission_callback' => 'edr_tb_req_can_edit', 'callback' => 'edr_tb_rest_vc',
     ));
     register_rest_route('edr/v1', '/avail/prune', array(
         'methods' => 'POST', 'permission_callback' => 'edr_tb_req_can_edit', 'callback' => 'edr_tb_rest_avail_prune',
@@ -1153,6 +1171,7 @@ function edr_tb_rest_avail_get() {
         'seen'   => empty($seen) ? new stdClass() : $seen,   // {ev: {name: {at, n}}} — last submission
         'confirm'       => (object) get_option('edr_tb_confirm', array()),          // {ev: {name: {st, sig, cant, at}}}
         'confirmPosted' => (object) get_option('edr_tb_confirm_posted', array()),   // {ev: {d4: ts, d2: ts}}
+        'vc'            => edr_tb_vc_public(),                                         // car voice channels: state for the admin box
     ));
 }
 
@@ -1441,6 +1460,238 @@ add_action('init', function () {
     if (!wp_next_scheduled('edr_tb_confirm_tick')) wp_schedule_event(time() + 300, 'hourly', 'edr_tb_confirm_tick');
 });
 register_deactivation_hook(__FILE__, function () { wp_clear_scheduled_hook('edr_tb_confirm_tick'); });
+
+/* ----------------------------------------------------------------
+ * Car voice channels (2.6.0)
+ *
+ * The day before an endurance race the bot makes one voice channel per car inside the team's
+ * "Racing Preparation and Events" category, posts that car's stints in the channel's built-in
+ * chat, reposts them if they change, and deletes the channels after the race. Needs a bot token:
+ * webhooks can post but cannot create or delete channels. What to post comes from the plan
+ * (plan.channels, written by the admin's browser on save: car names, drivers, stint times).
+ * State per event lives in edr_tb_vc: {ev: {created, deleted, cat, chans: {carKey: {id, name, hash}}, err}}.
+ * ---------------------------------------------------------------- */
+define('EDR_TB_VC_BEFORE', DAY_IN_SECONDS);        // create this long before the first car starts
+define('EDR_TB_VC_AFTER',  12 * HOUR_IN_SECONDS);  // delete this long after the last car finishes
+define('EDR_TB_VC_CATEGORY', 'Racing Preparation and Events');
+
+function edr_tb_discord_api($method, $path, $body = null) {
+    $s = edr_tb_settings();
+    if (empty($s['discord_bot_token'])) return new WP_Error('no_bot', 'Set the Discord bot token in plugin Settings first.', array('status' => 400));
+    $args = array(
+        'method'  => $method,
+        'timeout' => 20,
+        'headers' => array(
+            'Authorization' => 'Bot ' . $s['discord_bot_token'],
+            'Content-Type'  => 'application/json',
+            'User-Agent'    => 'DiscordBot (https://endurotechracing.com, ' . EDR_TB_VER . ')',
+        ),
+    );
+    if ($body !== null) $args['body'] = wp_json_encode($body);
+    $res = wp_remote_request('https://discord.com/api/v10' . $path, $args);
+    if (is_wp_error($res)) return new WP_Error('discord', 'Discord: ' . $res->get_error_message(), array('status' => 502));
+    $code = wp_remote_retrieve_response_code($res);
+    $json = json_decode((string) wp_remote_retrieve_body($res), true);
+    if ($code === 404 && $method === 'DELETE') return array();   // already gone
+    if ($code < 200 || $code >= 300) {
+        $why = is_array($json) && isset($json['message']) ? $json['message'] : 'HTTP ' . $code;
+        if ($code === 401) $why = 'the bot token is wrong';
+        if ($code === 403) $why = 'the bot is missing a permission (View Channels, Manage Channels, Send Messages) in that category';
+        return new WP_Error('discord', 'Discord refused: ' . $why, array('status' => 502));
+    }
+    return is_array($json) ? $json : array();
+}
+
+/** The category to create in: the configured ID, else the one named EDR_TB_VC_CATEGORY. */
+function edr_tb_vc_category() {
+    $s = edr_tb_settings();
+    if (!empty($s['discord_category_id'])) return $s['discord_category_id'];
+    if (empty($s['discord_guild_id'])) return new WP_Error('no_guild', 'Set the Discord server ID in plugin Settings first.', array('status' => 400));
+    $chans = edr_tb_discord_api('GET', '/guilds/' . $s['discord_guild_id'] . '/channels');
+    if (is_wp_error($chans)) return $chans;
+    foreach ($chans as $c) {
+        if (intval($c['type'] ?? -1) === 4 && strcasecmp(trim((string) $c['name']), EDR_TB_VC_CATEGORY) === 0) return (string) $c['id'];
+    }
+    return new WP_Error('no_category', 'Could not find the "' . EDR_TB_VC_CATEGORY . '" category — set its ID in plugin Settings.', array('status' => 404));
+}
+
+/** One car's chat post. Discord <t:…> stamps show every reader their own local time. */
+function edr_tb_vc_text($car, $ch) {
+    $t = function ($ms, $f) { return '<t:' . intval(intval($ms) / 1000) . ':' . $f . '>'; };
+    $stints = (array) ($car['stints'] ?? array());
+    $lines = array('🏁 **' . ($ch['name'] ?? 'Endurance race') . '** — **' . ($car['name'] ?? 'Car') . '**'
+        . (!empty($car['cls']) ? ' (' . $car['cls'] . ')' : ''));
+    if (!empty($car['drivers'])) $lines[] = 'Drivers: ' . implode(', ', (array) $car['drivers']);
+    if ($stints) $lines[] = 'Race start ' . $t($stints[0]['s'], 'F');
+    $lines[] = '';
+    $lines[] = '**Stints** (shown in your own time)';
+    foreach ($stints as $st) {
+        $lines[] = intval($st['n']) . ' · ' . ((string) ($st['d'] ?? '') !== '' ? $st['d'] : '—') . ' · '
+            . $t($st['s'], 't') . '–' . $t($st['e'], 't') . (!empty($st['wx']) ? ' ' . $st['wx'] : '');
+    }
+    $lines[] = '';
+    $lines[] = 'Can\'t make a stint? ' . (!empty($ch['swap']) ? $ch['swap'] : 'Message Thomaz on Discord — @tomhernandes');
+    return implode("\n", $lines);
+}
+
+function edr_tb_vc_post($channelId, $text) {
+    foreach (edr_tb_discord_chunks($text) as $i => $chunk) {
+        if ($i) sleep(1);
+        $r = edr_tb_discord_api('POST', '/channels/' . $channelId . '/messages', array('content' => $chunk, 'allowed_mentions' => array('parse' => array())));
+        if (is_wp_error($r)) return $r;
+    }
+    return true;
+}
+
+function edr_tb_vc_state_get($ev) { $all = (array) get_option('edr_tb_vc', array()); return isset($all[$ev]) ? (array) $all[$ev] : array(); }
+function edr_tb_vc_state_put($ev, $st) {
+    $all = (array) get_option('edr_tb_vc', array());
+    $all[$ev] = $st;
+    // only the last few events are worth remembering
+    if (count($all) > 10) $all = array_slice($all, -10, null, true);
+    update_option('edr_tb_vc', $all, false);
+    edr_tb_bump_avail_rev();   // admin boxes refresh
+}
+function edr_tb_vc_public() {
+    $s = edr_tb_settings();
+    return array('ready' => !empty($s['discord_bot_token']) && (!empty($s['discord_category_id']) || !empty($s['discord_guild_id'])),
+                 'events' => (object) get_option('edr_tb_vc', array()));
+}
+
+/** Create the missing channels for the plan's event and (re)post each car's stints when they changed. */
+function edr_tb_vc_sync($plan) {
+    $ch = (isset($plan['channels']) && is_array($plan['channels'])) ? $plan['channels'] : array();
+    $ev = (string) ($ch['ev'] ?? '');
+    if ($ev === '' || empty($ch['cars'])) return new WP_Error('no_cars', 'No cars in the saved plan yet.', array('status' => 409));
+    $st = edr_tb_vc_state_get($ev);
+    if (!empty($st['deleted'])) return new WP_Error('done', 'The channels for this race were already deleted.', array('status' => 409));
+    $cat = !empty($st['cat']) ? (string) $st['cat'] : edr_tb_vc_category();   // look the category up once per event
+    if (is_wp_error($cat)) { $st['err'] = $cat->get_error_message(); edr_tb_vc_state_put($ev, $st); return $cat; }
+    $s = edr_tb_settings();
+    $guild = $s['discord_guild_id'];
+    if ($guild === '') {   // only the category ID was given: ask Discord which server it is in
+        $c = edr_tb_discord_api('GET', '/channels/' . $cat);
+        if (is_wp_error($c)) return $c;
+        $guild = (string) ($c['guild_id'] ?? '');
+    }
+    $st['cat'] = $cat;
+    $chans = isset($st['chans']) ? (array) $st['chans'] : array();
+    $made = 0; $posted = 0;
+    foreach ((array) $ch['cars'] as $car) {
+        $key = (string) ($car['key'] ?? ''); if ($key === '') continue;
+        $name = substr((string) ($car['name'] ?? 'Car'), 0, 90);
+        if (empty($chans[$key]['id'])) {
+            if ($made) sleep(1);
+            $r = edr_tb_discord_api('POST', '/guilds/' . $guild . '/channels', array('name' => $name, 'type' => 2, 'parent_id' => $cat));
+            if (is_wp_error($r)) { $st['chans'] = $chans; $st['err'] = $r->get_error_message(); edr_tb_vc_state_put($ev, $st); return $r; }
+            $chans[$key] = array('id' => (string) $r['id'], 'name' => $name, 'hash' => '');
+            $made++;
+        }
+        $text = edr_tb_vc_text($car, $ch);
+        $hash = md5($text);
+        if ($chans[$key]['hash'] !== $hash) {
+            $body = ($chans[$key]['hash'] === '' ? '' : "🔄 **Updated stints**\n") . $text;
+            $r = edr_tb_vc_post($chans[$key]['id'], $body);
+            if (is_wp_error($r)) { $st['chans'] = $chans; $st['err'] = $r->get_error_message(); edr_tb_vc_state_put($ev, $st); return $r; }
+            $chans[$key]['hash'] = $hash; $posted++;
+        }
+    }
+    $st['chans'] = $chans;
+    if (empty($st['created'])) $st['created'] = time();
+    $st['err'] = '';
+    edr_tb_vc_state_put($ev, $st);
+    return array('made' => $made, 'posted' => $posted);
+}
+
+function edr_tb_vc_delete($ev) {
+    $st = edr_tb_vc_state_get($ev);
+    $chans = isset($st['chans']) ? (array) $st['chans'] : array();
+    foreach ($chans as $key => $c) {
+        if (empty($c['id'])) continue;
+        $r = edr_tb_discord_api('DELETE', '/channels/' . $c['id']);
+        if (is_wp_error($r)) { $st['err'] = $r->get_error_message(); edr_tb_vc_state_put($ev, $st); return $r; }
+        unset($chans[$key]);
+        sleep(1);
+    }
+    $st['chans'] = $chans; $st['deleted'] = time(); $st['err'] = '';
+    edr_tb_vc_state_put($ev, $st);
+    return true;
+}
+
+/** Race window of the plan's event from its stint times: [first start, last finish] in seconds. */
+function edr_tb_vc_window($plan) {
+    $first = 0; $last = 0;
+    foreach ((array) ($plan['channels']['cars'] ?? array()) as $car) {
+        foreach ((array) ($car['stints'] ?? array()) as $s) {
+            $a = intval($s['s']) / 1000; $b = intval($s['e']) / 1000;
+            if (!$first || $a < $first) $first = $a;
+            if ($b > $last) $last = $b;
+        }
+    }
+    return array($first, $last);
+}
+
+/**
+ * Hourly: inside [first start - 1 day, last finish] keep the channels in sync (create, repost
+ * changed stints); after last finish + 12 h delete them. Line-up and stints must both be locked —
+ * a plan still being shuffled should not open channels. Anything this run made before its plan
+ * moved to another event is still cleaned up once that event is over.
+ */
+add_action('edr_tb_vc_tick', 'edr_tb_vc_run');
+function edr_tb_vc_run() {
+    $pub = edr_tb_vc_public();
+    if (!$pub['ready']) return;
+    $now = time();
+    $plan = (array) get_option('edr_tb_plan', array());
+    $ev = (string) ($plan['channels']['ev'] ?? '');
+    list($first, $last) = edr_tb_vc_window($plan);
+    if ($ev !== '' && $ev === (string) ($plan['evsel'] ?? '') && $first && !empty($plan['teamsLocked']) && !empty($plan['stintsLocked'])
+        && $now >= $first - EDR_TB_VC_BEFORE && $now < $last) {
+        edr_tb_vc_sync($plan);
+    }
+    foreach ((array) get_option('edr_tb_vc', array()) as $k => $st) {
+        $st = (array) $st;
+        if (empty($st['chans']) || !empty($st['deleted'])) continue;
+        $end = ($k === $ev && $last) ? $last : 0;
+        if (!$end) { $parts = explode('|', (string) $k); $end = strtotime(end($parts) . ' +4 days'); }   // an older event: its date + the longest race weekend
+        if ($end && $now >= $end + EDR_TB_VC_AFTER) edr_tb_vc_delete($k);
+    }
+}
+add_action('init', function () {
+    if (!wp_next_scheduled('edr_tb_vc_tick')) wp_schedule_event(time() + 600, 'hourly', 'edr_tb_vc_tick');
+});
+register_deactivation_hook(__FILE__, function () { wp_clear_scheduled_hook('edr_tb_vc_tick'); });
+
+/** Admin: test the bot, create/sync now, or delete now. */
+function edr_tb_rest_vc(WP_REST_Request $req) {
+    $act = (string) $req->get_param('action');
+    $plan = (array) get_option('edr_tb_plan', array());
+    if ($act === 'test') {
+        $cat = edr_tb_vc_category(); if (is_wp_error($cat)) return $cat;
+        $s = edr_tb_settings(); $guild = $s['discord_guild_id'];
+        if ($guild === '') { $c = edr_tb_discord_api('GET', '/channels/' . $cat); if (is_wp_error($c)) return $c; $guild = (string) ($c['guild_id'] ?? ''); }
+        $r = edr_tb_discord_api('POST', '/guilds/' . $guild . '/channels', array('name' => 'EDR test channel', 'type' => 2, 'parent_id' => $cat));
+        if (is_wp_error($r)) return $r;
+        $p = edr_tb_vc_post($r['id'], "🔧 Test from the EDR Team Builder: this voice channel was made by the bot and is deleted again straight away.");
+        sleep(1);
+        $d = edr_tb_discord_api('DELETE', '/channels/' . $r['id']);
+        if (is_wp_error($p)) return $p;
+        if (is_wp_error($d)) return new WP_Error('discord', 'Made the test channel but could not delete it: ' . $d->get_error_message(), array('status' => 502));
+        return rest_ensure_response(array('ok' => true, 'message' => 'Bot works: made a voice channel in the category, posted in its chat, and deleted it.'));
+    }
+    if ($act === 'create') {
+        $r = edr_tb_vc_sync($plan);
+        if (is_wp_error($r)) return $r;
+        return rest_ensure_response(array('ok' => true, 'message' => 'Channels ready: ' . $r['made'] . ' made, ' . $r['posted'] . ' stint posts.'));
+    }
+    if ($act === 'delete') {
+        $ev = (string) ($req->get_param('ev') ?: ($plan['channels']['ev'] ?? ''));
+        $r = edr_tb_vc_delete($ev);
+        if (is_wp_error($r)) return $r;
+        return rest_ensure_response(array('ok' => true, 'message' => 'Channels deleted.'));
+    }
+    return new WP_Error('bad_req', 'Unknown action.', array('status' => 400));
+}
 
 function edr_tb_rest_plan_get() {
     return rest_ensure_response(array(

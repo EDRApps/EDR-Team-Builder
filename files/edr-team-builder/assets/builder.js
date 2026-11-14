@@ -741,6 +741,43 @@ const CF_OPEN_DAYS=4;
 function cfNow(){ return Date.now(); }
 function cfOpensAt(byId){ const cp=confirmPlan(byId); return (cp&&cp.start)?cp.start-CF_OPEN_DAYS*86400000:0; }
 function cfOpen(byId){ const at=cfOpensAt(byId); return !!at && cfNow()>=at; }
+/* ===== Car voice channels =====
+   What the bot posts in each car's Discord voice channel (WP build: plan.channels, used by
+   edr_tb_vc_run). Absolute times so Discord can show every reader their own clock. */
+function vcAction(act){ _vcMsg='Car voice channels run on the live site (WordPress).'; renderContent(); }   /* WP build overrides: POST /vc */
+let VC_STATE={ready:false, events:{}}, _vcMsg='', _vcArm=false;
+function channelPlan(byId){
+  if(!state.evsel) return null;
+  const ev=calEvent(state.evsel), multi=Object.keys(state.teams||{}).length>1;
+  return {ev:state.evsel, name:ev?ev.n:state.evsel.split('|')[0], swap:(state.swapNote||'').trim(),
+    cars:stintCars(byId).map(function(c){
+      const mem={}; c.members.forEach(function(m){ mem[m.id]=m; });
+      return {key:c.key, name:(multi?c.cls+' ':'')+c.label, cls:c.cls, drivers:c.members.map(function(m){ return m.name.split(' ')[0]; }),
+        stints:c.times.map(function(t,i){ const m=mem[c.arr[i]], wx=weatherAt(t.s,c.off,c.win);
+          return {n:i+1, s:WIN_START_MS+t.s*60000, e:WIN_START_MS+t.e*60000, d:m?m.name.split(' ')[0]:'', wx:wx?wx.icon:''}; })};
+    })};
+}
+function renderVcAdmin(byId){
+  if(!isAdmin()) return '';
+  const cp=channelPlan(byId); if(!cp||!cp.cars.length) return '';
+  let first=0, last=0; cp.cars.forEach(function(c){ c.stints.forEach(function(t){ if(!first||t.s<first) first=t.s; if(t.e>last) last=t.e; }); });
+  const st=((VC_STATE||{}).events||{})[cp.ev]||{}, n=Object.keys(st.chans||{}).length, locked=state.teamsLocked&&state.stintsLocked;
+  const line=st.deleted?'<span style="color:var(--dim)">Deleted '+fmtWhen(st.deleted*1000)+'.</span>'
+    :n?'<span style="color:var(--green)">'+n+' channel'+(n===1?'':'s')+' open since '+fmtWhen(st.created*1000)+'</span> · deleted around '+fmtWhen(last+12*3600000)
+    :'Made around '+fmtWhen(first-86400000)+' (the day before) · deleted around '+fmtWhen(last+12*3600000);
+  return '<div class="importbox" style="margin-bottom:16px">'
+    +'<div class="meta" style="text-transform:uppercase;letter-spacing:.04em;margin-bottom:6px">Discord car voice channels · Racing Preparation and Events</div>'
+    +'<div class="meta">'+line+'</div>'
+    +'<div class="meta" style="margin-top:4px">One per car: '+esc(cp.cars.map(function(c){ return c.name; }).join(', '))+'. Each car\'s stints are posted in its chat and reposted if they change.</div>'
+    +(VC_STATE.ready?'':'<div class="meta" style="color:var(--amber);margin-top:4px">Not set up yet: the bot token and server or category ID go in WordPress → Settings → EDR Team Builder.</div>')
+    +(locked||n?'':'<div class="meta" style="color:var(--amber);margin-top:4px">They are only made once the line-up and the stints are both locked.</div>')
+    +(st.err?'<div class="meta" style="color:var(--red);margin-top:4px">Last problem: '+esc(st.err)+'</div>':'')
+    +'<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px">'
+    +'<button class="btn btn-ghost" data-action="vcdo" data-a="test" style="font-size:10px;padding:5px 12px">Test the bot</button>'
+    +'<button class="btn btn-ghost" data-action="vcdo" data-a="create" style="font-size:10px;padding:5px 12px">'+(n?'Repost stints now':'Make channels now')+'</button>'
+    +(n?'<button class="btn btn-ghost" data-action="vcdo" data-a="delete" style="font-size:10px;padding:5px 12px;color:var(--red);border-color:var(--red)">'+(_vcArm?'Tap again to delete':'Delete channels now')+'</button>':'')
+    +'</div>'+(_vcMsg?'<div class="meta" style="margin-top:8px">'+esc(_vcMsg)+'</div>':'')+'</div>';
+}
 function confirmState(name,sig){
   const r=((state.confirmStore||{})[state.evsel]||{})[name];
   if(!r) return {st:'pending'};
@@ -2749,6 +2786,7 @@ function renderStints(byId){
   const classes=Object.keys(state.teams);
   if(!classes.length) return html+'<div class="meta">Hit Generate to build teams first.</div>';
   html+=renderConfirmAdmin(byId);
+  html+=renderVcAdmin(byId);
   const _cfOpen=cfOpen(byId);
   // driver bank — drag any name onto any stint block
   const bankByCls={}; Object.values(byId).forEach(d=>{(bankByCls[d._class]=bankByCls[d._class]||[]).push(d);});
@@ -3049,6 +3087,10 @@ document.getElementById('content').addEventListener('click',e=>{
   if(e.target.dataset.action==='gotoavail'){ state.tab='availability'; setActiveTab(); renderContent(); return; }
   const wz=e.target.closest&&e.target.closest('[data-action="wizstep"]');
   if(wz){ _wizStep=+wz.dataset.step; renderContent(); wizTop(); return; }
+  const vca=e.target.closest&&e.target.closest('[data-action="vcdo"]');
+  if(vca){ if(!isAdmin()) return;
+    if(vca.dataset.a==='delete' && !_vcArm){ _vcArm=true; renderContent(); return; }   /* two taps, never window.confirm (blocked in embedded views) */
+    _vcArm=false; vcAction(vca.dataset.a); return; }
   const cfa=e.target.closest&&e.target.closest('[data-action^="cf"]');
   if(cfa){ const act=cfa.dataset.action;
     if(act==='cfremind'){ if(isAdmin()) sendConfirmReminder(cfa.dataset.stage, !!cfa.dataset.dry); return; }
@@ -3333,6 +3375,13 @@ function sendConfirmReminder(stage,dry){
     renderContent();
   }).catch(function(){ _cfAdminMsg='Could not reach the server.'; renderContent(); });
 }
+/* admin: car voice channels — test the bot, make/repost now, delete now */
+function vcAction(act){
+  _vcMsg=act==='test'?'Testing the bot…':act==='delete'?'Deleting channels…':'Making channels…'; renderContent();
+  apiPOST('vc',{action:act}).then(function(j){ _vcMsg=(j&&j.message)||'Could not reach the server.'; pullAvail().then(renderContent); })
+    .catch(function(){ _vcMsg='Could not reach the server.'; renderContent(); });
+}
+function _channelsForPlan(){ try{ return channelPlan(modelById()); }catch(e){ return null; } }
 /* the plan carries what the reminders check confirmations against (see edr_tb_confirm_run) */
 function _confirmForPlan(){ try{ return confirmPlan(modelById()); }catch(e){ return null; } }
 /* Admin tidy-up: drop availability for events that finished long ago. This is the only way the
@@ -3496,7 +3545,7 @@ function releaseLock(name){
   }).catch(function(){});
 }
 let lastTrackIds=[], lastTrackEv=null, _saveT=null;
-function serializePlan(){ return {confirm:_confirmForPlan(),drivers:state.drivers,w:state.w,proPct:state.proPct,teams:state.teams,stint:state.stint,stintAssign:state.stintAssign,stintWin:state.stintWin,stintSig:state.stintSig,overrides:overrides,meta:IMPORT_META,winStart:WIN_START_MS,startOffsets:START_OFFSETS,startLabels:START_LABELS,matches:lastMatches,trackIds:lastTrackIds,trackEv:lastTrackEv,paceAt:_planPaceAt,evsel:state.evsel,evWinMin:EV_WIN_MIN,evTiming:state.evTiming,teamsLocked:state.teamsLocked,stintsLocked:state.stintsLocked,teamNames:state.teamNames,fuelCfg:state.fuelCfg,customEvents:state.customEvents,irEvents:state.irEvents,evWeather:state.evWeather,swapNote:state.swapNote,excluded:state.excluded}; }
+function serializePlan(){ return {confirm:_confirmForPlan(),channels:_channelsForPlan(),drivers:state.drivers,w:state.w,proPct:state.proPct,teams:state.teams,stint:state.stint,stintAssign:state.stintAssign,stintWin:state.stintWin,stintSig:state.stintSig,overrides:overrides,meta:IMPORT_META,winStart:WIN_START_MS,startOffsets:START_OFFSETS,startLabels:START_LABELS,matches:lastMatches,trackIds:lastTrackIds,trackEv:lastTrackEv,paceAt:_planPaceAt,evsel:state.evsel,evWinMin:EV_WIN_MIN,evTiming:state.evTiming,teamsLocked:state.teamsLocked,stintsLocked:state.stintsLocked,teamNames:state.teamNames,fuelCfg:state.fuelCfg,customEvents:state.customEvents,irEvents:state.irEvents,evWeather:state.evWeather,swapNote:state.swapNote,excluded:state.excluded}; }
 var _postBusy=false, _postAgain=false;
 function _flushPlan(){
   if(_postBusy){ _postAgain=true; return; }              // serialize: the retry below re-posts the LATEST state with the updated rev
@@ -3570,6 +3619,7 @@ function pullAvail(){
       if(av.seen) AV_SEEN=av.seen;
       if(av.confirm) state.confirmStore=av.confirm;
       if(av.confirmPosted) CONFIRM_POSTED=av.confirmPosted;
+      if(av.vc) VC_STATE=av.vc;
       LOCKED_NAMES=av.locked||[];
     }
   }).catch(function(){});
@@ -3909,7 +3959,7 @@ async function bootSetup(){
   if(state.evsel){ var _bev=calEvent(state.evsel); if(_bev){ var _br=state.stint.race; applyEventTiming(_bev); if(_br>0) state.stint.race=_br; } }  // rebuild timing globals from the restored event (don't trust persisted globals)
   try{
     const av=await apiGET('avail');
-    if(av&&av.store){ state.availStore=av.store; LOCKED_NAMES=av.locked||[]; if(av.prefs)state.prefStore=av.prefs; if(av.seen)AV_SEEN=av.seen; if(av.confirm)state.confirmStore=av.confirm; if(av.confirmPosted)CONFIRM_POSTED=av.confirmPosted; }
+    if(av&&av.store){ state.availStore=av.store; LOCKED_NAMES=av.locked||[]; if(av.prefs)state.prefStore=av.prefs; if(av.seen)AV_SEEN=av.seen; if(av.confirm)state.confirmStore=av.confirm; if(av.confirmPosted)CONFIRM_POSTED=av.confirmPosted; if(av.vc)VC_STATE=av.vc; }
     else if(av&&typeof av==='object'&&!Array.isArray(av)) state.availStore=av;  /* pre-2.1.4 server shape */
   }catch(e){}
   try{ const tr=await apiGET('roster');

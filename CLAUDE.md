@@ -98,6 +98,14 @@ driver-facing how-to, including the swap contact (2.4.8). Key facts:
   (`confirmPlan()`: per-driver sig, earliest start); the hourly `edr_tb_confirm_tick` cron posts the
   4-day and 2-day Discord reminders to the `confirm_webhook` setting, once each per event, and only
   with line-up and stints both locked. Admin Preview/Send buttons hit `POST /confirm/remind`.
+- **Car voice channels (2.6.0)**: a Discord **bot** (settings `discord_bot_token`, `discord_guild_id`,
+  `discord_category_id`; category falls back to the one named "Racing Preparation and Events")
+  makes one voice channel per car from 24 h before the first start, posts each car's stints in the
+  channel's chat (Discord `<t:…>` stamps, reposted with "Updated stints" when the text hash moves),
+  and deletes them 12 h after the last finish. Hourly `edr_tb_vc_tick`; line-up and stints must be
+  locked. Data comes from `plan.channels` (`channelPlan()`, written on admin save); state per event
+  in `edr_tb_vc`. Admin box on the Stints tab → `POST /vc` (`test` / `create` / `delete`; delete
+  is two taps, never `window.confirm`).
 
 - **Events** come from the `CAL_EVENTS` array in the HTML (shared by both builds — edit it there).
   Each event can carry `winStart/winMin/raceMin/offsets/labels` (Spa has the survey-accurate set),
