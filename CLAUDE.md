@@ -72,11 +72,11 @@ poll at all while the tab is hidden, check immediately on focus, and back off to
 repeated failure. Availability writes bump `edr_tb_avail_rev`, so a driver submitting blocks
 lands on everyone else's screen within ~20s.
 
-Garage 61 pace is **warmed on a schedule, never auto-applied**: the heartbeat queues a
-background `wp_schedule_single_event` pull when the cache is stale (hourly within 10 days of the
-selected event, daily otherwise, transient-debounced), and `POST /import` serves that cache when
-it matches the tracks. Auto-applying pace would silently reshuffle a settled line-up, so the
-admin still presses Import. Details in the plugin's [CLAUDE.md](files/edr-team-builder/CLAUDE.md).
+Garage 61 pace is **warmed hourly on a schedule and merged in by itself** (2.6.2): an hourly
+cron refreshes the track set anyone viewed in the last 14 days, pulling **both** EDR teams one
+page at a time around Garage 61's ~1 request/100 s `/laps` limit, and open pages fold it in with
+`mergePace()` (pace only, never reshuffling the line-up). Import remains as a manual override.
+Details in the plugin's [CLAUDE.md](files/edr-team-builder/CLAUDE.md).
 
 ## Team Builder workflow & roles (v2.4)
 

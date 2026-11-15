@@ -381,16 +381,20 @@ function save(){
   clearTimeout(_saveT); _saveT=setTimeout(function(){ _saveT=null; _flushPlan(); }, 600);
 }
 var PLAN_REV=0;
-var PACE_AT=0, PACE_ERR='';   /* Garage 61 pace cache: unix seconds, and why the last refresh failed */
+var PACE_AT=0, PACE_ERR='', PACE_PENDING=false;   /* Garage 61 pace cache: unix seconds, why the last refresh failed, and whether one is mid-way through its pages */
 function paceAgeLabel(){
   if(PACE_ERR) return 'pace refresh failed — '+PACE_ERR;
+  if(PACE_PENDING) return 'pulling the latest pace from Garage 61…'+(PACE_AT?' (last one '+paceAgeLabel_(PACE_AT)+')':'');
   if(!PACE_AT) return 'pace not pulled yet';
-  var mins=Math.max(0, Math.round((Date.now()/1000-PACE_AT)/60));
-  if(mins<2) return 'pace refreshed just now';
-  if(mins<60) return 'pace refreshed '+mins+' minutes ago';
+  return 'pace '+paceAgeLabel_(PACE_AT);
+}
+function paceAgeLabel_(at){
+  var mins=Math.max(0, Math.round((Date.now()/1000-at)/60));
+  if(mins<2) return 'refreshed just now';
+  if(mins<60) return 'refreshed '+mins+' minutes ago';
   var hrs=Math.round(mins/60);
-  if(hrs<24) return 'pace refreshed '+hrs+' hour'+(hrs===1?'':'s')+' ago';
-  var d=Math.round(hrs/24); return 'pace refreshed '+d+' day'+(d===1?'':'s')+' ago';
+  if(hrs<24) return 'refreshed '+hrs+' hour'+(hrs===1?'':'s')+' ago';
+  var d=Math.round(hrs/24); return 'refreshed '+d+' day'+(d===1?'':'s')+' ago';
 }
 function _adoptPlan(p, keepEvsel){
   var _localEv=keepEvsel?state.evsel:null;
@@ -676,6 +680,9 @@ async function doImport(trackIds){
   try{
     const payload=await apiPOST('import',{trackIds:trackIds});
     if(payload.code){ setSetupMsg('Error: '+(payload.message||payload.code)); return; }
+    /* the pull continues in the background; it lands through /rev + pullPace (mergePace), which
+       keeps the line-up, instead of applyImport */
+    if(payload.pending){ PACE_PENDING=true; setSetupMsg(payload.message||'Pace is on its way from Garage 61.'); state.tab='setup'; setActiveTab(); renderContent(); _revNow(); return; }
     lastPayload=payload;
     applyImport(payload);
     setSetupMsg('Imported pace for '+state.drivers.length+' drivers.');
@@ -823,7 +830,7 @@ function _revTick(){
       var moved=(!first) && (j.plan!==_revSeen.plan || j.avail!==_revSeen.avail);
       var planMoved=(!first) && j.plan!==_revSeen.plan;
       _revSeen.plan=j.plan; _revSeen.avail=j.avail;
-      PACE_AT=j.paceAt||0; PACE_ERR=j.paceErr||'';
+      PACE_AT=j.paceAt||0; PACE_ERR=j.paceErr||''; PACE_PENDING=!!j.pacePending;
       /* an availability-only move used to go through refreshShared, which returns early when the
          plan revision has not changed — so another driver's submit never reached open tabs */
       if(moved && planMoved) refreshShared();       // refreshShared has its own edit-in-progress guard

@@ -5,25 +5,42 @@ if (!defined('ABSPATH')) exit;
 
 define('EDR_G61_BASE', 'https://garage61.net/api/v1');
 
+/* One page of a paged endpoint. Garage 61 meters /laps with a token bucket that refills at
+   roughly one request per 100 s, so a pull that needs a second page usually cannot have it
+   straight away: the caller stores where it got to and comes back after `wait` seconds
+   (Garage 61 sends Retry-After on every response, 200s included). A 429 is a wait, not a
+   failure, and comes back as code `g61_busy` with the wait in its data. */
+function edr_g61_get_page($path, $params, $offset, $token) {
+    $q = array_merge($params, array('limit' => 1000, 'offset' => intval($offset)));
+    $res = wp_remote_get(EDR_G61_BASE . $path . '?' . http_build_query($q), array(
+        'timeout' => 45,
+        'headers' => array('Authorization' => 'Bearer ' . $token, 'Accept' => 'application/json'),
+    ));
+    if (is_wp_error($res)) return $res;
+    $code = wp_remote_retrieve_response_code($res);
+    $wait = (int) ceil(floatval(wp_remote_retrieve_header($res, 'retry-after')));
+    if ($code === 429) return new WP_Error('g61_busy', 'Garage 61 is rate-limiting requests', array('status' => 503, 'wait' => max(30, $wait ?: 100)));
+    if ($code === 401 || $code === 403) return new WP_Error('g61_http', 'Garage 61 returned ' . $code . '. Check the token / its driving_data scope.', array('status' => 502));
+    if ($code !== 200) return new WP_Error('g61_http', 'Garage 61 returned ' . $code . '.', array('status' => 502));
+    $data  = json_decode(wp_remote_retrieve_body($res), true);
+    $batch = isset($data['items']) && is_array($data['items']) ? $data['items'] : array();
+    $total = isset($data['total']) ? intval($data['total']) : intval($offset) + count($batch);
+    $left = wp_remote_retrieve_header($res, 'x-ratelimit-bucket-remaining');
+    return array('items' => $batch, 'total' => $total, 'wait' => max(0, $wait),
+                 'left' => ($left === '' || $left === null) ? null : intval($left));
+}
+
+/* Every page in one go — only for small, unmetered lists (/tracks). Lap pulls go through the
+   resumable pace job instead. */
 function edr_g61_get_paged($path, $params, $token) {
     $items = array();
     $offset = 0;
     do {
-        $q = array_merge($params, array('limit' => 1000, 'offset' => $offset));
-        $url = EDR_G61_BASE . $path . '?' . http_build_query($q);
-        $res = wp_remote_get($url, array(
-            'timeout' => 45,
-            'headers' => array('Authorization' => 'Bearer ' . $token, 'Accept' => 'application/json'),
-        ));
-        if (is_wp_error($res)) return $res;
-        $code = wp_remote_retrieve_response_code($res);
-        if ($code !== 200) return new WP_Error('g61_http', 'Garage 61 returned ' . $code . '. Check the token / its driving_data scope.', array('status' => 502));
-        $data = json_decode(wp_remote_retrieve_body($res), true);
-        $batch = isset($data['items']) ? $data['items'] : array();
-        $items = array_merge($items, $batch);
-        $total = isset($data['total']) ? intval($data['total']) : count($items);
-        $offset += count($batch);
-    } while (!empty($batch) && $offset < $total);
+        $page = edr_g61_get_page($path, $params, $offset, $token);
+        if (is_wp_error($page)) return $page;
+        $items = array_merge($items, $page['items']);
+        $offset += count($page['items']);
+    } while (!empty($page['items']) && $offset < $page['total']);
     return $items;
 }
 
@@ -250,19 +267,30 @@ function edr_g61_member_ratings_full($token) {
 }
 
 /* Returns [{name: <g61 slug or name>, cars: {carName: {laps, medianLap, cleanPct}}, irating}] */
-function edr_g61_roster($token, $trackIds, $teamSlug) {
-    $ratings = edr_g61_member_ratings($token);
-    $laps = edr_g61_get_paged('/laps', array(
-        'tracks'       => implode(',', array_map('intval', $trackIds)),
-        'teams'        => $teamSlug,
-        'unclean'      => 'true',
-        'group'        => 'none',
-        'age'          => '-1',
-    ), $token);
-    if (is_wp_error($laps)) return $laps;
+/* The /laps query for a pace pull. `teams` takes a comma-separated list and Garage 61 dedupes
+   laps shared between the teams itself (verified 15 Nov 2026: Spa 1,084 Pro + 322 Casual − 38
+   shared = 1,368 back). Before 2.6.2 only the Pro team was asked, so Casual-only drivers never
+   had pace. */
+function edr_g61_lap_params($trackIds, $teams) {
+    return array(
+        'tracks'  => implode(',', array_map('intval', $trackIds)),
+        'teams'   => $teams,
+        'unclean' => 'true',
+        'group'   => 'none',
+        'age'     => '-1',
+    );
+}
 
-    $bucket = array(); // name => car => ['clean'=>[], 'total'=>int]
+/* Fold a page of laps into the running tally: name => car => {clean: [s], total, last}.
+   `$seen` holds lap ids, because pages are fetched minutes apart and a lap recorded in between
+   shifts the offsets — the next page can repeat the tail of the last one. */
+function edr_g61_bucket_add(&$bucket, &$seen, $laps) {
     foreach ($laps as $lap) {
+        if (!is_array($lap)) continue;
+        if (!empty($lap['id'])) {
+            if (isset($seen[$lap['id']])) continue;
+            $seen[$lap['id']] = 1;
+        }
         $drv = isset($lap['driver']) && is_array($lap['driver']) ? $lap['driver'] : array();
         // display name from firstName+lastName (project convention) — the API's `name`
         // field is usually empty, and when set it is the raw iRacing name with a digit
@@ -279,7 +307,12 @@ function edr_g61_roster($token, $trackIds, $teamSlug) {
         // most recent outing per car (ISO strings compare lexicographically) — drives the default car pick
         if (!empty($lap['startTime']) && strcmp((string) $lap['startTime'], $bucket[$name][$car]['last']) > 0) $bucket[$name][$car]['last'] = (string) $lap['startTime'];
     }
+}
 
+/* The tally as the roster the builder imports: [{name, cars:{car:{laps, medianLap, cleanPct,
+   lastDriven}}, irating}]. */
+function edr_g61_bucket_roster($bucket, $token) {
+    $ratings = edr_g61_member_ratings($token);
     $roster = array();
     ksort($bucket);
     foreach ($bucket as $name => $cars) {

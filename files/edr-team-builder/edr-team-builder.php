@@ -2,7 +2,7 @@
 /**
  * Plugin Name: EDR Team Builder
  * Description: Endurotech Racing endurance team + stint planner. Pulls Garage 61 pace and official iRacing session times, collects driver availability in-house, and builds Pro/Casual teams and stint rotations. Add the [edr_team_builder] shortcode to a page.
- * Version: 2.6.1
+ * Version: 2.6.2
  * Author: Endurotech Racing
  * License: GPL-2.0-or-later
  */
@@ -11,7 +11,7 @@ if (!defined('ABSPATH')) exit; // no direct access
 
 define('EDR_TB_DIR', plugin_dir_path(__FILE__));
 define('EDR_TB_URL', plugin_dir_url(__FILE__));
-define('EDR_TB_VER', '2.6.1');
+define('EDR_TB_VER', '2.6.2');
 
 require_once EDR_TB_DIR . 'includes/garage61.php';
 require_once EDR_TB_DIR . 'includes/iracing.php';
@@ -24,7 +24,7 @@ require_once EDR_TB_DIR . 'includes/history.php';
 function edr_tb_settings() {
     return wp_parse_args(get_option('edr_tb_settings', array()), array(
         'g61_token'   => '',
-        'team_slug'   => 'edr-endurotech',
+        'team_slug'   => 'edr-endurotech,edr-endurotech-casual',
         'edit_pass'   => '',
         'iracing_url' => '',
         'iracing_key' => '',
@@ -154,7 +154,7 @@ add_action('admin_init', function () {
     register_setting('edr_tb', 'edr_tb_settings', function ($in) {
         return array(
             'g61_token'   => sanitize_text_field($in['g61_token'] ?? ''),
-            'team_slug'   => sanitize_text_field($in['team_slug'] ?? 'edr-endurotech'),
+            'team_slug'   => sanitize_text_field($in['team_slug'] ?? 'edr-endurotech,edr-endurotech-casual'),
             'edit_pass'   => sanitize_text_field($in['edit_pass'] ?? ''),
             'iracing_url' => esc_url_raw($in['iracing_url'] ?? ''),
             'iracing_key' => sanitize_text_field($in['iracing_key'] ?? ''),
@@ -182,8 +182,9 @@ function edr_tb_settings_page() {
           <tr><th scope="row">Garage 61 API token</th>
             <td><input type="text" name="edr_tb_settings[g61_token]" value="<?php echo esc_attr($s['g61_token']); ?>" class="regular-text" autocomplete="off">
             <p class="description">Garage 61 &rarr; My applications &rarr; API key (needs <code>driving_data</code>).</p></td></tr>
-          <tr><th scope="row">Garage 61 team slug</th>
-            <td><input type="text" name="edr_tb_settings[team_slug]" value="<?php echo esc_attr($s['team_slug']); ?>" class="regular-text"></td></tr>
+          <tr><th scope="row">Garage 61 team slugs</th>
+            <td><input type="text" name="edr_tb_settings[team_slug]" value="<?php echo esc_attr($s['team_slug']); ?>" class="regular-text">
+            <p class="description">Comma-separated. Pace is pulled from every team listed, so both the Pro and the Casual team belong here.</p></td></tr>
           <tr><th scope="row">Builder admin password</th>
             <td><input type="text" name="edr_tb_settings[edit_pass]" value="<?php echo esc_attr($s['edit_pass']); ?>" class="regular-text" autocomplete="off">
             <p class="description">Whoever knows this password can unlock admin mode in the builder (edit Drivers / Teams / Stints and run imports) without a WordPress account. Leave empty to require WordPress login.</p></td></tr>
@@ -1083,14 +1084,20 @@ function edr_tb_rest_rev(WP_REST_Request $req) {
     // the viewer's selected event sends its Garage 61 tracks; older clients send none, so fall
     // back to whatever was imported last (the pre-2.4.39 behaviour)
     $tracks = edr_tb_pace_tracks_clean((string) $req->get_param('tracks'));
+    // only a set a page actually asked for is kept warm hourly; the last-import fallback below
+    // can be a long-finished event's track
+    if ($tracks) edr_tb_pace_want($tracks);
     if (!$tracks) $tracks = edr_tb_pace_tracks_clean(get_option('edr_tb_pace_tracks', array()));
     $pace = edr_tb_pace_get($tracks);
     edr_tb_maybe_schedule_pace($req->get_param('ev'), $tracks);
+    $pending = edr_tb_pace_pending($tracks);
     return rest_ensure_response(array(
         'plan'    => intval(get_option('edr_tb_plan_rev', 0)),
         'avail'   => intval(get_option('edr_tb_avail_rev', 0)),
         'paceAt'  => isset($pace['at']) ? intval($pace['at']) : 0,
-        'paceErr' => isset($pace['err']) ? (string) $pace['err'] : '',
+        // a pull still working through its pages is not a failure, whatever the last one said
+        'paceErr' => (!$pending && isset($pace['err'])) ? (string) $pace['err'] : '',
+        'pacePending' => $pending,
         'paceKey' => edr_tb_pace_key($tracks),
         'recapAt' => intval((array) get_option('edr_tb_recap', array()) ? (get_option('edr_tb_recap')['at'] ?? 0) : 0),
         'recapRunning' => (bool) get_transient('edr_tb_recap_running'),
@@ -1115,6 +1122,7 @@ function edr_tb_maybe_schedule_pace($ev = '', $tracks = array()) {
     // this public route) — the old single-slot cache had exactly this ceiling
     $qkey = 'edr_tb_pace_q_' . md5(edr_tb_pace_key($tracks));
     if (get_transient($qkey) || get_transient('edr_tb_pace_queued')) return;
+    if (edr_tb_pace_pending()) return;          // a pull is between pages; it reschedules itself
 
     $pace = edr_tb_pace_get($tracks);
     $age  = time() - (isset($pace['at']) ? intval($pace['at']) : 0);
@@ -1135,30 +1143,158 @@ function edr_tb_maybe_schedule_pace($ev = '', $tracks = array()) {
     wp_schedule_single_event(time(), 'edr_tb_pace_refresh', array($tracks));
 }
 
+/* Garage 61 teams to pull pace from, as the comma list /laps takes. A site still holding the
+   pre-2.6.2 default (Pro only) gets the Casual team added: that default is why Casual-only
+   drivers had no pace. A deliberately different setting is left as it is. */
+function edr_tb_team_slugs() {
+    $s = edr_tb_settings();
+    $list = array_values(array_filter(array_map('trim', explode(',', (string) $s['team_slug']))));
+    if (!$list) $list = array('edr-endurotech');
+    if ($list === array('edr-endurotech')) $list[] = 'edr-endurotech-casual';
+    return implode(',', array_unique($list));
+}
+
+/* The pace pull is a resumable job. Garage 61's /laps bucket refills at about one request per
+   100 s, and Spa alone is two pages (~1,400 laps), so pulling every page in one go got the
+   second page refused and threw the whole pull away — which is how pace sat a day old while
+   the error blamed the token. Now each run takes one page, folds it into the job's tally
+   (edr_tb_pace_job, one job site-wide) and schedules the next run after Garage 61's
+   Retry-After. Only a finished pull replaces the cache, so viewers keep the last complete pace
+   meanwhile; a refusal just waits, up to EDR_TB_PACE_TRIES in a row. */
+define('EDR_TB_PACE_TRIES', 8);
+define('EDR_TB_PACE_JOB_STALE', 30 * MINUTE_IN_SECONDS);   // untouched this long = abandoned
+
+function edr_tb_pace_job() {
+    $job = get_option('edr_tb_pace_job', array());
+    if (!is_array($job) || empty($job['key'])) return array();
+    if (time() - intval($job['touched'] ?? 0) > EDR_TB_PACE_JOB_STALE) return array();
+    return $job;
+}
+/** A pull is part-way through its pages (for these tracks, or for any when none are given). */
+function edr_tb_pace_pending($tracks = null) {
+    $job = edr_tb_pace_job();
+    if (!$job) return false;
+    return $tracks === null || $job['key'] === edr_tb_pace_key($tracks);
+}
+
+function edr_tb_pace_fail($tracks, $msg) {
+    $prev = edr_tb_pace_get($tracks);
+    $prev['err'] = $msg;
+    $prev['tracks'] = edr_tb_pace_tracks_clean($tracks);
+    edr_tb_pace_put($tracks, $prev);
+}
+
+/**
+ * Advance the pull for $tracks by up to $pages pages.
+ * Returns the finished roster, 'pending' (more pages to come; the next run is scheduled),
+ * 'busy' (another run holds the lock) or a WP_Error.
+ */
+function edr_tb_pace_step($tracks, $pages = 1) {
+    $s = edr_tb_settings();
+    if (empty($s['g61_token'])) return new WP_Error('no_creds', 'Set the Garage 61 token in plugin settings.', array('status' => 400));
+    $tracks = edr_tb_pace_tracks_clean($tracks);
+    if (!$tracks) return new WP_Error('no_track', 'Pick a track first.', array('status' => 400));
+    $key = edr_tb_pace_key($tracks);
+    if (get_transient('edr_tb_pace_lock')) return 'busy';
+    set_transient('edr_tb_pace_lock', 1, 2 * MINUTE_IN_SECONDS);
+
+    $job = edr_tb_pace_job();
+    if (!$job || $job['key'] !== $key) {
+        // a newer request for other tracks replaces an unfinished pull; that one restarts on its next turn
+        $job = array('key' => $key, 'tracks' => $tracks, 'teams' => edr_tb_team_slugs(), 'offset' => 0,
+                     'bucket' => array(), 'seen' => array(), 'tries' => 0, 'started' => time());
+    }
+    $params = edr_g61_lap_params($tracks, $job['teams']);
+    $wait = 0;
+    $left = null;
+    $done = false;
+    for ($i = 0; $i < max(1, intval($pages)); $i++) {
+        if ($i > 0 && $left !== null && $left < 1) break;   // bucket empty: leave the rest to the scheduled run
+        if ($i > 0 && $left === null && $wait > 2) break;
+        $page = edr_g61_get_page('/laps', $params, $job['offset'], $s['g61_token']);
+        if (is_wp_error($page)) {
+            if ($page->get_error_code() !== 'g61_busy') {
+                delete_option('edr_tb_pace_job');
+                delete_transient('edr_tb_pace_lock');
+                edr_tb_pace_fail($tracks, $page->get_error_message());
+                return $page;
+            }
+            $job['tries'] = intval($job['tries']) + 1;
+            if ($job['tries'] >= EDR_TB_PACE_TRIES) {
+                delete_option('edr_tb_pace_job');
+                delete_transient('edr_tb_pace_lock');
+                $msg = 'Garage 61 kept rate-limiting the pull; it tries again within the hour.';
+                edr_tb_pace_fail($tracks, $msg);
+                return new WP_Error('g61_busy', $msg, array('status' => 503));
+            }
+            $d = $page->get_error_data();
+            $wait = intval(is_array($d) && isset($d['wait']) ? $d['wait'] : 100);
+            break;
+        }
+        $job['tries'] = 0;
+        edr_g61_bucket_add($job['bucket'], $job['seen'], $page['items']);
+        $job['offset'] += count($page['items']);
+        $wait = intval($page['wait']);
+        $left = $page['left'];
+        if (empty($page['items']) || $job['offset'] >= $page['total']) { $done = true; break; }
+    }
+
+    if ($done) {
+        $roster = edr_g61_bucket_roster($job['bucket'], $s['g61_token']);
+        edr_tb_pace_put($tracks, array('at' => time(), 'tracks' => $tracks, 'roster' => $roster, 'err' => ''));
+        delete_option('edr_tb_pace_job');
+        delete_transient('edr_tb_pace_q_' . md5($key));
+        delete_transient('edr_tb_pace_lock');
+        return $roster;
+    }
+    $job['touched'] = time();
+    update_option('edr_tb_pace_job', $job, false);
+    delete_transient('edr_tb_pace_lock');
+    wp_schedule_single_event(time() + min(600, max(5, $wait)) + 2, 'edr_tb_pace_refresh', array($tracks));
+    return 'pending';
+}
+
 /* The background job itself. Failures are recorded rather than thrown away, so the Setup tab
    can say why the pace is old instead of just showing a stale timestamp. */
 add_action('edr_tb_pace_refresh', 'edr_tb_do_pace_refresh', 10, 1);
 function edr_tb_do_pace_refresh($tracks) {
-    $s = edr_tb_settings();
-    if (empty($s['g61_token'])) return;
-    $tracks = edr_tb_pace_tracks_clean($tracks);
-    if (!$tracks) return;
-    $roster = edr_g61_roster($s['g61_token'], $tracks, ($s['team_slug'] ?: 'edr-endurotech'));
-    if (is_wp_error($roster)) {
-        $prev = edr_tb_pace_get($tracks);
-        $prev['err'] = $roster->get_error_message();
-        $prev['tracks'] = $tracks;
-        edr_tb_pace_put($tracks, $prev);
-        return;
-    }
-    edr_tb_pace_put($tracks, array(
-        'at'     => time(),
-        'tracks' => $tracks,
-        'roster' => $roster,
-        'err'    => '',
-    ));
-    delete_transient('edr_tb_pace_q_' . md5(edr_tb_pace_key($tracks)));
+    $r = edr_tb_pace_step($tracks, 1);
+    // another run held the lock: try again shortly rather than dropping this turn
+    if ($r === 'busy') wp_schedule_single_event(time() + 60, 'edr_tb_pace_refresh', array(edr_tb_pace_tracks_clean($tracks)));
 }
+
+/* Keep pace warm on a schedule, not only while someone has the page open, so it is current
+   the moment anyone looks. Every /rev poll records which track set its viewer is on (at most
+   once per 10 minutes per set); the hourly tick refreshes the stalest set seen in the last
+   EDR_TB_PACE_WANT_DAYS whose pace is over ~an hour old, one pull at a time. */
+define('EDR_TB_PACE_WANT_DAYS', 14);
+function edr_tb_pace_want($tracks) {
+    $key = edr_tb_pace_key($tracks);
+    if ($key === '') return;
+    $want = (array) get_option('edr_tb_pace_want', array());
+    if (isset($want[$key]) && time() - intval($want[$key]) < 10 * MINUTE_IN_SECONDS) return;
+    $want[$key] = time();
+    arsort($want);
+    update_option('edr_tb_pace_want', array_slice($want, 0, EDR_TB_PACE_SETS_MAX, true), false);
+}
+add_action('edr_tb_pace_tick', 'edr_tb_pace_tick_run');
+function edr_tb_pace_tick_run() {
+    if (edr_tb_pace_pending()) return;
+    $want = (array) get_option('edr_tb_pace_want', array());
+    $pick = null;
+    $oldest = 55 * MINUTE_IN_SECONDS;            // just under an hour, so an hourly tick never skips one
+    foreach ($want as $key => $seen) {
+        if (time() - intval($seen) > EDR_TB_PACE_WANT_DAYS * DAY_IN_SECONDS) continue;
+        $pace = edr_tb_pace_get($key);
+        $age = time() - intval($pace['at'] ?? 0);
+        if ($age >= $oldest) { $oldest = $age; $pick = $key; }
+    }
+    if ($pick !== null) edr_tb_do_pace_refresh(edr_tb_pace_tracks_clean($pick));
+}
+add_action('init', function () {
+    if (!wp_next_scheduled('edr_tb_pace_tick')) wp_schedule_event(time() + 120, 'hourly', 'edr_tb_pace_tick');
+});
+register_deactivation_hook(__FILE__, function () { wp_clear_scheduled_hook('edr_tb_pace_tick'); });
 
 function edr_tb_rest_avail_get() {
     $all   = get_option('edr_tb_avail', array());
@@ -1749,7 +1885,6 @@ function edr_tb_rest_import(WP_REST_Request $req) {
     if (!$trackIds) return new WP_Error('no_track', 'Pick a track first.', array('status' => 400));
     // an empty team slug would silently drop the teams= filter and return only the
     // key owner's laps ("only Sam Millar") — always fall back to the team default
-    $teamSlug = sanitize_text_field($req->get_param('teamSlug') ?: ($s['team_slug'] ?: 'edr-endurotech'));
 
     // remember what to keep warm in the background from now on
     update_option('edr_tb_pace_tracks', array_values($trackIds), false);
@@ -1768,11 +1903,16 @@ function edr_tb_rest_import(WP_REST_Request $req) {
     }
 
     // pure Garage 61 pace pull; availability is collected in-house (Availability tab)
-    $roster = edr_g61_roster($s['g61_token'], $trackIds, $teamSlug);   // [{name, cars}]
+    // up to two pages while the admin waits (the bucket usually allows that much); anything
+    // left continues in the background and reaches open pages through /rev like any refresh
+    $roster = edr_tb_pace_step($trackIds, 2);   // [{name, cars}]
     if (is_wp_error($roster)) return $roster;
-    edr_tb_pace_put($trackIds, array(
-        'at' => time(), 'tracks' => edr_tb_pace_tracks_clean($trackIds), 'roster' => $roster, 'err' => '',
-    ));
+    if (!is_array($roster)) {
+        return rest_ensure_response(array(
+            'pending' => true,
+            'message' => 'Garage 61 only allows a few requests at a time, so the rest of the pace is on its way. It appears here by itself in a few minutes.',
+        ));
+    }
     return rest_ensure_response(array(
         'roster' => $roster, 'needs_availability' => false, 'cached' => false, 'at' => time(),
     ));

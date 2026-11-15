@@ -231,6 +231,10 @@ function esc(s){ return String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;',
    add or correct events. target = special OR (endurance AND dur>=3h). Optional per-event
    overrides: winStart (ISO — when the availability window opens), winMin (window length,
    minutes), offsets/labels (candidate race starts), raceMin (race length, minutes). */
+/* Every Spa layout Garage 61 has except Bike (its chicane makes laps incomparable): Grand Prix
+   Pits 444, Classic Pits 445, Endurance 446, and the 2010 Endurance 52 / Classic Pits 59 /
+   Grand Prix Pits 65. They share the racing line, so a lap on any of them counts as Spa pace. */
+const SPA_TRACKS=[444, 445, 446, 52, 59, 65];
 const CAL_EVENTS=[
   {n:"iRacing ROAR", s:"2026-01-09", e:"2026-01-10", track:"Daytona International Speedway", cars:"LMP3 // GT4 // Touring Cars", cat:"other"},
   {n:"Daytona 24", s:"2026-01-16", e:"2026-01-18", track:"Daytona International Speedway", cars:"GTP & HYP // LMP2 // GT3", cat:"endurance", dur:24, special:true, g61Tracks:[105]},
@@ -253,10 +257,10 @@ const CAL_EVENTS=[
   {n:"Firecracker 400", s:"2026-06-30", e:"2026-07-06", track:"Daytona International Speedway", cars:"1987 NASCAR Cup (historic)", cat:"other", special:true, g61Tracks:[39]},
   {n:"NEC Round 6", s:"2026-07-04", e:"2026-07-05", track:"Nürburgring Combined VLN", cars:"GT3 // Cup // GT4 // TCR // M2", cat:"endurance", series:"NEC", round:"6 / 10", dur:4, g61Tracks:[94]},
   {n:"Spa 24HR", s:"2026-07-10", e:"2026-07-12", track:"Circuit de Spa-Francorchamps", cars:"GT3", cat:"endurance", dur:24, special:true,
-    winStart:"2026-07-10T22:00:00Z", winMin:2568, raceMin:1440, g61Tracks:[444,446],
+    winStart:"2026-07-10T22:00:00Z", winMin:2568, raceMin:1440, g61Tracks:SPA_TRACKS,
     offsets:{1:0,2:540,3:840,4:1080}, labels:{1:"Sat 08:00 · 22:00Z",2:"Sat 17:00 · 07:00Z",3:"Sat 22:00 · 12:00Z",4:"Sun 02:00 · 16:00Z"}},
   {n:"Global Endurance Tour", s:"2026-07-11", e:"2026-07-12", track:"TBD", cars:"GT3 // GTP", cat:"endurance", dur:6},
-  {n:"Creventic Round 2 — 12H Spa", s:"2026-07-18", e:"2026-07-19", track:"Circuit de Spa-Francorchamps", cars:"GT3 // Cup // GT4", cat:"endurance", series:"Creventic", round:"2 / 5", dur:12, g61Tracks:[444, 446]},
+  {n:"Creventic Round 2 — 12H Spa", s:"2026-07-18", e:"2026-07-19", track:"Circuit de Spa-Francorchamps", cars:"GT3 // Cup // GT4", cat:"endurance", series:"Creventic", round:"2 / 5", dur:12, g61Tracks:SPA_TRACKS},
   {n:"Brickyard 400", s:"2026-07-22", e:"2026-07-27", track:"Indianapolis Motor Speedway", cars:"NASCAR Cup Series", cat:"nascar", special:true},
   {n:"6 Hours of Road America", s:"2026-07-24", e:"2026-07-26", track:"Road America", cars:"GTP & HYP // LMP2 // GT3", cat:"endurance", dur:6, special:true, g61Tracks:[49]},
   {n:"Knoxville Nationals", s:"2026-08-04", e:"2026-08-09", track:"Knoxville Raceway", cars:"410 Winged Sprint Cars", cat:"other"},
@@ -279,7 +283,7 @@ const CAL_EVENTS=[
   {n:"NEC Round 10", s:"2026-11-07", e:"2026-11-08", track:"Nürburgring Combined VLN", cars:"GT3 // Cup // GT4 // TCR // M2", cat:"endurance", series:"NEC", round:"10 / 10", dur:4, g61Tracks:[94]},
   {n:"SFL Mountain Showdown", s:"2026-11-13", e:"2026-11-15", track:"Mount Panorama Circuit", cars:"Super Formula Lights", cat:"other"},
   {n:"SCCA Runoffs", s:"2026-11-17", e:"2026-11-21", track:"Various / 6 classes", cars:"6 Classes", cat:"other"},
-  {n:"992 Endurance Cup", s:"2026-11-27", e:"2026-11-29", track:"Circuit de Spa-Francorchamps", cars:"Porsche Cup 992.2", cat:"endurance", dur:12, g61Tracks:[444, 446]},
+  {n:"992 Endurance Cup", s:"2026-11-27", e:"2026-11-29", track:"Circuit de Spa-Francorchamps", cars:"Porsche Cup 992.2", cat:"endurance", dur:12, g61Tracks:SPA_TRACKS},
   {n:"Winter Derby", s:"2026-12-02", e:"2026-12-07", track:"Five Flags Speedway", cars:"Super Late Model", cat:"other"},
   {n:"Chili Bowl", s:"2026-12-15", e:"2026-12-20", track:"Tulsa Expo Center", cars:"Dirt Midget", cat:"other"},
   {n:"Production Car Challenge @ViR", s:"2026-12-18", e:"2026-12-19", track:"VIR Grand Course", cars:"Production Car Challenge cars", cat:"endurance", dur:2, g61Tracks:[394]}
@@ -2606,7 +2610,9 @@ function renderDrivers(model){
   if(state.evsel){
     const pool=eventPool().length, hidden=state.drivers.length-pool;
     const ev=calEvent(state.evsel);
-    html+='<div class="meta" style="margin-bottom:14px">Showing the <b style="color:#fff">'+pool+'</b> driver'+(pool===1?'':'s')+' with availability for <b style="color:var(--yellow)">'+esc(ev?ev.n:state.evsel)+'</b>'+(hidden>0?' · '+hidden+' without availability hidden':'')+'.</div>';
+    html+='<div class="meta" style="margin-bottom:14px">Showing the <b style="color:#fff">'+pool+'</b> driver'+(pool===1?'':'s')+' with availability for <b style="color:var(--yellow)">'+esc(ev?ev.n:state.evsel)+'</b>'+(hidden>0?' · '+hidden+' without availability hidden':'')+'.'
+      // WP build: how fresh the Garage 61 pace is (it refreshes itself hourly); absent standalone
+      +(typeof paceAgeLabel==='function'?' <span style="color:'+(PACE_ERR?'var(--red)':'var(--dim)')+'">· '+esc(paceAgeLabel())+'</span>':'')+'</div>';
     if(!pool) return html+'<div class="importbox"><div class="meta">No one has submitted availability for this event yet — drivers appear here as soon as they hit Submit on the Availability tab.</div></div>';
   }
   Object.keys(model).forEach(cls=>{
@@ -3579,16 +3585,20 @@ function save(){
   clearTimeout(_saveT); _saveT=setTimeout(function(){ _saveT=null; _flushPlan(); }, 600);
 }
 var PLAN_REV=0;
-var PACE_AT=0, PACE_ERR='';   /* Garage 61 pace cache: unix seconds, and why the last refresh failed */
+var PACE_AT=0, PACE_ERR='', PACE_PENDING=false;   /* Garage 61 pace cache: unix seconds, why the last refresh failed, and whether one is mid-way through its pages */
 function paceAgeLabel(){
   if(PACE_ERR) return 'pace refresh failed — '+PACE_ERR;
+  if(PACE_PENDING) return 'pulling the latest pace from Garage 61…'+(PACE_AT?' (last one '+paceAgeLabel_(PACE_AT)+')':'');
   if(!PACE_AT) return 'pace not pulled yet';
-  var mins=Math.max(0, Math.round((Date.now()/1000-PACE_AT)/60));
-  if(mins<2) return 'pace refreshed just now';
-  if(mins<60) return 'pace refreshed '+mins+' minutes ago';
+  return 'pace '+paceAgeLabel_(PACE_AT);
+}
+function paceAgeLabel_(at){
+  var mins=Math.max(0, Math.round((Date.now()/1000-at)/60));
+  if(mins<2) return 'refreshed just now';
+  if(mins<60) return 'refreshed '+mins+' minutes ago';
   var hrs=Math.round(mins/60);
-  if(hrs<24) return 'pace refreshed '+hrs+' hour'+(hrs===1?'':'s')+' ago';
-  var d=Math.round(hrs/24); return 'pace refreshed '+d+' day'+(d===1?'':'s')+' ago';
+  if(hrs<24) return 'refreshed '+hrs+' hour'+(hrs===1?'':'s')+' ago';
+  var d=Math.round(hrs/24); return 'refreshed '+d+' day'+(d===1?'':'s')+' ago';
 }
 function _adoptPlan(p, keepEvsel){
   var _localEv=keepEvsel?state.evsel:null;
@@ -3874,6 +3884,9 @@ async function doImport(trackIds){
   try{
     const payload=await apiPOST('import',{trackIds:trackIds});
     if(payload.code){ setSetupMsg('Error: '+(payload.message||payload.code)); return; }
+    /* the pull continues in the background; it lands through /rev + pullPace (mergePace), which
+       keeps the line-up, instead of applyImport */
+    if(payload.pending){ PACE_PENDING=true; setSetupMsg(payload.message||'Pace is on its way from Garage 61.'); state.tab='setup'; setActiveTab(); renderContent(); _revNow(); return; }
     lastPayload=payload;
     applyImport(payload);
     setSetupMsg('Imported pace for '+state.drivers.length+' drivers.');
@@ -4021,7 +4034,7 @@ function _revTick(){
       var moved=(!first) && (j.plan!==_revSeen.plan || j.avail!==_revSeen.avail);
       var planMoved=(!first) && j.plan!==_revSeen.plan;
       _revSeen.plan=j.plan; _revSeen.avail=j.avail;
-      PACE_AT=j.paceAt||0; PACE_ERR=j.paceErr||'';
+      PACE_AT=j.paceAt||0; PACE_ERR=j.paceErr||''; PACE_PENDING=!!j.pacePending;
       /* an availability-only move used to go through refreshShared, which returns early when the
          plan revision has not changed — so another driver's submit never reached open tabs */
       if(moved && planMoved) refreshShared();       // refreshShared has its own edit-in-progress guard

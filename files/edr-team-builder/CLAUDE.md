@@ -355,6 +355,21 @@ costly because it must find *other* EDR drivers in races it did not know about.
   the fetch/poll/`applyHistory()` live in the WP `APPEND` layer. "Pull team history" button sits
   beside "Pull last week's results" on the Weekly tab.
 
+**Pace pulls are a resumable job, both teams, refreshed hourly (2.6.2).** Garage 61's `/laps`
+bucket refills at about one request per 100 s and Spa is two pages, so pulling every page at once
+got the second refused and the whole pull thrown away (pace sat a day old behind a "check the
+token" error). `edr_tb_pace_step()` now takes one page per run into `edr_tb_pace_job` (one job
+site-wide, abandoned after 30 min untouched), schedules `edr_tb_pace_refresh` again after
+`Retry-After`, and only a finished pull replaces the cache; 8 refusals in a row record an error.
+`/rev` reports `pacePending` and hides the old error meanwhile. `teams=` is
+`edr_tb_team_slugs()`: the comma-separated setting, default both EDR teams, and a site still on the
+old Pro-only default gets Casual added (Garage 61 dedupes shared laps itself). Every `/rev` with
+`tracks` records the set in `edr_tb_pace_want`; the hourly `edr_tb_pace_tick` refreshes the stalest
+set viewed in the last 14 days once it is ~1 h old, so pace is current before anyone opens the page.
+`POST /import` runs up to two pages while the admin waits and otherwise answers `{pending:true}`;
+the rest arrives through `mergePace` like any refresh. Spa events use `SPA_TRACKS` (all layouts
+but Bike). The Drivers tab shows `paceAgeLabel()`.
+
 **Pace follows the event automatically (2.4.39).** The pace cache is per track set
 (`edr_tb_pace_sets`, capped at 8, legacy single-slot `edr_tb_pace` still read as a fallback).
 Each `/rev` poll sends the tracks of the viewer's selected event (`_paceKeyNow()`: an admin
@@ -384,9 +399,10 @@ POST. `calendar()` now merges overrides field-by-field, so a custom event keeps 
   event falls back to its calendar/derived times.
 
 `includes/` are thin API clients returning plain arrays:
-- `garage61.php` — `edr_g61_roster()` pulls `/laps` for the team at the chosen track(s)
-  and aggregates per-driver-per-car `{laps, medianLap, cleanPct}`. Mirrors
-  `../../colab_pull_garage61.py`. Note `age=-1` (pace data window — see below).
+- `garage61.php` — `edr_g61_get_page()` (one page, reports Garage 61's `Retry-After` and
+  `X-Ratelimit-Bucket-Remaining`; a 429 is `g61_busy` with a wait), `edr_g61_lap_params()`,
+  `edr_g61_bucket_add()` (tally, deduped by lap id) and `edr_g61_bucket_roster()` → per-driver-per-car
+  `{laps, medianLap, cleanPct, lastDriven}`. Note `age=-1` (pace data window — see below).
 - `iracing.php` — `edr_ir_get()`/`edr_ir_seasons()` call a teammate's iRacing Data API proxy
   (same server-side/cached pattern as `garage61.php`) for official session start times +
   race lengths; detects the expired-proxy-session case and surfaces it.
@@ -410,7 +426,7 @@ in-house availability.
   only those four classes are kept when building a driver's cars.
 - **Pace data window:** Garage 61 pulls use `age=-1` and are scoped to iRacing 2026
   Season 3 onward by project convention — keep that window when changing the pace query.
-- **Driver display names** are built from Garage 61 `firstName+lastName` (`edr_g61_roster()`);
+- **Driver display names** are built from Garage 61 `firstName+lastName` (`edr_g61_bucket_add()`);
   the API's `name` field is empty or a digit-suffixed iRacing name ("Sam Millar2") that never
   matches the roster. That suffix is iRacing's collision marker, and it duplicated a real
   driver in production (cust 906888 appeared as both "Sam Millar" and "Sam Millar2"), because
