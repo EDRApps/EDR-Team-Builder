@@ -435,6 +435,7 @@ function eventPool(){
   if(!state.evsel) return state.drivers;
   return state.drivers.filter(d=>d.avail && d.avail.hours>0);
 }
+const PRO_MIN_CLEAN=5;   // clean laps in the event's car needed for a Pro seat
 function computeModel(){
   const enriched = eventPool().map(d=>{
     const car = (d.carLock && d.assignedCar) ? d.assignedCar : autoCar(d);   // a hand-picked (locked) car sticks; otherwise the event's class decides
@@ -460,25 +461,26 @@ function computeModel(){
       d._score=wp*pace+wc*clean+wr*prep;
     });
     grp.sort((a,b)=>b._score-a._score);
+    /* Pro seats go to the top proPct% — but only to drivers with real data in this car: a handful
+       of laps with none clean beat the zero-lap drivers on lap count alone and took a Pro seat */
     const proN=Math.max(0,Math.round((state.proPct/100)*grp.length));
-    grp.forEach((d,i)=>{d._tier=i<proN?'pro':'casual'; d._rank=i;});
+    let pros=0;
+    grp.forEach((d,i)=>{ const ok=Math.round((d._laps||0)*(d._clean||0))>=PRO_MIN_CLEAN;
+      d._tier=(ok&&pros<proN)?'pro':'casual'; if(d._tier==='pro') pros++; d._rank=i; });
   });
   return groups;
 }
 
 function teamSizes(n){ if(n<=0)return[]; if(n<=3)return[n]; const t=Math.ceil(n/3); const s=Array(t).fill(2); let rem=n-2*t,i=0; while(rem>0){s[i%t]++;rem--;i++;} return s; }
+/* Cars are filled best to worst: car 1 takes the top-scored drivers, car 2 the next, and so on
+   (Tom, 15 Nov 2026). It used to snake-draft (1st+4th, 2nd+3rd) to even the cars out, which put
+   the fastest driver with the weakest. teamSizes puts any extra seat in the first cars. */
 function buildPool(pool){
   if(!pool.length)return[];
   const sizes=teamSizes(pool.length);
   const sorted=pool.slice().sort((a,b)=>b._score-a._score);
-  const teams=sizes.map(()=>[]);
-  let i=0,round=0;
-  while(i<sorted.length){
-    let order=teams.map((_,k)=>k); if(round%2===1)order.reverse();
-    for(const ti of order){ if(teams[ti].length<sizes[ti]&&i<sorted.length)teams[ti].push(sorted[i++]); }
-    round++;
-  }
-  return teams.map(t=>t.map(d=>d.id));
+  let i=0;
+  return sizes.map(n=>sorted.slice(i,i+=n).map(d=>d.id));
 }
 const PRESET_TEAMS = {"GTP":[["Jake Lennox-Bradley","John Nyhouse","Erik van der Bijl"]],"GT3":[["Chris Wilson","Matt Halden","Sam Millar","Tom Williams"],["Thomaz Hernandes","Valentin Ozhiganov","Jarrod Williams"],["Dominic Bou-Samra","Michael Cullen","Sam Mackenzie","Joey Tavora"]]};
 function applyPreset(){

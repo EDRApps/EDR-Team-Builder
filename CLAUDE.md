@@ -287,7 +287,10 @@ drivers are sensitive about bad months. Driver of the month formula (per Matt): 
 
 Per driver, three Garage-61 signals scored 0–1 **within their car class**: **Pace** (median clean
 lap), **Clean** (clean-lap %), **Prep** (lap count). `score = pace·Wpace + clean·Wclean +
-prep·Wprep` (defaults 50/30/20). Top **X%** per class (default 40%) → Pro, rest → Casual. Class is
+prep·Wprep` (defaults 50/30/20). Top **X%** per class (default 40%) → Pro, rest → Casual, but a
+Pro seat needs **≥ `PRO_MIN_CLEAN` (5) clean laps in that car** (2.6.4). Cars are filled **best to
+worst** (P1 = top scores, then P2…; same for Casual) — not a snake draft. Garage 61 team
+membership (Pro/Casual team) plays no part in the split. Class is
 inferred from the car name (`GTP/HYBRID/LMDH`, `LMP2/LMP`, `GT4`, `GT3`).
 
 ## Deliverables (PDFs / PNGs)
