@@ -107,6 +107,12 @@ driver-facing how-to, including the swap contact (2.4.8). Key facts:
   in `edr_tb_vc`. Admin box on the Stints tab → `POST /vc` (`test` / `create` / `delete`; delete
   is two taps, never `window.confirm`).
 
+- **Teams are arranged by drag (2.6.3)**: admins drag a driver row (mouse: anywhere on it; touch:
+  the ⠿ grip, so rows still scroll) onto another car to move them or onto a driver to swap
+  (`teamMove`/`teamSwap`, custom pointer drag like the stint bank, page auto-scrolls near the
+  edge). Allowed while the line-up is locked. The per-row move dropdown is gone. The Drivers-tab
+  padlock locks the car **shown** (`autoCar`), not a stale `assignedCar` from an older event; icon
+  controls use `.iconbtn` (28px target).
 - **Events** come from the `CAL_EVENTS` array in the HTML (shared by both builds — edit it there).
   Each event can carry `winStart/winMin/raceMin/offsets/labels` (Spa has the survey-accurate set),
   `g61Tracks` (Garage 61 track ids the Setup import pulls automatically; a manual-picker override

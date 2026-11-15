@@ -71,6 +71,16 @@
   .status{color:var(--yellow);font-size:12px;align-self:center}
   .chip{display:inline-block;padding:6px 12px;margin:4px 5px 0 0;background:var(--panel2);border:1px solid var(--line);border-radius:999px;font-size:12px;cursor:grab;color:var(--body);transition:border-color .15s,color .15s}
   .chip:hover{border-color:var(--yellow);color:#fff}
+  /* small icon controls (padlock, rename, remove): a glyph alone is a tiny, off-centre hit box, so
+     give each a fixed square target with the glyph centred in it */
+  .iconbtn{display:inline-flex;align-items:center;justify-content:center;min-width:28px;height:28px;line-height:1;border-radius:6px;cursor:pointer;flex:0 0 auto;vertical-align:middle;user-select:none}
+  .iconbtn:hover{background:rgba(255,255,255,.08)}
+  /* Teams drag: grab a driver row (or its grip on touch) and drop it on another car, or on a driver to swap */
+  .tdrag .mem[data-tmem]{cursor:grab;user-select:none;-webkit-user-select:none}
+  .tgrip{display:inline-flex;align-items:center;justify-content:center;width:22px;height:28px;margin-right:4px;color:var(--dim);cursor:grab;touch-action:none;user-select:none;flex:0 0 auto}
+  .card.tdrop{outline:2px dashed var(--yellow);outline-offset:2px}
+  .mem.tswap{outline:2px solid var(--yellow);outline-offset:-2px}
+  .mem.tsrc{opacity:.35}
   .hide{display:none}
   /* ---- roles ---- */
   .rolechip{font-family:'Prompt',sans-serif;font-weight:700;font-size:11px;letter-spacing:.1em;padding:5px 13px;border-radius:999px;border:1px solid var(--line);color:var(--dim)}

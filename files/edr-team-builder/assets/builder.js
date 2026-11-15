@@ -1104,7 +1104,7 @@ function renderEventTab(){
         +(sel?'<span class="calbadge selb">selected</span>':'')
         +(isNext?'<span class="calbadge next">up next</span>':'')
         +(tgt?'<span class="calbadge tgt">target</span>':'<span class="calbadge ctx">context</span>')
-        +(ev.src==='custom'?'<span class="calbadge" style="background:var(--panel2)">custom</span>'+(isAdmin()?' <span data-action="delcustomev" data-ev="'+esc(evKey(ev))+'" title="remove this event" style="cursor:pointer;color:var(--red);font-size:13px">✕</span>':''):(ev.src==='iracing'?'<span class="calbadge" style="background:var(--panel2)">iRacing</span>':''))+'</div>'
+        +(ev.src==='custom'?'<span class="calbadge" style="background:var(--panel2)">custom</span>'+(isAdmin()?' <span class="iconbtn" data-action="delcustomev" data-ev="'+esc(evKey(ev))+'" title="remove this event" style="cursor:pointer;color:var(--red);font-size:13px">✕</span>':''):(ev.src==='iracing'?'<span class="calbadge" style="background:var(--panel2)">iRacing</span>':''))+'</div>'
         +(ev.series?'<div class="meta">'+esc(ev.series)+' · round '+esc(ev.round)+'</div>':'')
         +'<div class="meta">'+esc(ev.track)+(ev.dur?' · '+ev.dur+'h':'')+'</div></div>'
         +'<div style="text-align:right;flex:0 0 auto"><div class="meta" style="color:#fff">'+(ev.tbd?'TBD':fmtDates(ev.s,ev.e))+'</div>'
@@ -2560,12 +2560,10 @@ let _renaming=null;  // cls|tier|idx currently being renamed inline
 function renderTeams(byId){
   const classes=Object.keys(state.teams);
   if(!classes.length) return '<div class="meta">Hit Generate or load teams.</div>';
+  return '<div'+(isAdmin()?' class="tdrag"':'')+'>'+renderTeamsInner(byId,classes)+'</div>';
+}
+function renderTeamsInner(byId,classes){
   // dropdown lists EVERY car (both tiers, all classes) so any driver can go anywhere
-  function moveOpts(curC,curT,curJ){
-    let o='';
-    classes.forEach(c=>['pro','casual'].forEach(t=>{ (state.teams[c][t]||[]).forEach((_,j)=>{ const v=c+'|'+t+'|'+j; const sel=(c===curC&&t===curT&&j===curJ)?' selected':''; o+='<option value="'+v+'"'+sel+'>'+esc(c)+' '+t[0].toUpperCase()+(j+1)+'</option>'; }); }));
-    return o;
-  }
   let html='';
   if(isAdmin()){
     html+='<div class="importbox" style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:16px;border-left:4px solid '+(state.teamsLocked?'var(--green)':'var(--line)')+'">'
@@ -2588,11 +2586,11 @@ function renderTeams(byId){
         const cname=carLabel(cls,tier,ti), tag=label[0]+(ti+1), rkey=cls+'|'+tier+'|'+ti;
         const hd=(_renaming===rkey)
           ? '<input class="avfree" data-action="renamesave" data-key="'+rkey+'" value="'+esc(cname||'')+'" placeholder="'+tag+'" style="font-size:14px;padding:3px 7px;width:150px" autofocus>'
-          : ((cname?esc(cname)+' <span class="meta" style="font-weight:400;font-size:11px">'+tag+'</span>':tag)+(isAdmin()?' <span data-action="renamecar" data-key="'+rkey+'" title="rename this car" style="cursor:pointer;font-size:12px;opacity:.6">✎</span>':''));
+          : ((cname?esc(cname)+' <span class="meta" style="font-weight:400;font-size:11px">'+tag+'</span>':tag)+(isAdmin()?' <span class="iconbtn" data-action="renamecar" data-key="'+rkey+'" title="rename this car" style="cursor:pointer;font-size:12px;opacity:.6">✎</span>':''));
         const irTxt=avgIR!=null?' · iR '+avgIR+(irs.length<members.length?' ('+irs.length+'/'+members.length+')':''):(members.length?' · iR —':'');
-        html+='<div class="card"><div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:8px"><span class="head" style="color:'+col+';letter-spacing:1px">'+hd+'</span><span class="meta">avg '+fmtLap(avg)+irTxt+(members.length?'':' <span data-action="delcar" data-class="'+esc(cls)+'" data-tier="'+tier+'" data-idx="'+ti+'" title="remove empty car" style="color:var(--red);cursor:pointer;font-size:13px">✕</span>')+'</span></div>';
+        html+='<div class="card" data-tcar="'+esc(rkey)+'"><div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:8px"><span class="head" style="color:'+col+';letter-spacing:1px">'+hd+'</span><span class="meta">avg '+fmtLap(avg)+irTxt+(members.length?'':' <span class="iconbtn" data-action="delcar" data-class="'+esc(cls)+'" data-tier="'+tier+'" data-idx="'+ti+'" title="remove empty car" style="color:var(--red);cursor:pointer;font-size:13px">✕</span>')+'</span></div>';
         members.forEach(d=>{
-          html+='<div class="mem"><div style="min-width:0"><div style="font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'+esc(d.name)+'</div><div style="font-size:10px;color:var(--dim)">'+fmtLap(d._median)+' · '+d._laps+' laps · '+Math.round(d._clean*100)+'% clean'+(d.irating?' · iR '+d.irating:'')+(d.avail?' · <span style="color:'+(d.avail.pct>=80?'var(--green)':d.avail.pct>=40?'var(--amber)':'var(--red)')+'">'+d.avail.pct+'% avail</span>':'')+'</div></div><select data-action="move" data-id="'+d.id+'">'+moveOpts(cls,tier,ti)+'</select></div>';
+          html+='<div class="mem" data-tmem="'+d.id+'">'+(isAdmin()?'<span class="tgrip" title="drag to another car, or onto a driver to swap">⠿</span>':'')+'<div style="min-width:0;flex:1"><div style="font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'+esc(d.name)+'</div><div style="font-size:10px;color:var(--dim)">'+fmtLap(d._median)+' · '+d._laps+' laps · '+Math.round(d._clean*100)+'% clean'+(d.irating?' · iR '+d.irating:'')+(d.avail?' · <span style="color:'+(d.avail.pct>=80?'var(--green)':d.avail.pct>=40?'var(--amber)':'var(--red)')+'">'+d.avail.pct+'% avail</span>':'')+'</div></div></div>';
         });
         if(!members.length) html+='<div class="meta">empty</div>';
         html+='</div>';
@@ -2623,7 +2621,7 @@ function renderDrivers(model){
       let opts=(d._car?'':'<option value="" selected disabled>— no '+esc(d._class)+' car yet —</option>')+cars.map(c=>'<option value="'+esc(c)+'"'+(c===d._car?' selected':'')+'>'+esc(c)+'</option>').join('');
       const others=allCars.filter(c=>!(d.cars&&d.cars[c]));
       if(others.length) opts+='<optgroup label="— any car at this track —">'+others.map(c=>'<option value="'+esc(c)+'"'+(c===d._car?' selected':'')+'>'+esc(c)+' (no laps)</option>').join('')+'</optgroup>';
-      html+='<div class="row '+d._tier+'"><span class="meta" style="width:20px">#'+(i+1)+'</span><span style="font-size:13px;min-width:110px">'+esc(d.name)+'</span><select data-action="assign" data-id="'+d.id+'">'+opts+'</select>'+(isAdmin()?'<span data-action="carlock" data-id="'+d.id+'" title="'+(d.carLock?'car locked — imports keep this choice; click to unlock':'lock this car choice so imports keep it')+'" style="cursor:pointer;font-size:12px;opacity:'+(d.carLock?'1':'.4')+'">'+(d.carLock?'🔒':'🔓')+'</span>':(d.carLock?'<span title="car locked by admin" style="font-size:12px">🔒</span>':''))+'<span class="meta">'+fmtLap(d._median)+' · '+d._laps+' laps · '+Math.round(d._clean*100)+'% clean'+(d.avail?' · '+d.avail.pct+'% avail':'')+'</span><span class="tier '+d._tier+'">'+d._tier.toUpperCase()+' · '+(d._score*100).toFixed(0)+'</span><button class="x" data-action="remove" data-id="'+d.id+'">✕</button></div>';
+      html+='<div class="row '+d._tier+'"><span class="meta" style="width:20px">#'+(i+1)+'</span><span style="font-size:13px;min-width:110px">'+esc(d.name)+'</span><select data-action="assign" data-id="'+d.id+'">'+opts+'</select>'+(isAdmin()?'<span class="iconbtn" data-action="carlock" data-id="'+d.id+'" title="'+(d.carLock?'car locked — imports keep this choice; click to unlock':'lock this car choice so imports keep it')+'" style="font-size:14px;opacity:'+(d.carLock?'1':'.4')+'">'+(d.carLock?'🔒':'🔓')+'</span>':(d.carLock?'<span title="car locked by admin" style="font-size:12px">🔒</span>':''))+'<span class="meta">'+fmtLap(d._median)+' · '+d._laps+' laps · '+Math.round(d._clean*100)+'% clean'+(d.avail?' · '+d.avail.pct+'% avail':'')+'</span><span class="tier '+d._tier+'">'+d._tier.toUpperCase()+' · '+(d._score*100).toFixed(0)+'</span><button class="x" data-action="remove" data-id="'+d.id+'">✕</button></div>';
     });
     html+='</div></div>';
   });
@@ -2847,7 +2845,7 @@ function renderStints(byId){
         }).join('')+'</span>';
         html+='<div class="stintcar"><div style="display:flex;align-items:center;gap:10px;margin-bottom:12px;flex-wrap:wrap"><span class="swatch" style="background:'+col+'"></span><span class="head" style="letter-spacing:.04em;color:#fff;font-size:15px">'+(_renaming===key
           ? esc(cls)+' · <input class="avfree" data-action="renamesave" data-key="'+key+'" value="'+esc(carLabel(cls,tier,ti)||'')+'" placeholder="'+label[0]+(ti+1)+'" style="font-size:13px;padding:3px 7px;width:150px">'
-          : esc(cls)+' · '+(carLabel(cls,tier,ti)?esc(carLabel(cls,tier,ti))+' <span class="meta" style="font-size:11px">'+label[0]+(ti+1)+'</span>':label[0]+(ti+1))+(isAdmin()?' <span data-action="renamecar" data-key="'+key+'" title="rename this car" style="cursor:pointer;font-size:12px;opacity:.6">✎</span>':''))+'</span>'+winTabs+badge+(fp.anyCfg?'<span class="meta" style="color:var(--dim)">⛽ '+fp.totLaps+' laps · '+fp.totFuel+'L · '+fp.pits+' stop'+(fp.pits===1?'':'s')+(fp.lostSec?' ('+fmtLost(fp.lostSec)+' lost)':'')+'</span>':'')+'</div>';
+          : esc(cls)+' · '+(carLabel(cls,tier,ti)?esc(carLabel(cls,tier,ti))+' <span class="meta" style="font-size:11px">'+label[0]+(ti+1)+'</span>':label[0]+(ti+1))+(isAdmin()?' <span class="iconbtn" data-action="renamecar" data-key="'+key+'" title="rename this car" style="cursor:pointer;font-size:12px;opacity:.6">✎</span>':''))+'</span>'+winTabs+badge+(fp.anyCfg?'<span class="meta" style="color:var(--dim)">⛽ '+fp.totLaps+' laps · '+fp.totFuel+'L · '+fp.pits+' stop'+(fp.pits===1?'':'s')+(fp.lostSec?' ('+fmtLost(fp.lostSec)+' lost)':'')+'</span>':'')+'</div>';
         if(isAdmin()&&carName){ const bc=(state.fuelCfg.byCar||{})[carName]||{}; const def=resolveFuel(carName);
           html+='<div class="carfuel"><span class="meta" style="font-size:10px;text-transform:uppercase;letter-spacing:.05em;color:var(--yellow)">'+esc(carName)+'</span>'
             +'<label>tank <input type="number" min="0" step="1" value="'+(bc.tankL||'')+'" placeholder="'+(def.tankL||'—')+'" data-action="cartank" data-car="'+esc(carName)+'">L</label>'
@@ -3034,12 +3032,6 @@ document.getElementById('content').addEventListener('change',e=>{
   if(a==='swapnote'){ if(!isAdmin())return; state.swapNote=(e.target.value||'').trim(); save(); setStatus('Swap contact saved.'); return; }
   if(a==='renamesave'){ const k=e.target.dataset.key, v=(e.target.value||'').trim(); if(v) state.teamNames[k]=v; else delete state.teamNames[k]; _renaming=null; save(); renderContent(); return; }
   if(a==='assign'){ const d=state.drivers.find(x=>x.id==e.target.dataset.id); if(d){ d.assignedCar=e.target.value; d.carLock=true; save(); renderContent(); } }   // manual choice locks it (imports keep it); padlock to unlock
-  else if(a==='move'){
-    const id=+e.target.dataset.id, p=e.target.value.split('|'), tc=p[0], tt=p[1], tj=+p[2];
-    Object.keys(state.teams).forEach(c=>['pro','casual'].forEach(t=>{ if(state.teams[c][t]) state.teams[c][t]=state.teams[c][t].map(car=>car.filter(x=>x!==id)); }));
-    if(state.teams[tc] && state.teams[tc][tt] && state.teams[tc][tt][tj]) state.teams[tc][tt][tj].push(id);
-    save(); renderContent();
-  }
   else if(state.stintsLocked && (a==='stintwin'||a==='stintlen'||a==='stintrace')){ setStatus('Stints are locked — unlock on the Stints tab to change block length, race or start windows.'); renderContent(); }
   else if(a==='stintwin'){ state.stint.window=+e.target.value; Object.keys(state.stintAssign).forEach(k=>{ if(!state.stintWin[k]) delete state.stintAssign[k]; }); save(); renderContent(); }   // default change replans only cars WITHOUT a per-car window
   else if(a==='stintlen'){ state.stint.len=Math.max(10,+e.target.value||60); save(); renderContent(); }
@@ -3278,7 +3270,13 @@ document.getElementById('content').addEventListener('click',e=>{
     state.stintWin[cwBtn.dataset.key]=+cwBtn.dataset.win; save(); renderContent(); return; }   // re-times the SAME stint plan — assignments are kept, conflicts recompute
   const lane=e.target.closest&&e.target.closest('[data-lanecell]');
   if(lane){ const k=lane.dataset.key,b=+lane.dataset.block,d=+lane.dataset.driver,a=state.stintAssign[k]; if(a){ a[b]=(a[b]===d)?null:d; save(); renderContent(); } return; }
-  if(e.target.dataset.action==='carlock'){ if(!isAdmin())return; const d=state.drivers.find(x=>x.id==e.target.dataset.id); if(d){ d.carLock=!d.carLock; save(); renderContent(); } return; }
+  if(e.target.dataset.action==='carlock'){ if(!isAdmin())return; const d=state.drivers.find(x=>x.id==e.target.dataset.id);
+    if(d){
+      /* unlocked, the row shows autoCar (the event's class), but assignedCar can still hold the car
+         from an older event — locking that swapped the driver to it and out of this class's list */
+      if(!d.carLock){ const shown=autoCar(d); if(!shown){ setStatus('Pick a car for '+d.name+' first; picking one locks it.'); return; } d.assignedCar=shown; }
+      d.carLock=!d.carLock; save(); renderContent(); }
+    return; }
   if(e.target.dataset.action==='remove'){ state.drivers=state.drivers.filter(x=>x.id!=e.target.dataset.id); generate(); save(); renderContent(); }
   else if(e.target.dataset.action==='stintreset'){ if(state.stintsLocked){ setStatus('Stints are locked — unlock to auto-fill all.'); return; } state.stintAssign={}; state.stintSig=''; save(); renderContent(); }
   else if(e.target.dataset.action==='stintlock'){ if(!isAdmin())return; state.stintsLocked=!state.stintsLocked; save(); renderContent(); setStatus(state.stintsLocked?'Stints locked — auto-fill and window changes will leave them alone.':'Stints unlocked.'); }
@@ -3291,6 +3289,88 @@ document.getElementById('content').addEventListener('click',e=>{
       const na={}; Object.keys(state.stintAssign||{}).forEach(kk=>{ if(kk.indexOf(pre)!==0){ na[kk]=state.stintAssign[kk]; return; } const idx=+kk.slice(pre.length); if(idx<j) na[kk]=state.stintAssign[kk]; else if(idx>j) na[pre+(idx-1)]=state.stintAssign[kk]; }); state.stintAssign=na;   // and the stint plans themselves
       save(); renderContent(); } }
 });
+
+// ---- Teams: move a driver to another car, or swap two drivers ----
+/* where = "class|tier|carIndex"; the driver leaves whichever car they were in */
+function teamMove(id, where){
+  const p=String(where).split('|'), tc=p[0], tt=p[1], tj=+p[2];
+  if(!(state.teams[tc] && state.teams[tc][tt] && state.teams[tc][tt][tj])) return false;
+  Object.keys(state.teams).forEach(c=>['pro','casual'].forEach(t=>{ if(state.teams[c][t]) state.teams[c][t]=state.teams[c][t].map(car=>car.filter(x=>x!==id)); }));
+  state.teams[tc][tt][tj].push(id);
+  return true;
+}
+/* two drivers trade places, each keeping the other's slot in the car's order */
+function teamSwap(a, b){
+  let pa=null, pb=null;
+  Object.keys(state.teams).forEach(c=>['pro','casual'].forEach(t=>{ (state.teams[c][t]||[]).forEach((car,j)=>{ car.forEach((x,k)=>{ if(x===a) pa=[c,t,j,k]; if(x===b) pb=[c,t,j,k]; }); }); }));
+  if(!pa||!pb) return false;
+  state.teams[pa[0]][pa[1]][pa[2]][pa[3]]=b; state.teams[pb[0]][pb[1]][pb[2]][pb[3]]=a;
+  return true;
+}
+/* Pointer drag, same approach as the stint bank below (native drag-and-drop does not work in
+   embedded views). A mouse can grab the whole row; touch only the grip, so rows still scroll
+   the page on a phone. The drag starts after 6px of movement, so a plain click on the row's car
+   dropdown is untouched. Allowed while the line-up is locked: locking stops Generate/Import,
+   not hand moves. */
+let _td=null;
+function _tdClear(){ document.querySelectorAll('.tdrop,.tswap,.tsrc').forEach(n=>n.classList.remove('tdrop','tswap','tsrc')); }
+function _tdTarget(x,y){
+  const el=document.elementFromPoint(x,y); if(!el||!el.closest) return null;
+  const mem=el.closest('.mem[data-tmem]');
+  if(mem && +mem.dataset.tmem!==_td.id) return {swap:+mem.dataset.tmem, el:mem};
+  const car=el.closest('[data-tcar]');
+  if(car && car!==_td.fromCar) return {car:car.dataset.tcar, el:car};
+  return null;
+}
+document.getElementById('content').addEventListener('pointerdown',e=>{
+  if(!isAdmin() || state.tab!=='teams' || e.button>0) return;
+  const mem=e.target.closest&&e.target.closest('.mem[data-tmem]'); if(!mem) return;
+  if(e.target.closest('select,input,button,.iconbtn')) return;
+  if(e.pointerType!=='mouse' && !e.target.closest('.tgrip')) return;
+  _td={id:+mem.dataset.tmem, x:e.clientX, y:e.clientY, on:false, row:mem, fromCar:mem.closest('[data-tcar]'), ghost:null};
+  if(e.target.closest('.tgrip')) e.preventDefault();
+});
+document.addEventListener('pointermove',e=>{
+  if(!_td) return;
+  if(!_td.on){
+    if(Math.abs(e.clientX-_td.x)+Math.abs(e.clientY-_td.y)<6) return;
+    _td.on=true; _td.row.classList.add('tsrc');
+    const g=_td.ghost=document.createElement('div');
+    g.textContent=_drvName(_td.id);
+    g.style.cssText='position:fixed;left:0;top:0;z-index:99999;pointer-events:none;background:var(--yellow);color:#0a0a0a;font-family:Prompt,sans-serif;font-weight:700;font-size:12px;padding:5px 12px;border-radius:999px;box-shadow:0 4px 14px rgba(0,0,0,.4)';
+    document.body.appendChild(g);
+  }
+  e.preventDefault();
+  _td.cx=e.clientX; _td.cy=e.clientY;
+  _tdPaint();
+  /* near the top or bottom edge the page scrolls by itself, faster the closer you get, so a car
+     further down a long GT3 line-up can be reached in one drag */
+  const edge=70, h=window.innerHeight;
+  _td.vy=e.clientY<edge?-Math.ceil((edge-e.clientY)/4):(e.clientY>h-edge?Math.ceil((e.clientY-(h-edge))/4):0);
+  if(_td.vy && !_td.raf) _td.raf=requestAnimationFrame(_tdScroll);
+});
+function _tdPaint(){
+  _td.ghost.style.transform='translate('+(_td.cx+12)+'px,'+(_td.cy+12)+'px)';
+  document.querySelectorAll('.tdrop,.tswap').forEach(n=>n.classList.remove('tdrop','tswap'));
+  const t=_tdTarget(_td.cx,_td.cy); if(t) t.el.classList.add(t.swap!=null?'tswap':'tdrop');
+}
+function _tdScroll(){
+  if(!_td || !_td.on || !_td.vy){ if(_td) _td.raf=0; return; }
+  window.scrollBy(0,_td.vy); _tdPaint();
+  _td.raf=requestAnimationFrame(_tdScroll);
+}
+document.addEventListener('pointerup',e=>{
+  if(!_td) return;
+  const d=_td; _td=null;
+  if(d.ghost) d.ghost.remove();
+  _tdClear();
+  if(!d.on) return;
+  _td=d; const t=_tdTarget(e.clientX,e.clientY); _td=null;
+  if(!t) return;
+  const ok=(t.swap!=null)?teamSwap(d.id,t.swap):teamMove(d.id,t.car);
+  if(ok){ save(); renderContent(); setStatus(t.swap!=null?'Swapped '+_drvName(d.id)+' and '+_drvName(t.swap)+'.':'Moved '+_drvName(d.id)+'.'); }
+});
+document.addEventListener('pointercancel',()=>{ if(_td){ if(_td.ghost) _td.ghost.remove(); _tdClear(); _td=null; } });
 
 // ---- custom pointer drag (works in embedded previews where native drag-and-drop does not) ----
 // Drag a bank chip onto a block to assign anyone; drag a block onto another to swap/move.
