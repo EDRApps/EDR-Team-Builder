@@ -528,8 +528,12 @@ function autoApplyTiming(){  // auto-apply official session times to the selecte
     var ev=calEvent(state.evsel); if(!ev) return;
     if(state.evTiming && state.evTiming[state.evsel]) return;   // already applied / manually set / deliberately reverted — leave it
     if(state.stintsLocked) return;                              // locked stint plan: timing changes only via the manual Apply
+    /* only a browser that can SAVE the new times may apply them: a driver's copy used to move the
+       window locally while the saved plan kept the old one, so their ticks landed on other hours */
+    if(!isAdmin()) return;
     var se=irMatchFor(ev); if(!se || !(se.sessions&&se.sessions.length)) return;
-    if(applyIrTiming(ev, se)){ applyEventTiming(ev); state.stintAssign={}; state.stintWin={}; state.stintSig=''; applyAvailToDrivers(); save(); setSetupMsg('Auto-applied official session times from "'+se.name+'".'); renderContent(); }
+    var _avb=avTimingSnap();
+    if(applyIrTiming(ev, se)){ applyEventTiming(ev); var _mv=avRebase(state.evsel,_avb); state.stintAssign={}; state.stintWin={}; state.stintSig=''; applyAvailToDrivers(); save(); avPushRebased(state.evsel,_mv); setSetupMsg('Auto-applied official session times from "'+se.name+'".'+avMovedNote(_mv)); renderContent(); }
   }catch(e){}
 }
 function autoApplyWeather(){  // auto-pull: match the selected event to an iRacing season and apply its weather (manual override wins)
@@ -747,12 +751,13 @@ document.getElementById('content').addEventListener('click',function(e){
     const selEv=state.evsel?calEvent(state.evsel):null; const sel=document.querySelector('[data-s=irsel]');
     if(!selEv||!sel||sel.value===''){ setSetupMsg('Pick the matching iRacing event first.'); return; }
     const se=IR_SEASONS[parseInt(sel.value,10)];
-    if(se && applyIrTiming(selEv, se)){ applyEventTiming(selEv); state.stintAssign={}; state.stintWin={}; state.stintSig=''; applyAvailToDrivers(); save(); setSetupMsg('Applied official session times from "'+se.name+'".'); renderContent(); }
+    var _avb=avTimingSnap();
+    if(se && applyIrTiming(selEv, se)){ applyEventTiming(selEv); var _mv=avRebase(evKey(selEv),_avb); state.stintAssign={}; state.stintWin={}; state.stintSig=''; applyAvailToDrivers(); save(); avPushRebased(evKey(selEv),_mv); setSetupMsg('Applied official session times from "'+se.name+'".'+avMovedNote(_mv)); renderContent(); }
     else setSetupMsg('That iRacing event has no session times.');
   }
   else if(s==='irclear'){
     const selEv=state.evsel?calEvent(state.evsel):null;
-    if(selEv){ state.evTiming[evKey(selEv)]={src:'calendar'};   /* tombstone: blocks auto re-apply after a deliberate revert */ applyEventTiming(selEv); state.stintAssign={}; state.stintWin={}; state.stintSig=''; applyAvailToDrivers(); save(); setSetupMsg('Reverted to calendar session times.'); renderContent(); }
+    if(selEv){ var _avb=avTimingSnap(); state.evTiming[evKey(selEv)]={src:'calendar'};   /* tombstone: blocks auto re-apply after a deliberate revert */ applyEventTiming(selEv); var _mv=avRebase(evKey(selEv),_avb); state.stintAssign={}; state.stintWin={}; state.stintSig=''; applyAvailToDrivers(); save(); avPushRebased(evKey(selEv),_mv); setSetupMsg('Reverted to calendar session times.'+avMovedNote(_mv)); renderContent(); }
   }
 });
 

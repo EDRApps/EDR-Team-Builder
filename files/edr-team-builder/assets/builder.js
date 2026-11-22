@@ -2329,6 +2329,45 @@ function avSetBlock(next){
           :('Block size now '+fmtBlockLen(+next)+'.');
   _avErr=false; save(); renderContent();
 }
+/* Saved ticks are slot INDEXES counted from the window start, so anything that MOVES the window
+   (official session times applied, re-picked or reverted) has to move the ticks with it, through
+   real clock time. Without this every driver's blocks silently slid to other hours: on 21 Nov 2026
+   the 992 Cup went from a wrong "Formula A" match to the Creventic times, the window start moved
+   36 h, and Jake's and Ryan's Saturday blocks landed past the end of the window (0 h, out of the
+   line-up). Take avTimingSnap() BEFORE the timing changes, then avRebase(ev, snap) after it. */
+function avTimingSnap(){ return {start:WIN_START_MS, block:AV_BLOCK, win:EV_WIN_MIN}; }
+function avRebase(evk, from){
+  const to=avTimingSnap(), store=state.availStore[evk];
+  if(!store || !from || (from.start===to.start && from.block===to.block && from.win===to.win)) return [];
+  const shift=Math.round((from.start-to.start)/60000);   // old-window minute + shift = new-window minute
+  const moved=[];
+  Object.keys(store).forEach(function(nm){
+    const old=store[nm]||[]; if(!old.length) return;
+    const win=slotsToWindows(old, from.block, from.win)
+      .map(function(w){ return [Math.max(0, w[0]+shift), Math.min(to.win, w[1]+shift)]; })
+      .filter(function(w){ return w[1]>w[0]; });
+    /* strict: a new block counts only if the driver gave all of it. Hours that fall outside the
+       new window, or blocks that no longer line up, are dropped — never invented. */
+    const next=windowsToSlots(win, to.win, to.block, true);
+    if(next.join(',')!==old.slice().sort(function(a,b){return a-b;}).join(',')){
+      store[nm]=next; moved.push(nm);
+      (_availDirty[evk]=_availDirty[evk]||{})[nm]=1;
+    }
+  });
+  return moved;
+}
+/* Admin only: push the moved ticks straight away, so the saved availability and the saved event
+   times change together. A viewer without edit rights cannot save the new times either, so their
+   copy stays local and the next plan refresh puts both back. */
+function avPushRebased(evk, names){
+  if(!names || !names.length || !isAdmin()) return Promise.resolve(0);
+  return Promise.all(names.map(function(n){ return Promise.resolve(persistAvail(evk,n)); }))
+    .then(function(){ names.forEach(function(n){ if(_availDirty[evk]) delete _availDirty[evk][n]; }); return names.length; })
+    .catch(function(){ _avMsg='Event times changed, but the moved availability did not save — open Availability and hit Submit.'; _avErr=true; renderContent(); return 0; });
+}
+function avMovedNote(names){
+  return (names&&names.length) ? ' Saved availability moved with it ('+names.length+' driver'+(names.length>1?'s':'')+'), so everyone keeps the same clock hours.' : '';
+}
 function fmtBlockLen(m){ return m%60===0 ? (m/60)+'h' : (m<60? m+'min' : Math.floor(m/60)+'h '+(m%60)+'min'); }
 /* last-submission stamps from the server ({ev:{name:{at,n}}}), so a returning driver is told
    they are already in instead of having to decode their own grid */
@@ -3814,8 +3853,12 @@ function autoApplyTiming(){  // auto-apply official session times to the selecte
     var ev=calEvent(state.evsel); if(!ev) return;
     if(state.evTiming && state.evTiming[state.evsel]) return;   // already applied / manually set / deliberately reverted — leave it
     if(state.stintsLocked) return;                              // locked stint plan: timing changes only via the manual Apply
+    /* only a browser that can SAVE the new times may apply them: a driver's copy used to move the
+       window locally while the saved plan kept the old one, so their ticks landed on other hours */
+    if(!isAdmin()) return;
     var se=irMatchFor(ev); if(!se || !(se.sessions&&se.sessions.length)) return;
-    if(applyIrTiming(ev, se)){ applyEventTiming(ev); state.stintAssign={}; state.stintWin={}; state.stintSig=''; applyAvailToDrivers(); save(); setSetupMsg('Auto-applied official session times from "'+se.name+'".'); renderContent(); }
+    var _avb=avTimingSnap();
+    if(applyIrTiming(ev, se)){ applyEventTiming(ev); var _mv=avRebase(state.evsel,_avb); state.stintAssign={}; state.stintWin={}; state.stintSig=''; applyAvailToDrivers(); save(); avPushRebased(state.evsel,_mv); setSetupMsg('Auto-applied official session times from "'+se.name+'".'+avMovedNote(_mv)); renderContent(); }
   }catch(e){}
 }
 function autoApplyWeather(){  // auto-pull: match the selected event to an iRacing season and apply its weather (manual override wins)
@@ -4033,12 +4076,13 @@ document.getElementById('content').addEventListener('click',function(e){
     const selEv=state.evsel?calEvent(state.evsel):null; const sel=document.querySelector('[data-s=irsel]');
     if(!selEv||!sel||sel.value===''){ setSetupMsg('Pick the matching iRacing event first.'); return; }
     const se=IR_SEASONS[parseInt(sel.value,10)];
-    if(se && applyIrTiming(selEv, se)){ applyEventTiming(selEv); state.stintAssign={}; state.stintWin={}; state.stintSig=''; applyAvailToDrivers(); save(); setSetupMsg('Applied official session times from "'+se.name+'".'); renderContent(); }
+    var _avb=avTimingSnap();
+    if(se && applyIrTiming(selEv, se)){ applyEventTiming(selEv); var _mv=avRebase(evKey(selEv),_avb); state.stintAssign={}; state.stintWin={}; state.stintSig=''; applyAvailToDrivers(); save(); avPushRebased(evKey(selEv),_mv); setSetupMsg('Applied official session times from "'+se.name+'".'+avMovedNote(_mv)); renderContent(); }
     else setSetupMsg('That iRacing event has no session times.');
   }
   else if(s==='irclear'){
     const selEv=state.evsel?calEvent(state.evsel):null;
-    if(selEv){ state.evTiming[evKey(selEv)]={src:'calendar'};   /* tombstone: blocks auto re-apply after a deliberate revert */ applyEventTiming(selEv); state.stintAssign={}; state.stintWin={}; state.stintSig=''; applyAvailToDrivers(); save(); setSetupMsg('Reverted to calendar session times.'); renderContent(); }
+    if(selEv){ var _avb=avTimingSnap(); state.evTiming[evKey(selEv)]={src:'calendar'};   /* tombstone: blocks auto re-apply after a deliberate revert */ applyEventTiming(selEv); var _mv=avRebase(evKey(selEv),_avb); state.stintAssign={}; state.stintWin={}; state.stintSig=''; applyAvailToDrivers(); save(); avPushRebased(evKey(selEv),_mv); setSetupMsg('Reverted to calendar session times.'+avMovedNote(_mv)); renderContent(); }
   }
 });
 

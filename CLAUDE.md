@@ -127,7 +127,13 @@ driver-facing how-to, including the swap contact (2.4.8). Key facts:
   (`state.evTiming[evKey].avBlock`, admin buttons on the Availability tab). Stored ticks are
   slot *indexes*, so the size is part of how they are read — `avSetBlock()` rescales through
   real minute windows rather than reinterpreting, and **coarsening uses the strict
-  fully-covered rule** so a rescale can never hand back availability a driver did not give. Drivers tick either the mobile-friendly **block picker** (`renderMyBlocks`,
+  fully-covered rule** so a rescale can never hand back availability a driver did not give. The
+  window START is part of the reading too (2.6.5): applying, re-picking or reverting official
+  session times takes `avTimingSnap()` first and `avRebase()` after, which moves every driver's
+  ticks through real clock time (strict, never invents hours) and pushes them at once
+  (`avPushRebased`, admin only). Before that, a timing switch slid everyone's blocks (992 Cup,
+  21 Nov 2026: 36 h, Jake and Ryan fell out of the line-up). `autoApplyTiming` runs only for
+  admins, because a driver's browser cannot save the new times. Drivers tick either the mobile-friendly **block picker** (`renderMyBlocks`,
   with Tick all / Clear) or **their own column in the wide matrix** (`canEditAvail(nm)` gates the
   checkbox) — both edit the same data; other drivers' columns stay read-only, and the matrix is
   the full admin edit surface.
