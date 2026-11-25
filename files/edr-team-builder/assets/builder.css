@@ -224,6 +224,9 @@
   .sumpre{white-space:pre-wrap;font-size:12px;background:#101020;border-radius:8px;padding:10px;margin-top:10px;color:var(--body)}
   .sg-time.pre{color:var(--yellow)} .sg-time.pre b{color:var(--yellow)}
   .sg-block.pre{border-style:dashed}
+  .stopchip{display:inline-block;margin:1px;padding:1px 5px;border-radius:6px;border:1px solid #2a2a3e;color:var(--body)}
+  .stopchip.ty{border-color:#6ea8ff;color:#9cc4ff}
+  .stopchip.ed{cursor:pointer} .stopchip.ed:hover{filter:brightness(1.4);border-color:var(--yellow)}
   .qualirow{display:flex;gap:12px;flex-wrap:wrap;align-items:center;justify-content:space-between;margin:-4px 0 10px}
   .qualiwho{font-size:12px;color:var(--body)} .qualiwho select{font-size:12px;padding:3px 6px;margin-left:4px}
   .bmark{display:block;font-size:9px;font-weight:600;color:var(--yellow);margin-top:2px;letter-spacing:.02em}

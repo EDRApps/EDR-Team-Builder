@@ -125,6 +125,12 @@ Details in the plugin's [CLAUDE.md](files/edr-team-builder/CLAUDE.md).
   under half a stint joins the last one (`stintTimes`). Locking / publishing freezes lengths in
   `stintLens`. Fixed minutes remain for sprints.
 
+- 3.0.8: tank-mode fuel row in plain words. 3.0.9 **tyre strategy**: stints are built stop by stop
+  (`fuelPlanTimes`): each stop = `fuelCfg.pitLossSec` (fuel only; measured ~85 s at Spa) + `tyreSec`
+  (default 20) when tyres change. Team rule `fuelCfg.tyreEvery` (second/every/driver/none), per car
+  `tyrePlan[car].rule`, per stop `tyrePlan[car].stops[n]` (click a stop in the fuel row). Times are whole
+  minutes; publishing freezes `stintLens[car] = {t:[[s,e]..], st:[stops..]}`.
+
 ## Team Builder workflow & roles (v2.4)
 
 Tab order is the planning flow: **Instructions → Event → Availability → Drivers → Teams →
