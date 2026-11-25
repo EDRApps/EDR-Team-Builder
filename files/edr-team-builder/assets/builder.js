@@ -3044,7 +3044,7 @@ function renderStints(byId){
         html+='<div class="sgnav"><button class="btn btn-ghost avfree" data-sgscroll="-1" title="earlier stints">&lsaquo;</button><button class="btn btn-ghost avfree" data-sgscroll="1" title="later stints">&rsaquo;</button><span class="meta" style="font-size:10px">More stints to the right. Use the arrows, the yellow scrollbar, or Shift + scroll wheel.</span></div>';
         { const _c=_SH&&_SH.cars.find(function(x){ return x.key===key; }), _ps=_c?carProblems(_c):[];
           if(_ps.length) html+='<div class="carwarn" style="border:0;padding:0;margin:0 0 10px;display:flex;gap:10px;align-items:center;flex-wrap:wrap"><span>'+_ps.map(esc).join(' · ')+'</span>'
-            +((_c.gaps.length||_c.conflicts.length)&&!state.stintsLocked?'<button class="btn btn-ghost" data-action="fixcar" data-key="'+esc(key)+'" style="font-size:10px;padding:4px 10px">Fix empty and clashing stints</button>':'')+'</div>'; }
+            +((_c.gaps.length||_c.conflicts.length||_c.underFair.length)&&!state.stintsLocked?'<button class="btn btn-ghost" data-action="fixcar" data-key="'+esc(key)+'" style="font-size:10px;padding:4px 10px">Fix this car</button>':'')+'</div>'; }
         html+='<div class="stintwrap" data-key="'+key+'"><div class="stintgrid" style="grid-template-columns:150px repeat('+times.length+',minmax(84px,1fr))">';
         html+='<div class="sg-corner">stint →</div>';
         times.forEach((t,i)=>{ const wx=weatherAt(t.s,off,win); html+='<div class="sg-time"><b>'+(i+1)+'</b>'+fmtClock(t.s)+(wx?'<div style="font-size:9px;color:'+(wx.wet?'#6ea8ff':wx.night?'var(--dim)':'var(--amber)')+'">'+wx.icon+' '+wx.label+'</div>':'')+'</div>'; });
@@ -3091,7 +3091,29 @@ function fixCar(key){
       .sort(function(a,b){ return mins[a.id]-mins[b.id]; });
     if(ok.length){ arr[i]=ok[0].id; mins[ok[0].id]+=t.e-t.s; fixed++; } else if(c.conflicts.indexOf(i)>=0){ /* keep the clash for a hand decision */ }
   });
-  state.stintAssign[key]=arr; save(); return fixed;
+  /* 3.0.1: then make sure everyone in the car reaches iRacing's minimum (25% of an equal share).
+     A driver below it takes a stint they are free for from whoever has the most, as long as that
+     driver stays above the minimum and nobody goes over 4 h in 6 h. (A driver moved into a car
+     after its stints were planned used to sit on zero until someone dragged them in by hand.) */
+  const team=c.team.map(String), tot=c.times.reduce(function(a,t){ return a+(t.e-t.s); },0), fairMin=c.members.length?tot*FAIR_SHARE/c.members.length:0;
+  Object.keys(mins).forEach(function(k){ mins[k]=0; });
+  arr.forEach(function(id,i){ if(id!=null&&mins[id]!=null) mins[id]+=c.times[i].e-c.times[i].s; });
+  const restOk=function(id,i){ const mine=arr.map(function(x,j){ return String(x)===String(id)&&j!==i?c.times[j]:null; }).filter(Boolean).concat([c.times[i]]);
+    return !mine.some(function(a){ const w1=a.s+REST_WIN; let on=0; mine.forEach(function(b){ on+=Math.max(0,Math.min(b.e,w1)-Math.max(b.s,a.s)); }); return on>REST_MAX; }); };
+  let shared=0, guard=0;
+  c.members.slice().sort(function(a,b){ return mins[a.id]-mins[b.id]; }).forEach(function(u){
+    while(mins[u.id]<fairMin && guard++<50){
+      let best=-1, bestLoad=-1;
+      arr.forEach(function(id,i){ const t=c.times[i], dur=t.e-t.s;
+        if(id==null||String(id)===String(u.id)||team.indexOf(String(id))<0) return;
+        if(!driverFree(u,t.s,t.e)||mins[id]-dur<fairMin||!restOk(u.id,i)) return;
+        const load=mins[id]+(driverSure(u,t.s,t.e)?0.5:0);
+        if(load>bestLoad){ bestLoad=load; best=i; } });
+      if(best<0) break;
+      const t=c.times[best], dur=t.e-t.s; mins[arr[best]]-=dur; arr[best]=u.id; mins[u.id]+=dur; shared++;
+    }
+  });
+  state.stintAssign[key]=arr; save(); return {fixed:fixed, shared:shared};
 }
 
 /* ===== Race health (3.0): one pass that finds what still needs doing for the selected race =====
@@ -3530,7 +3552,9 @@ document.getElementById('content').addEventListener('click',e=>{
   const sno=e.target.closest&&e.target.closest('[data-action="swapno"]');
   if(sno&&isAdmin()){ swapDo('decline',{id:sno.dataset.id}); return; }
   const fx=e.target.closest&&e.target.closest('[data-action="fixcar"]');
-  if(fx){ if(isAdmin()&&!state.stintsLocked){ const n=fixCar(fx.dataset.key); renderContent(); setStatus(n?'Filled '+n+' stint'+(n>1?'s':'')+' with free drivers from that car.':'No free driver in that car for those stints: drag someone from the bank.'); } return; }
+  if(fx){ if(isAdmin()&&!state.stintsLocked){ const r=fixCar(fx.dataset.key)||{fixed:0,shared:0}; renderContent();
+      setStatus((r.fixed||r.shared)?[r.fixed?'filled '+r.fixed+' empty or clashing stint'+(r.fixed>1?'s':''):'', r.shared?'moved '+r.shared+' stint'+(r.shared>1?'s':'')+' so everyone meets the fair-share minimum':''].filter(Boolean).join(', ').replace(/^./,function(x){ return x.toUpperCase(); })+'.'
+        :'Nothing to change automatically: drag someone from the bank.'); } return; }
   if(e.target.closest&&e.target.closest('[data-action="autotoggle"]')){ setTimeout(function(){ const d=document.querySelector('details.autobox'); _autoOpen=!!(d&&d.open); },0); }
   const gt=e.target.closest&&e.target.closest('[data-action="gotab"]');
   if(gt){ state.tab=gt.dataset.tab; setActiveTab(); renderContent(); window.scrollTo(0,0); return; }
