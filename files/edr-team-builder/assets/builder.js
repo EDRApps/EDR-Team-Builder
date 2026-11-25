@@ -575,17 +575,20 @@ function isExcluded(name){ return !!excludedMap()[nameKey(name)]; }
 function excludeDriver(name){
   if(!isAdmin()||!name) return;
   excludedMap()[nameKey(name)]=name;                       // keep a display name for the undo list
-  state.drivers=(state.drivers||[]).filter(function(d){ return nameKey(d.name)!==nameKey(name); });
-  /* drop them from any car they were assigned to, or Teams/Stints keep rendering a ghost */
+  /* 3.0.2: teams and stints hold driver IDs, not names (the old name filter never matched). Take
+     the driver out of their car and blank only THEIR stints; every other car, seat and stint stays
+     exactly as arranged. Nothing is regenerated. */
+  const gone={}; (state.drivers||[]).forEach(function(d){ if(nameKey(d.name)===nameKey(name)) gone[String(d.id)]=1; });
+  state.drivers=(state.drivers||[]).filter(function(d){ return !gone[String(d.id)]; });
   Object.keys(state.teams||{}).forEach(function(cls){
     ['pro','casual'].forEach(function(tier){
       (state.teams[cls][tier]||[]).forEach(function(car,i){
-        state.teams[cls][tier][i]=(car||[]).filter(function(n){ return nameKey(n)!==nameKey(name); });
+        state.teams[cls][tier][i]=(car||[]).filter(function(x){ return !gone[String(x)]; });
       });
     });
   });
   Object.keys(state.stintAssign||{}).forEach(function(k){
-    if(nameKey(state.stintAssign[k]||'')===nameKey(name)) delete state.stintAssign[k];
+    if(Array.isArray(state.stintAssign[k])) state.stintAssign[k]=state.stintAssign[k].map(function(x){ return (x!=null&&gone[String(x)])?null:x; });
   });
   applyAvailToDrivers(); save(); renderContent();
 }
@@ -2971,7 +2974,7 @@ function renderStints(byId){
     html+='<div class="ctl"><label>FUEL / LAP (L)</label><input type="number" min="0" step="0.1" value="'+(fc.fuelPerLap||'')+'" placeholder="—" data-action="fuelperlap" style="width:74px;padding:6px"></div>';
     html+='<div class="ctl"><label>PIT LOSS (s)</label><input type="number" min="0" step="1" value="'+(fc.pitLossSec||'')+'" data-action="fuelpit" style="width:74px;padding:6px"></div>';
   }
-  html+='<button class="btn btn-ghost" data-action="stintreset" style="align-self:center">Auto-fill all</button>';
+  html+='<button class="btn btn-ghost" data-action="stintreset" style="align-self:center'+(_resetArm?';color:var(--red);border-color:var(--red)':'')+'">'+(_resetArm?'Tap again: replan every car':'Auto-fill all')+'</button>';
   if(isAdmin()) html+='<button class="btn '+(state.stintsLocked?'btn-amber':'btn-ghost')+'" data-action="stintlock" style="align-self:center">'+(state.stintsLocked?'🔒 Stints locked':'🔓 Lock stints')+'</button>';
   html+='<div class="meta" style="align-self:center;max-width:360px"><b style="color:#fff">Each car can run a different session.</b> Pick its start below (or set a default for all). Clock = '+tzLabel()+'. Drag blocks or bank names, or click a driver\'s lane to hand them that stint.</div>';
   html+='</div>';
@@ -3074,7 +3077,7 @@ function renderStints(byId){
   if(_autoHtml) html+='<details class="autobox"'+(_autoOpen?' open':'')+'><summary data-action="autotoggle">Race-day automation: Discord reminders, voice channels, weather</summary><div style="margin-top:12px">'+_autoHtml+'</div></details>';
   return html;
 }
-let _autoOpen=false;
+let _autoOpen=false, _resetArm=false;
 /* 3.0 "Fix": fill a car's empty and clashing stints with a driver from that car who is free for
    it, least-used first, skipping anyone it would put over 4 h in 6 h. Stints it cannot fill stay
    as they are for a hand decision. */
@@ -3743,8 +3746,11 @@ document.getElementById('content').addEventListener('click',e=>{
       if(!d.carLock){ const shown=autoCar(d); if(!shown){ setStatus('Pick a car for '+d.name+' first; picking one locks it.'); return; } d.assignedCar=shown; }
       d.carLock=!d.carLock; save(); renderContent(); }
     return; }
-  if(e.target.dataset.action==='remove'){ state.drivers=state.drivers.filter(x=>x.id!=e.target.dataset.id); generate(); save(); renderContent(); }
-  else if(e.target.dataset.action==='stintreset'){ if(state.stintsLocked){ setStatus('Stints are locked — unlock to auto-fill all.'); return; } state.stintAssign={}; state.stintSig=''; save(); renderContent(); }
+  if(e.target.dataset.action==='remove'){ const d=state.drivers.find(x=>String(x.id)===String(e.target.dataset.id)); if(d&&isAdmin()){ excludeDriver(d.name); setStatus('Removed '+d.name+'. Their stints are now empty; nobody else moved. Put them back under "Remove or restore drivers".'); } }   /* 3.0.2: used to regenerate every team and wipe the stints */
+  else if(e.target.dataset.action==='stintreset'){ if(state.stintsLocked){ setStatus('Stints are locked — unlock to auto-fill all.'); return; }
+    /* 3.0.2: two taps — this throws away every hand-placed stint in every car */
+    if(!_resetArm){ _resetArm=true; renderContent(); setTimeout(function(){ if(_resetArm){ _resetArm=false; if(state.tab==='stints') renderContent(); } },5000); return; }
+    _resetArm=false; state.stintAssign={}; state.stintSig=''; save(); renderContent(); setStatus('Every car\'s stints were planned again.'); }
   else if(e.target.dataset.action==='stintlock'){ if(!isAdmin())return; state.stintsLocked=!state.stintsLocked; save(); renderContent(); setStatus(state.stintsLocked?'Stints locked — auto-fill and window changes will leave them alone.':'Stints unlocked.'); }
   else if(e.target.dataset.action==='teamlock'){ if(!isAdmin())return; state.teamsLocked=!state.teamsLocked; save(); renderContent(); setStatus(state.teamsLocked?'Line-up locked — Generate/Import will leave it alone.':'Line-up unlocked.'); }
   else if(e.target.closest&&e.target.closest('[data-action="renamecar"]')){ if(!isAdmin())return; _renaming=e.target.closest('[data-action="renamecar"]').dataset.key; renderContent(); const inp=document.querySelector('#content input[data-action="renamesave"]'); if(inp){ inp.focus(); inp.select(); } }
@@ -4413,19 +4419,15 @@ function buildCars(r,prefsStr){
 }
 let lastMatches=[];
 function applyImport(payload){
-  var drivers=[], id=1;
-  var prevByKey={}; (state.drivers||[]).forEach(function(d){ prevByKey[nameKey(d.name)]=d; });   // keep admin-locked car choices across G61 imports
-  (payload.roster||[]).forEach(function(r){
-    if(isExcluded(r.name)) return;   // removed by an admin: Garage 61 must not put them back
-    var prev=prevByKey[nameKey(r.name)];
-    var locked=!!(prev&&prev.carLock);
-    var keep=(locked&&prev.assignedCar&&r.cars&&r.cars[prev.assignedCar])?prev.assignedCar:null;
-    drivers.push({id:id++, name:r.name, cars:r.cars, assignedCar:keep||lastCar(r.cars), avail:null, irating:(typeof r.irating==='number'?r.irating:(prev?prev.irating:null)), carLock:locked});
-  });
-  state.drivers=drivers; state.stintAssign={}; state.stintSig=''; state.stintWin={};
+  /* 3.0.2: an import only refreshes lap times. It used to RENUMBER every driver (teams and stints
+     store those numbers), wipe the stints and per-car start times and regenerate the line-up. Now
+     it merges pace exactly like the hourly refresh and leaves cars, seats and stints alone; a
+     brand-new line-up is only built when there is none yet. */
+  mergePace(payload.roster||[]);
   dedupeDrivers();
   applyAvailToDrivers();  // in-house per-event availability is the single source of truth
-  generate(); save();
+  if(!Object.keys(state.teams||{}).length) generate();
+  save();
 }
 /* ---- automatic pace -------------------------------------------------------------------
    The server keeps Garage 61 pace warm for the tracks of whichever event a viewer has open

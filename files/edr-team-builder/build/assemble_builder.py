@@ -639,19 +639,15 @@ function buildCars(r,prefsStr){
 }
 let lastMatches=[];
 function applyImport(payload){
-  var drivers=[], id=1;
-  var prevByKey={}; (state.drivers||[]).forEach(function(d){ prevByKey[nameKey(d.name)]=d; });   // keep admin-locked car choices across G61 imports
-  (payload.roster||[]).forEach(function(r){
-    if(isExcluded(r.name)) return;   // removed by an admin: Garage 61 must not put them back
-    var prev=prevByKey[nameKey(r.name)];
-    var locked=!!(prev&&prev.carLock);
-    var keep=(locked&&prev.assignedCar&&r.cars&&r.cars[prev.assignedCar])?prev.assignedCar:null;
-    drivers.push({id:id++, name:r.name, cars:r.cars, assignedCar:keep||lastCar(r.cars), avail:null, irating:(typeof r.irating==='number'?r.irating:(prev?prev.irating:null)), carLock:locked});
-  });
-  state.drivers=drivers; state.stintAssign={}; state.stintSig=''; state.stintWin={};
+  /* 3.0.2: an import only refreshes lap times. It used to RENUMBER every driver (teams and stints
+     store those numbers), wipe the stints and per-car start times and regenerate the line-up. Now
+     it merges pace exactly like the hourly refresh and leaves cars, seats and stints alone; a
+     brand-new line-up is only built when there is none yet. */
+  mergePace(payload.roster||[]);
   dedupeDrivers();
   applyAvailToDrivers();  // in-house per-event availability is the single source of truth
-  generate(); save();
+  if(!Object.keys(state.teams||{}).length) generate();
+  save();
 }
 /* ---- automatic pace -------------------------------------------------------------------
    The server keeps Garage 61 pace warm for the tracks of whichever event a viewer has open
