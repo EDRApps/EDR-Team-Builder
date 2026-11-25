@@ -304,6 +304,11 @@ function edr_g61_bucket_add(&$bucket, &$seen, $laps) {
         if (!isset($bucket[$name][$car])) $bucket[$name][$car] = array('clean' => array(), 'total' => 0, 'last' => '');
         $bucket[$name][$car]['total']++;
         if (!empty($lap['clean']) && isset($lap['lapTime'])) $bucket[$name][$car]['clean'][] = floatval($lap['lapTime']);
+        // 3.0: the driver's own fuel use, from clean green-flag laps only (no pit in/out laps)
+        if (!empty($lap['clean']) && empty($lap['pitIn']) && empty($lap['pitOut']) && isset($lap['fuelUsed']) && floatval($lap['fuelUsed']) > 0.05) {
+            if (!isset($bucket[$name][$car]['fuel'])) $bucket[$name][$car]['fuel'] = array();
+            $bucket[$name][$car]['fuel'][] = floatval($lap['fuelUsed']);
+        }
         // most recent outing per car (ISO strings compare lexicographically) — drives the default car pick
         if (!empty($lap['startTime']) && strcmp((string) $lap['startTime'], $bucket[$name][$car]['last']) > 0) $bucket[$name][$car]['last'] = (string) $lap['startTime'];
     }
@@ -323,6 +328,7 @@ function edr_g61_bucket_roster($bucket, $token) {
                 'medianLap'  => edr_g61_median($v['clean']),
                 'cleanPct'   => $v['total'] ? round(count($v['clean']) / $v['total'], 3) : 0,
                 'lastDriven' => ($v['last'] !== '') ? $v['last'] : null,
+                'fuelPerLap' => (!empty($v['fuel']) && count($v['fuel']) >= 3) ? round(edr_g61_median($v['fuel']), 3) : null,
             );
         }
         $ir = isset($ratings[edr_tb_namekey($name)]) ? $ratings[edr_tb_namekey($name)] : null;

@@ -88,7 +88,7 @@
   .readonly .controls{display:none}
   /* the weekly write-up is an admin tool — drivers never see the tab (the WordPress build
      hides Setup the same way) */
-  .readonly .tabs .tab[data-tab="weekly"]{display:none}
+  .readonly .tabs .tab[data-tab="weekly"],.readonly .tabs .tab[data-tab="home"]{display:none}
   .wkbox{width:100%;min-height:340px;background:#0a0a14;color:var(--body);border:1px solid var(--line);
     border-radius:var(--rmd);padding:12px;font-family:ui-monospace,Menlo,Consolas,monospace;font-size:12.5px;line-height:1.55}
   /* the draft is now a reference to copy out of, the final box is the one being worked in —
@@ -201,6 +201,37 @@
     .avmatrix th,.avmatrix td{padding:6px 5px}
     .grid{grid-template-columns:1fr!important}
   }
+  .savebadge{font-size:10px;letter-spacing:.04em;color:var(--dim);min-height:12px} .savebadge.ok{color:var(--green)} .savebadge.err{color:var(--red)}
+  .carwarn{margin-top:8px;font-size:11px;line-height:1.5;color:var(--amber);border-top:1px solid var(--lineSoft);padding-top:6px}
+  .bench{margin-bottom:16px;border:1px dashed var(--amber)} .benchrow{display:flex;flex-wrap:wrap;gap:8px} .benchrow .mem{flex:0 1 260px;margin:0}
+  /* 3.0: weights and Generate only where they act — the Teams tab */
+  .controls{display:none} .on-teams:not(.readonly) .controls{display:flex}
+  .autobox{background:var(--panel);border:1px solid var(--lineSoft);border-radius:var(--rxl);padding:14px 16px;margin-top:6px}
+  .autobox summary{cursor:pointer;font-family:'Prompt',sans-serif;font-weight:600;color:#fff;font-size:13px;letter-spacing:.02em}
+  .blockcell.maybe{border-color:var(--amber);background:rgba(255,180,84,.16);color:#fff}
+  .blockcell.maybe::after{content:' ?';color:var(--amber)}
+  .sg-lane.maybe{background:rgba(255,180,84,.18)}
+  .prefs{margin-top:12px} .prefs summary{cursor:pointer;font-size:12px;color:var(--body)}
+  .prefrow{display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-top:8px} .prefrow .meta{min-width:130px}
+  .wiz-stint{flex-wrap:wrap} .wiz-stint .when{white-space:nowrap}
+  .wiz-orderlist{display:flex;flex-direction:column;gap:4px}
+  .wiz-orderlist>div{display:flex;gap:10px;align-items:center;font-size:13px;padding:6px 10px;border-radius:8px;background:rgba(255,255,255,.04)}
+  .wiz-orderlist>div.me{background:rgba(240,240,0,.12);color:#fff;font-weight:600}
+  .wiz-orderlist .no{width:20px;color:var(--dim)} .wiz-orderlist .t{flex:1}
+  .rdcar{background:var(--panel);border:1px solid var(--lineSoft);border-left:4px solid var(--yellow);border-radius:var(--rlg);padding:14px 16px;margin-bottom:10px}
+  .rd-big{font-family:'Prompt',sans-serif;font-weight:700;font-size:24px;color:#fff;margin:2px 0 6px}
+  .rd-bar{height:6px;border-radius:3px;background:#1b1b2e;overflow:hidden;margin:4px 0 6px} .rd-bar span{display:block;height:100%;background:var(--yellow)}
+  .sumpre{white-space:pre-wrap;font-size:12px;background:#101020;border-radius:8px;padding:10px;margin-top:10px;color:var(--body)}
+  /* ---- race-week home (3.0) ---- */
+  .hero{background:var(--panel);border:1px solid var(--lineSoft);border-radius:var(--rxl);padding:18px 20px;margin-bottom:14px}
+  .hsteps{display:flex;flex-direction:column;gap:10px}
+  .hstep{display:flex;gap:14px;align-items:flex-start;background:var(--panel);border:1px solid var(--lineSoft);border-left:4px solid var(--line);border-radius:var(--rlg);padding:14px 16px}
+  .hstep.done{border-left-color:var(--green)} .hstep.warn{border-left-color:var(--amber)} .hstep.todo{border-left-color:var(--line)}
+  .hnum{flex:0 0 30px;height:30px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-family:'Prompt',sans-serif;font-weight:700;font-size:13px;background:#1b1b2e;color:#fff}
+  .hstep.done .hnum{background:var(--green);color:#0a0a0a} .hstep.warn .hnum{background:var(--amber);color:#0a0a0a}
+  .hbody{flex:1;min-width:0} .htitle{font-family:'Prompt',sans-serif;font-weight:600;color:#fff;font-size:14px;margin-bottom:4px}
+  .htext{font-size:13px;line-height:1.5;color:var(--body)} .hacts{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}
+  .hacts .btn{font-size:10px;padding:6px 12px}
   /* ---- stint planner ---- */
   .winbtn{text-align:left;cursor:pointer;background:var(--panel);border:1px solid var(--line);border-radius:var(--rlg);padding:11px 14px;min-width:170px;color:var(--body);font-family:'Karla',sans-serif;transition:border-color .15s,transform .15s,background .15s}
   .winbtn:hover{transform:translateY(-1px);border-color:var(--steel)}

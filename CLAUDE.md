@@ -78,6 +78,33 @@ page at a time around Garage 61's ~1 request/100 s `/laps` limit, and open pages
 `mergePace()` (pace only, never reshuffling the line-up). Import remains as a manual override.
 Details in the plugin's [CLAUDE.md](files/edr-team-builder/CLAUDE.md).
 
+## 3.0 (25 Nov 2026): per-race plans, race-week home, race day
+
+- **Per-race plans**: line-up, stints, per-car starts, car names and both locks live in
+  `state.evPlans[evKey]`; the open race's copy is the top-level fields. `selectEvent` stashes and
+  restores (`evPlanStash` / `evPlanRestore`), so switching races no longer wipes anything. Every save
+  sends `evPlans` (with each race's `confirm` + `channels`), and the PHP `edr_tb_plan_events()` runs the
+  Discord reminders and voice channels for **every locked race**, not just the selected one. A save
+  from an older tab without `evPlans` keeps the stored ones (`edr_tb_rest_plan_set`).
+- **Admin**: "Race week" tab is the admin landing (`renderHome`, `raceHealth`): times, who hasn't
+  answered (+ copy-ready Discord nudge), unplaced drivers, per-car problems (empty / conflicts /
+  under the 25% fair-share rule / over 4 h in 6 h), one **Publish plan** button (both locks).
+  Reset and Import JSON are hidden+disabled in WordPress (Reset sent an empty plan). Weights and
+  **Rebuild line-up** only show on Teams, and rebuilding an existing line-up shows a preview of
+  who moves first. Teams has a "Not in a car" bench to drag from. Stints shows grids first, a
+  per-car **Fix** (fills empty/clashing stints from free car-mates), and folds reminders / voice
+  channels / weather into "Race-day automation". Save status badge in the header.
+- **Drivers**: tap a block twice for **if needed** (stored as `prefs.maybe`; the planner uses yes
+  blocks first), "Use my usual times" (weekday+hour from their last 4 races), preferences
+  (avoid local night with their tz, max stints in a row, start/finish, rain), step 4 with stint
+  times, **Release / Take it** stint swaps (`/swap`, admin approves, Discord pings) and a calendar
+  feed (`/ics?name=`, needs `confirm.drivers[].times`).
+- **Race day** tab: now / time left / next per car, "Driver change done" shifts that car's later
+  stints from now (`/raceday`, public, 30 s debounce) and pings Discord; admin **post-race summary**
+  (`/summary`) finds the official result via the iRacing proxy and posts finish/laps/incidents.
+- Fuel per stint uses each driver's own Garage 61 fuel/lap (`cars[car].fuelPerLap`, median of
+  clean non-pit laps) unless an admin set a per-car number.
+
 ## Team Builder workflow & roles (v2.4)
 
 Tab order is the planning flow: **Instructions → Event → Availability → Drivers → Teams →

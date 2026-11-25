@@ -94,7 +94,7 @@
   .readonly .controls{display:none}
   /* the weekly write-up is an admin tool — drivers never see the tab (the WordPress build
      hides Setup the same way) */
-  .readonly .tabs .tab[data-tab="weekly"]{display:none}
+  .readonly .tabs .tab[data-tab="weekly"],.readonly .tabs .tab[data-tab="home"]{display:none}
   .wkbox{width:100%;min-height:340px;background:#0a0a14;color:var(--body);border:1px solid var(--line);
     border-radius:var(--rmd);padding:12px;font-family:ui-monospace,Menlo,Consolas,monospace;font-size:12.5px;line-height:1.55}
   /* the draft is now a reference to copy out of, the final box is the one being worked in —
@@ -207,6 +207,37 @@
     .avmatrix th,.avmatrix td{padding:6px 5px}
     .grid{grid-template-columns:1fr!important}
   }
+  .savebadge{font-size:10px;letter-spacing:.04em;color:var(--dim);min-height:12px} .savebadge.ok{color:var(--green)} .savebadge.err{color:var(--red)}
+  .carwarn{margin-top:8px;font-size:11px;line-height:1.5;color:var(--amber);border-top:1px solid var(--lineSoft);padding-top:6px}
+  .bench{margin-bottom:16px;border:1px dashed var(--amber)} .benchrow{display:flex;flex-wrap:wrap;gap:8px} .benchrow .mem{flex:0 1 260px;margin:0}
+  /* 3.0: weights and Generate only where they act — the Teams tab */
+  .controls{display:none} .on-teams:not(.readonly) .controls{display:flex}
+  .autobox{background:var(--panel);border:1px solid var(--lineSoft);border-radius:var(--rxl);padding:14px 16px;margin-top:6px}
+  .autobox summary{cursor:pointer;font-family:'Prompt',sans-serif;font-weight:600;color:#fff;font-size:13px;letter-spacing:.02em}
+  .blockcell.maybe{border-color:var(--amber);background:rgba(255,180,84,.16);color:#fff}
+  .blockcell.maybe::after{content:' ?';color:var(--amber)}
+  .sg-lane.maybe{background:rgba(255,180,84,.18)}
+  .prefs{margin-top:12px} .prefs summary{cursor:pointer;font-size:12px;color:var(--body)}
+  .prefrow{display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-top:8px} .prefrow .meta{min-width:130px}
+  .wiz-stint{flex-wrap:wrap} .wiz-stint .when{white-space:nowrap}
+  .wiz-orderlist{display:flex;flex-direction:column;gap:4px}
+  .wiz-orderlist>div{display:flex;gap:10px;align-items:center;font-size:13px;padding:6px 10px;border-radius:8px;background:rgba(255,255,255,.04)}
+  .wiz-orderlist>div.me{background:rgba(240,240,0,.12);color:#fff;font-weight:600}
+  .wiz-orderlist .no{width:20px;color:var(--dim)} .wiz-orderlist .t{flex:1}
+  .rdcar{background:var(--panel);border:1px solid var(--lineSoft);border-left:4px solid var(--yellow);border-radius:var(--rlg);padding:14px 16px;margin-bottom:10px}
+  .rd-big{font-family:'Prompt',sans-serif;font-weight:700;font-size:24px;color:#fff;margin:2px 0 6px}
+  .rd-bar{height:6px;border-radius:3px;background:#1b1b2e;overflow:hidden;margin:4px 0 6px} .rd-bar span{display:block;height:100%;background:var(--yellow)}
+  .sumpre{white-space:pre-wrap;font-size:12px;background:#101020;border-radius:8px;padding:10px;margin-top:10px;color:var(--body)}
+  /* ---- race-week home (3.0) ---- */
+  .hero{background:var(--panel);border:1px solid var(--lineSoft);border-radius:var(--rxl);padding:18px 20px;margin-bottom:14px}
+  .hsteps{display:flex;flex-direction:column;gap:10px}
+  .hstep{display:flex;gap:14px;align-items:flex-start;background:var(--panel);border:1px solid var(--lineSoft);border-left:4px solid var(--line);border-radius:var(--rlg);padding:14px 16px}
+  .hstep.done{border-left-color:var(--green)} .hstep.warn{border-left-color:var(--amber)} .hstep.todo{border-left-color:var(--line)}
+  .hnum{flex:0 0 30px;height:30px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-family:'Prompt',sans-serif;font-weight:700;font-size:13px;background:#1b1b2e;color:#fff}
+  .hstep.done .hnum{background:var(--green);color:#0a0a0a} .hstep.warn .hnum{background:var(--amber);color:#0a0a0a}
+  .hbody{flex:1;min-width:0} .htitle{font-family:'Prompt',sans-serif;font-weight:600;color:#fff;font-size:14px;margin-bottom:4px}
+  .htext{font-size:13px;line-height:1.5;color:var(--body)} .hacts{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}
+  .hacts .btn{font-size:10px;padding:6px 12px}
   /* ---- stint planner ---- */
   .winbtn{text-align:left;cursor:pointer;background:var(--panel);border:1px solid var(--line);border-radius:var(--rlg);padding:11px 14px;min-width:170px;color:var(--body);font-family:'Karla',sans-serif;transition:border-color .15s,transform .15s,background .15s}
   .winbtn:hover{transform:translateY(-1px);border-color:var(--steel)}
@@ -298,20 +329,22 @@
   <div class="ctl"><label>CLEAN weight <b id="lclean" style="color:var(--steel)"></b></label><input type="range" id="clean" min="0" max="100" style="accent-color:var(--steel)"></div>
   <div class="ctl"><label>PREP weight <b id="lprep" style="color:var(--green)"></b></label><input type="range" id="prep" min="0" max="100" style="accent-color:var(--green)"></div>
   <div class="ctl" style="flex:1 1 160px"><label>PRO = top <b id="lpro" style="color:var(--gold)"></b>% of each class</label><input type="range" id="propct" min="0" max="100" step="5" style="accent-color:var(--gold)"></div>
-  <button class="btn btn-amber" id="gen">Generate</button>
+  <button class="btn btn-amber" id="gen">Rebuild line-up</button>
   <button class="btn btn-ghost" id="imp">Import</button>
   <button class="btn btn-ghost" id="reset">Reset</button>
   <span class="status" id="status"></span>
 </div>
 
 <div class="tabs">
-  <button class="tab active" data-tab="instructions">Instructions</button>
+  <button class="tab" data-tab="home">Race week</button>
   <button class="tab" data-tab="event">Event</button>
   <button class="tab" data-tab="availability">Availability</button>
   <button class="tab" data-tab="drivers">Drivers</button>
   <button class="tab" data-tab="teams">Teams</button>
   <button class="tab" data-tab="stints">Stints</button>
-  <button class="tab" data-tab="weekly">Weekly</button>
+  <button class="tab" data-tab="raceday">Race day</button>
+  <button class="tab active" data-tab="instructions">Help</button>
+  <button class="tab" data-tab="weekly">Newsletter</button>
 </div>
 
 <div class="wrap">
@@ -337,7 +370,7 @@ let START_LABELS = {1:'Sat 08:00 · 22:00Z', 2:'Sat 17:00 · 07:00Z', 3:'Sat 22:
 // Availability as the drivers gave it for Spa (green = available). Empty cars = no Spa data shared.
 const SAMPLE = [{"name":"Aaron Werth","cars":{"Ferrari 296 GT3":{"laps":95,"medianLap":138.018,"cleanPct":0.495},"Ford Mustang GT3":{"laps":41,"medianLap":139.654,"cleanPct":0.293},"McLaren 720S GT3 EVO":{"laps":20,"medianLap":139.674,"cleanPct":0.25}},"avail":{"hours":42.8,"pct":100,"starts":[1,2,3,4],"windows":[[0,2568]]}},{"name":"Bernardo Hickmann","cars":{"Ferrari 296 GT3":{"laps":32,"medianLap":137.498,"cleanPct":0.562}},"avail":{"hours":42.8,"pct":100,"starts":[1,2,3,4],"windows":[[0,2568]]}},{"name":"Erik van der Bijl","cars":{"McLaren 720S GT3 EVO":{"laps":10,"medianLap":138.072,"cleanPct":0.5},"Ferrari 296 GT3":{"laps":316,"medianLap":138.113,"cleanPct":0.668},"Ford Mustang GT3":{"laps":10,"medianLap":137.893,"cleanPct":0.4},"Porsche 911 GT3 R (992)":{"laps":14,"medianLap":138.227,"cleanPct":0.429}},"avail":{"hours":42.8,"pct":100,"starts":[1,2,3,4],"windows":[[0,2568]]}},{"name":"Joey Tavora","cars":{"Porsche 911 GT3 R (992)":{"laps":55,"medianLap":139.418,"cleanPct":0.545},"Ferrari 296 GT3":{"laps":49,"medianLap":137.949,"cleanPct":0.694}},"avail":{"hours":42.8,"pct":100,"starts":[1,2,3,4],"windows":[[0,2568]]}},{"name":"John Nyhouse","cars":{"BMW M4 GT3 EVO":{"laps":15,"medianLap":141.213,"cleanPct":0.533},"McLaren 720S GT3 EVO":{"laps":81,"medianLap":139.572,"cleanPct":0.543},"Ferrari 296 GT3":{"laps":117,"medianLap":139.546,"cleanPct":0.402},"Acura NSX GT3 EVO 22":{"laps":37,"medianLap":141.031,"cleanPct":0.351},"Mercedes-AMG GT3 2020":{"laps":5,"medianLap":141.084,"cleanPct":0.6}},"avail":{"hours":42.8,"pct":100,"starts":[1,2,3,4],"windows":[[0,2568]]}},{"name":"Luke Hay","cars":{"Ferrari 296 GT3":{"laps":32,"medianLap":138.193,"cleanPct":0.281},"Porsche 911 GT3 R (992)":{"laps":32,"medianLap":139.237,"cleanPct":0.312},"Ford Mustang GT3":{"laps":11,"medianLap":137.831,"cleanPct":0.273}},"avail":{"hours":42.8,"pct":100,"starts":[1,2,3,4],"windows":[[0,2568]]}},{"name":"Stipe Ljubic","cars":{"BMW M4 GT3 EVO":{"laps":65,"medianLap":137.917,"cleanPct":0.446},"Ferrari 296 GT3":{"laps":128,"medianLap":136.251,"cleanPct":0.453}},"avail":{"hours":42.8,"pct":100,"starts":[1,2,3,4],"windows":[[0,2568]]}},{"name":"Thomaz Hernandes","cars":{"Ferrari 296 GT3":{"laps":243,"medianLap":138.202,"cleanPct":0.597},"Lamborghini Huracán GT3 EVO":{"laps":21,"medianLap":138.581,"cleanPct":0.571},"Ford Mustang GT3":{"laps":67,"medianLap":138.406,"cleanPct":0.448},"McLaren 720S GT3 EVO":{"laps":85,"medianLap":139.774,"cleanPct":0.576},"BMW M4 GT3 EVO":{"laps":36,"medianLap":139.116,"cleanPct":0.667},"Mercedes-AMG GT3 2020":{"laps":11,"medianLap":138.788,"cleanPct":0.455},"Porsche 911 GT3 R (992)":{"laps":25,"medianLap":138.826,"cleanPct":0.28}},"avail":{"hours":42.8,"pct":100,"starts":[1,2,3,4],"windows":[[0,2568]]}},{"name":"Sam Millar","cars":{"Porsche 911 GT3 R (992)":{"laps":94,"medianLap":139.149,"cleanPct":0.574},"Ferrari 296 GT3":{"laps":350,"medianLap":138.881,"cleanPct":0.603}},"avail":{"hours":39.3,"pct":92,"starts":[1,3,4],"windows":[[0,390],[600,2568]]}},{"name":"Matt Halden","cars":{"Ferrari 296 GT3":{"laps":39,"medianLap":137.796,"cleanPct":0.641}},"avail":{"hours":39,"pct":91,"starts":[1,2,3,4],"windows":[[0,2340]]}},{"name":"Sam Mackenzie","cars":{"Ferrari 296 GT3":{"laps":41,"medianLap":137.648,"cleanPct":0.366},"McLaren 720S GT3 EVO":{"laps":80,"medianLap":137.824,"cleanPct":0.662}},"avail":{"hours":34,"pct":79,"starts":[1,2,3,4],"windows":[[0,2040]]}},{"name":"Zach Martin","cars":{"Ferrari 296 GT3":{"laps":3,"medianLap":null,"cleanPct":0}},"avail":{"hours":33.8,"pct":79,"starts":[2,3,4],"windows":[[540,2568]]}},{"name":"Jake Lennox-Bradley","cars":{"BMW M4 GT3 EVO":{"laps":55,"medianLap":137.365,"cleanPct":0.691},"Ferrari 296 GT3":{"laps":56,"medianLap":138.339,"cleanPct":0.571},"Porsche 911 GT3 R (992)":{"laps":14,"medianLap":138.281,"cleanPct":0.429},"Ford Mustang GT3":{"laps":27,"medianLap":139.16,"cleanPct":0.407}},"avail":{"hours":32.5,"pct":76,"starts":[2,3,4],"windows":[[300,2250]]}},{"name":"Brock Hellmech","cars":{"McLaren 720S GT3 EVO":{"laps":239,"medianLap":138.084,"cleanPct":0.439},"Ferrari 296 GT3":{"laps":147,"medianLap":139.086,"cleanPct":0.286},"Ford Mustang GT3":{"laps":49,"medianLap":137.744,"cleanPct":0.265}},"avail":{"hours":19,"pct":44,"starts":[3],"windows":[[210,420],[660,960],[1200,1410],[1650,1860],[2100,2310]]}},{"name":"Michael Cullen","cars":{"Lamborghini Huracán GT3 EVO":{"laps":32,"medianLap":137.639,"cleanPct":0.812}},"avail":{"hours":8,"pct":19,"starts":[1,3],"windows":[[0,270],[690,900]]}},{"name":"Valentin Ozhiganov","cars":{"Ferrari 296 GT3":{"laps":35,"medianLap":137.467,"cleanPct":0.6}},"avail":{"hours":5,"pct":12,"starts":[],"windows":[[1230,1530]]}}];
 
-let state = { drivers:[], w:{pace:50,clean:30,prep:20}, proPct:40, tab:'event', teams:{}, stint:{window:1,len:60,race:1440}, stintAssign:{}, stintWin:{}, stintSig:'', evsel:null, role:'driver', me:'', pass:'', availStore:{}, evWinMin:0, evTiming:{}, teamsLocked:false, stintsLocked:false, teamNames:{}, fuelCfg:{pitLossSec:60,byCar:{},byClass:{}}, customEvents:[], irEvents:[], evWeather:{}, prefStore:{}, confirmStore:{}, swapNote:'' };
+let state = { drivers:[], w:{pace:50,clean:30,prep:20}, proPct:40, tab:'event', teams:{}, stint:{window:1,len:60,race:1440}, stintAssign:{}, stintWin:{}, stintSig:'', evPlans:{}, evsel:null, role:'driver', me:'', pass:'', availStore:{}, evWinMin:0, evTiming:{}, teamsLocked:false, stintsLocked:false, teamNames:{}, fuelCfg:{pitLossSec:60,byCar:{},byClass:{}}, customEvents:[], irEvents:[], evWeather:{}, prefStore:{}, confirmStore:{}, swapNote:'' };
 /* Per-user timezone (F10) is device-local, never in the shared plan. Auto-detect, override persisted in edrTB_tz. */
 let TZ = 'auto';   // default: auto-detect the viewer's zone; picker override persists per device
 try{ TZ = localStorage.getItem('edrTB_tz') || 'auto'; }catch(e){}
@@ -385,12 +418,12 @@ function seed(list){
   seedSpaAvail();
 }
 
-function save(){ try{ localStorage.setItem(KEY, JSON.stringify({drivers:state.drivers,w:state.w,proPct:state.proPct,teams:state.teams,stint:state.stint,stintAssign:state.stintAssign,stintWin:state.stintWin,stintSig:state.stintSig,evsel:state.evsel,role:state.role,me:state.me,pass:state.pass,availStore:state.availStore,evTiming:state.evTiming,teamsLocked:state.teamsLocked,stintsLocked:state.stintsLocked,teamNames:state.teamNames,fuelCfg:state.fuelCfg,customEvents:state.customEvents,irEvents:state.irEvents,evWeather:state.evWeather,prefStore:state.prefStore,confirmStore:state.confirmStore,swapNote:state.swapNote,evWinMin:EV_WIN_MIN,winStart:WIN_START_MS,startOffsets:START_OFFSETS,startLabels:START_LABELS})); }catch(e){} }
+function save(){ try{ localStorage.setItem(KEY, JSON.stringify({drivers:state.drivers,w:state.w,proPct:state.proPct,teams:state.teams,stint:state.stint,stintAssign:state.stintAssign,stintWin:state.stintWin,stintSig:state.stintSig,evPlans:state.evPlans,evsel:state.evsel,role:state.role,me:state.me,pass:state.pass,availStore:state.availStore,evTiming:state.evTiming,teamsLocked:state.teamsLocked,stintsLocked:state.stintsLocked,teamNames:state.teamNames,fuelCfg:state.fuelCfg,customEvents:state.customEvents,irEvents:state.irEvents,evWeather:state.evWeather,prefStore:state.prefStore,confirmStore:state.confirmStore,swapNote:state.swapNote,evWinMin:EV_WIN_MIN,winStart:WIN_START_MS,startOffsets:START_OFFSETS,startLabels:START_LABELS})); }catch(e){} }
 function load(){
   try{
     const s = JSON.parse(localStorage.getItem(KEY));
     if(s && s.drivers && s.drivers.length){
-      state.drivers=s.drivers; state.w=s.w||state.w; state.proPct=(typeof s.proPct==='number')?s.proPct:state.proPct; state.teams=s.teams||{}; state.stint=Object.assign(state.stint, s.stint||{}); state.stintAssign=s.stintAssign||{}; state.stintWin=s.stintWin||{}; state.stintSig=s.stintSig||'';
+      state.drivers=s.drivers; state.w=s.w||state.w; state.proPct=(typeof s.proPct==='number')?s.proPct:state.proPct; state.teams=s.teams||{}; state.stint=Object.assign(state.stint, s.stint||{}); state.stintAssign=s.stintAssign||{}; state.evPlans=objOr(s.evPlans); state.stintWin=s.stintWin||{}; state.stintSig=s.stintSig||'';
       state.evsel=s.evsel||null; state.role=s.role||'driver'; state.me=s.me||''; state.pass=s.pass||''; state.availStore=s.availStore||{}; state.evTiming=s.evTiming||{}; state.teamsLocked=!!s.teamsLocked; state.stintsLocked=!!s.stintsLocked;
       state.teamNames=s.teamNames||{}; state.fuelCfg=s.fuelCfg||state.fuelCfg; state.customEvents=s.customEvents||[]; state.irEvents=s.irEvents||[]; state.evWeather=s.evWeather||{}; state.prefStore=s.prefStore||{}; state.confirmStore=s.confirmStore||{}; state.swapNote=s.swapNote||'';
       if(s.evWinMin) EV_WIN_MIN=s.evWinMin;
@@ -767,13 +800,48 @@ function applyEventTiming(ev0){
   }
   if(!START_OFFSETS[state.stint.window]) state.stint.window=+Object.keys(START_OFFSETS)[0];
 }
+/* ===== Per-race plans (3.0) =====
+   The line-up, stints, per-car start times, car names and both locks belong to ONE race. The
+   active race's copy lives in state.teams/stintAssign/...; every other race keeps its own in
+   state.evPlans[evKey], so switching races works like changing tabs and switching back restores
+   everything. Before 3.0 a switch wiped the plan (and stopped the Discord jobs for that race). */
+const EVP_KEYS=['teams','stintAssign','stintWin','stintSig','teamsLocked','stintsLocked','teamNames'];
+function objOr(v){ return (v && typeof v==='object' && !Array.isArray(v)) ? v : {}; }   /* PHP sends an empty map back as [] */
+function evPlanSnap(){
+  const o={}; EVP_KEYS.forEach(function(k){ o[k]=JSON.parse(JSON.stringify(state[k]==null?null:state[k])); });
+  o.stint={window:state.stint.window, len:state.stint.len, race:state.stint.race};
+  return o;
+}
+function evPlanHas(key){ const p=objOr((state.evPlans||{})[key]); return Object.keys(objOr(p.teams)).length>0; }
+/* the active race's plan, copied into evPlans; with the Discord payloads when the caller has them */
+function evPlanStash(extra){
+  if(!state.evsel) return;
+  state.evPlans=objOr(state.evPlans);
+  const prev=objOr(state.evPlans[state.evsel]);
+  state.evPlans[state.evsel]=Object.assign(evPlanSnap(), {confirm:prev.confirm||null, channels:prev.channels||null}, extra||{});
+}
+function evPlanRestore(key){
+  const p=objOr(objOr(state.evPlans)[key]);
+  state.teams=objOr(p.teams); state.stintAssign=objOr(p.stintAssign); state.stintWin=objOr(p.stintWin);
+  state.stintSig=p.stintSig||''; state.teamsLocked=!!p.teamsLocked; state.stintsLocked=!!p.stintsLocked; state.teamNames=objOr(p.teamNames);
+  const st=objOr(p.stint);
+  if(st.len>0) state.stint.len=st.len;
+  if(st.race>0) state.stint.race=st.race;
+  if(st.window && typeof START_OFFSETS!=='undefined' && START_OFFSETS[st.window]!=null) state.stint.window=st.window;
+}
+/* races more than two weeks past drop out of evPlans on save, so the plan cannot grow forever */
+function evPlansPruned(){
+  const out={}, cut=Date.now()-14*86400000;
+  Object.keys(objOr(state.evPlans)).forEach(function(k){ const d=Date.parse((k.split('|')[1]||'')+'T00:00:00Z'); if(!(d<cut)) out[k]=state.evPlans[k]; });
+  return out;
+}
 function selectEvent(key){
   const ev=calEvent(key); if(!ev||!isTarget(ev)) return;
   const changed = state.evsel!==key;
+  if(changed && typeof _evStashForSwitch==='function') _evStashForSwitch(); else if(changed) evPlanStash();   // keep the race we are leaving, Discord payloads and all
   state.evsel=key;
   applyEventTiming(ev);
-  state.stintAssign={}; state.stintWin={}; state.stintSig='';
-  if(changed) state.teams={};   // don't carry the previous event's rosters into a new event; user re-runs Generate
+  if(changed) evPlanRestore(key);   // the race we are opening comes back exactly as it was left (empty if new)
   applyAvailToDrivers();
   save(); state.tab='availability'; setActiveTab(); renderContent();
 }
@@ -888,6 +956,7 @@ function applyAvailToDrivers(){
       state.drivers.push(d); byKey[k]=d;
     }
     d.avail=slotsToAvail(Object.keys(merged[k].slots).map(Number).sort((x,y)=>x-y));
+    d.avail.maybeW=slotsToAvail(prefsFor(merged[k].name).maybe).windows;   // "if needed" blocks (3.0)
   });
 }
 function windowsToSlots(windows, winMin, block, strict){
@@ -1020,9 +1089,34 @@ function confirmPlan(byId){
   stintCars(byId).forEach(function(c){
     const st=WIN_START_MS+c.off*60000; if(start===null||st<start) start=st;
     c.members.forEach(function(m){ const mine=driverStints(c,m.id); if(!mine.length) return;
-      drivers[m.name]={sig:stintSig(c,mine), car:c.label, stints:mine.map(function(i){ return i+1; })}; });
+      drivers[m.name]={sig:stintSig(c,mine), car:c.label, key:c.key, stints:mine.map(function(i){ return i+1; }),
+        times:mine.map(function(i){ return [WIN_START_MS+c.times[i].s*60000, WIN_START_MS+c.times[i].e*60000]; })}; });
   });
-  return {ev:state.evsel, start:start||0, drivers:drivers};
+  const _ev=calEvent(state.evsel);
+  return {ev:state.evsel, name:_ev?_ev.n:state.evsel.split('|')[0], start:start||0, drivers:drivers};
+}
+/* ===== Stint swaps (3.0): a driver releases a stint, a free driver from the same car takes it,
+   an admin approves and the plan changes. Stored server-side in edr_tb_swaps; the standalone
+   file has no server, so these stubs only explain that. ===== */
+let SWAPS={}, _swapMsg='';
+function swapPost(action,body){ return Promise.reject(new Error('Stint swaps run on the live site.')); }   /* WP build overrides: POST /swap */
+function swapsFor(ev){ return (SWAPS&&SWAPS[ev])||[]; }
+function swapDo(action,body){ _swapMsg='Saving…'; renderContent();
+  swapPost(action,Object.assign({ev:state.evsel},body)).then(function(j){ if(j&&j.swaps){ SWAPS[state.evsel]=j.swaps; } _swapMsg=(j&&j.message)||''; renderContent(); })
+    .catch(function(e){ _swapMsg=(e&&e.message)||'Could not reach the server.'; renderContent(); }); }
+function icsLink(){
+  if(typeof API==='undefined'||!API||!state.me) return '';
+  let base=API; try{ base=new URL(API, location.href).href; }catch(e){}
+  return base+'ics?name='+encodeURIComponent(state.me);
+}
+function renderSwapAdmin(byId){
+  const list=swapsFor(state.evsel).filter(function(x){ return x.st==='open'||x.st==='claimed'; }); if(!list.length) return '';
+  let h='<div class="importbox" style="border-left:4px solid var(--amber);margin-bottom:14px"><div class="htitle">Stint swaps</div>';
+  list.forEach(function(x){ const p=x.key.split('|');
+    h+='<div class="meta" style="margin-top:6px"><b>'+esc(x.from.split(' ')[0])+'</b> released stint '+(x.n+1)+' in '+esc(_carName(x.key))+' ('+fmtWhen(x.s)+')'
+      +(x.st==='claimed'?': <b style="color:var(--green)">'+esc(x.to.split(' ')[0])+'</b> wants to take it. <button class="btn btn-amber" data-action="swapok" data-id="'+esc(x.id)+'" style="font-size:10px;padding:4px 10px">Approve</button> <button class="btn btn-ghost" data-action="swapno" data-id="'+esc(x.id)+'" style="font-size:10px;padding:4px 10px">Decline</button>'
+        :': nobody has taken it yet. <button class="btn btn-ghost" data-action="swapno" data-id="'+esc(x.id)+'" style="font-size:10px;padding:4px 10px">Cancel</button>')+'</div>'; });
+  return h+(_swapMsg?'<div class="meta" style="margin-top:6px">'+esc(_swapMsg)+'</div>':'')+'</div>';
 }
 /* Confirmations open 4 days before the race (the same moment the first Discord reminder goes
    out) — earlier than that the line-up is still moving and asking is noise. They stay open until
@@ -1169,8 +1263,10 @@ function wizPickEvent(key){
   const ev=calEvent(key); if(!ev) return;
   if(_wizTeamEv===undefined){ _wizTeamEv=state.evsel; _wizTeamRace=state.stint.race; }
   if(key!==state.evsel){
+    evPlanStash();
     state.evsel=key; applyEventTiming(ev);
-    if(key===wizTeamEvent() && _wizTeamRace>0) state.stint.race=_wizTeamRace;
+    evPlanRestore(key);   // each race carries its own line-up and stints (3.0)
+    if(key===wizTeamEvent() && _wizTeamRace>0 && !evPlanHas(key)) state.stint.race=_wizTeamRace;
     applyAvailToDrivers(); _avMsg=''; _avErr=false; save();
   }
 }
@@ -1213,7 +1309,8 @@ function wizSubmitBar(){
 }
 /* a block tap changes one button and the bar — redraw just those, not the whole page */
 function refreshAvBits(cell){
-  if(cell) cell.classList.toggle('on', ((state.availStore[state.evsel]||{})[cell.dataset.name]||[]).indexOf(+cell.dataset.slot)>=0);
+  if(cell){ const on=((state.availStore[state.evsel]||{})[cell.dataset.name]||[]).indexOf(+cell.dataset.slot)>=0;
+    cell.classList.toggle('on', on); cell.classList.toggle('maybe', !on && prefsFor(cell.dataset.name).maybe.indexOf(+cell.dataset.slot)>=0); }
   const bar=document.querySelector('#content .subbar');
   if(bar) bar.outerHTML=simpleView()?wizSubmitBar():avSubmitBar();
 }
@@ -1271,7 +1368,7 @@ function renderWizard(byId){
     } else {
       const tzSel='<select data-tzpick class="avfree" style="font-size:12px;padding:3px 6px">'+TZ_ZONES.map(function(z){ return '<option value="'+z[0]+'"'+(z[0]===TZ?' selected':'')+'>'+z[1]+'</option>'; }).join('')+'</select>';
       h+='<p class="wiz-lead">Hi '+first+'. Tap every block you could drive for '+evLine+'.</p>'
-        +'<div class="wiz-hint" style="margin:-8px 0 14px">Times shown in '+tzSel+' · <span class="wiz-link" data-action="wizstep" data-step="2">other race</span> · <span class="wiz-link" data-action="iridchange">not '+first+'?</span></div>';
+        +'<div class="wiz-hint" style="margin:0 0 14px;line-height:2">Times shown in '+tzSel+' · <span class="wiz-link" data-action="wizstep" data-step="2">other race</span> · <span class="wiz-link" data-action="iridchange">not '+first+'?</span></div>';
       const a=state.availStore[state.evsel]=state.availStore[state.evsel]||{};
       h+=renderMyBlocks(a);
       h+=wizSubmitBar();
@@ -1281,7 +1378,7 @@ function renderWizard(byId){
     const r=wizCar(byId);
     if(!ev){
       h+='<p class="wiz-lead">No race is open yet. Your car and stints show up here once one is.</p>';
-    } else if(state.evsel!==wizTeamEvent()){
+    } else if(state.evsel!==wizTeamEvent() && !Object.keys(state.teams||{}).length){
       const mine=((state.availStore[state.evsel]||{})[state.me]||[]).length>0;
       h+='<p class="wiz-lead">'+(mine?'Your times are in for ':'You haven\'t given times for ')+evLine+'. The line-up for this race isn\'t built yet, so your car and stints show up here once it is.</p>'
         +(mine?'':'<button class="btn btn-amber avfree wiz-cta" data-action="wizstep" data-step="3">Add my times</button>');
@@ -1305,14 +1402,25 @@ function renderWizard(byId){
         +'</div>';
       const mine=driverStints(car,r.me.id);
       h+='<div class="wiz-label" style="margin-top:22px">You drive '+mine.length+' stint'+(mine.length===1?'':'s')+'</div>';
-      if(!mine.length) h+='<p class="wiz-lead" style="font-size:15px">No stints for you in this plan yet. You\'re on standby for this car.</p>';
+      const sw=swapsFor(state.evsel);
+      if(!mine.length) h+='<p class="wiz-lead" style="font-size:15px">You\'re not driving a stint yet: you back up '+esc(carLabel(c.cls,c.tier,c.ti)||(tierL+' '+(c.ti+1)))+'. If someone in the car can\'t make theirs, you\'re first in line. iRacing needs every declared driver to drive at least 25% of an equal share, so if you stay at none the admins will either give you a stint or take you off the entry.</p>';
       mine.forEach(function(i){ const t=times[i], wx=weatherAt(t.s,off,win), free=driverFree(r.me,t.s,t.e);
+        const rel=sw.find(function(x){ return x.key===car.key&&x.n===i&&(x.st==='open'||x.st==='claimed'); });
         h+='<div class="wiz-stint"><span class="no">'+(i+1)+'</span><span style="flex:1"><div class="when">'+fmtClock(t.s)+' – '+fmtClock(t.e).split(' ').slice(1).join(' ')+'</div>'
-          +(free?'':'<div class="meta" style="color:var(--red)">You said you\'re not free then. Tell us below.</div>')+'</span>'
-          +(wx?'<span class="meta" style="color:'+(wx.wet?'#6ea8ff':wx.night?'var(--dim)':'var(--amber)')+'">'+wx.icon+' '+wx.label+'</span>':'')+'</div>'; });
+          +(free?'':'<div class="meta" style="color:var(--red)">You said you\'re not free then. Release it below or tell the admins.</div>')
+          +(rel?'<div class="meta" style="color:var(--amber)">Released'+(rel.st==='claimed'?': '+esc(rel.to.split(' ')[0])+' will take it once an admin approves':', waiting for someone to take it')+'.</div>':'')+'</span>'
+          +(wx?'<span class="meta" style="color:'+(wx.wet?'#6ea8ff':wx.night?'var(--dim)':'var(--amber)')+'">'+wx.icon+' '+wx.label+'</span>':'')
+          +(rel?'':'<button class="btn btn-ghost avfree" data-action="swaprel" data-key="'+esc(car.key)+'" data-n="'+i+'" style="font-size:10px;padding:4px 10px;margin-left:8px">Release</button>')+'</div>'; });
       if(mine.length) h+=renderConfirmCard(car,mine,byId);
-      h+='<div class="wiz-label" style="margin-top:22px">Driving order</div><div class="wiz-order">'
-        +arr.map(function(id,i){ const m=(id!=null)?byId[id]:null; return '<span'+(m&&m.id===r.me.id?' class="me"':'')+'>'+(i+1)+' · '+(m?esc(m.name.split(' ')[0]):'—')+'</span>'; }).join('')+'</div>';
+      /* stints released by someone else in this car that this driver is free for */
+      const takeable=sw.filter(function(x){ return x.key===car.key&&x.st==='open'&&nameKey(x.from)!==nameKey(r.me.name)&&times[x.n]&&driverFree(r.me,times[x.n].s,times[x.n].e); });
+      if(takeable.length){ h+='<div class="wiz-label" style="margin-top:22px">Stints you can take</div>';
+        takeable.forEach(function(x){ const t=times[x.n]; h+='<div class="wiz-stint"><span class="no">'+(x.n+1)+'</span><span style="flex:1"><div class="when">'+fmtClock(t.s)+' – '+fmtClock(t.e).split(' ').slice(1).join(' ')+'</div><div class="meta">Released by '+esc(x.from.split(' ')[0])+'</div></span><button class="btn btn-amber avfree" data-action="swaptake" data-id="'+esc(x.id)+'" style="font-size:10px;padding:5px 12px">Take it</button></div>'; }); }
+      if(_swapMsg) h+='<div class="meta" style="margin-top:8px">'+esc(_swapMsg)+'</div>';
+      h+='<div class="wiz-label" style="margin-top:22px">Driving order</div><div class="wiz-orderlist">'
+        +arr.map(function(id,i){ const m=(id!=null&&car.team.map(String).indexOf(String(id))>=0)?byId[id]:null, t=times[i]; return '<div'+(m&&m.id===r.me.id?' class="me"':'')+'><span class="no">'+(i+1)+'</span><span class="t">'+fmtClock(t.s)+' – '+fmtClock(t.e).split(' ').slice(1).join(' ')+'</span><span class="d">'+(m?esc(m.name.split(' ')[0]):'—')+'</span></div>'; }).join('')+'</div>';
+      const ics=icsLink();
+      if(ics) h+='<div style="margin-top:16px;display:flex;gap:8px;flex-wrap:wrap"><a class="btn btn-ghost avfree" href="'+esc(ics.replace(/^https?:/,'webcal:'))+'" style="text-decoration:none;font-size:11px;padding:7px 14px">Add my stints to my calendar</a><a class="meta avfree" href="'+esc(ics)+'" style="align-self:center">or download</a></div><div class="meta" style="font-size:10px;margin-top:4px">Your calendar updates itself when your stints change.</div>';
     }
     const wn=(state.swapNote||'').trim();
     h+='<div class="wiz-card" style="border-left:4px solid var(--yellow);margin-top:22px"><div class="meta" style="text-transform:uppercase;letter-spacing:.05em;margin-bottom:6px">Can\'t make a stint?</div>'
@@ -2576,6 +2684,7 @@ function toggleAvail(name,slot,want){
   const on=(want===undefined)?(i<0):want;
   if(on&&i<0) arr.push(slot);
   if(!on&&i>=0) arr.splice(i,1);
+  if(on){ const mb=maybeList(name), j=mb.indexOf(slot); if(j>=0) mb.splice(j,1); }
   (_availDirty[state.evsel]=_availDirty[state.evsel]||{})[name]=1; _avMsg=''; _avErr=false;
   applyAvailToDrivers(); save(); return true;
 }
@@ -2586,7 +2695,40 @@ function setAllAvail(name,on){
   (_availDirty[state.evsel]=_availDirty[state.evsel]||{})[name]=1; _avMsg=''; _avErr=false;
   applyAvailToDrivers(); save(); return true;
 }
-function prefsFor(name){ const p=((state.prefStore||{})[state.evsel]||{})[name]; return {time:(p&&p.time)||'any', cond:(p&&p.cond)||'any', cls:(p&&p.cls)||''}; }
+function prefsFor(name){ const p=((state.prefStore||{})[state.evsel]||{})[name];
+  return {time:(p&&p.time)||'any', cond:(p&&p.cond)||'any', cls:(p&&p.cls)||'', night:(p&&p.night)||'any', maxRun:+((p&&p.maxRun)||0), tz:(p&&p.tz)||'',
+          maybe:(p&&Array.isArray(p.maybe))?p.maybe:[]}; }
+/* 3.0 "if needed" blocks: kept beside the preferences (edr_tb_prefs), so the yes-list every older
+   reader understands is untouched. Tap once = yes, twice = if needed, three times = off. */
+function maybeList(name){ const ps=(state.prefStore[state.evsel]=state.prefStore[state.evsel]||{}); const p=(ps[name]=ps[name]||{time:'any',cond:'any'});
+  if(!Array.isArray(p.maybe)) p.maybe=[]; return p.maybe; }
+/* "Use my usual times" (3.0): tick the blocks whose weekday and hour (where the driver lives) they
+   were available for in their last few races. A starting point they confirm, never a submission. */
+function wkHour(ms){ try{ return new Date(ms).toLocaleString('en-GB',{timeZone:tzZone(),weekday:'short',hour:'2-digit',hour12:false}); }catch(e){ return ''; } }
+function usualTimes(name){
+  const me=nameKey(name), hits={}, cur=state.evsel;
+  const evs=Object.keys(state.availStore||{}).filter(function(k){ return k!==cur; })
+    .sort(function(a,b){ return (b.split('|')[1]||'').localeCompare(a.split('|')[1]||''); }).slice(0,4);
+  let used=0;
+  evs.forEach(function(k){ const ev0=calEvent(k); if(!ev0) return; const ev=Object.assign({},ev0,(state.evTiming||{})[k]||{});
+    const ws=ev.winStart?Date.parse(ev.winStart):Date.parse(ev.s+'T00:00:00+10:00'), blk=avBlockOk(ev.avBlock)?ev.avBlock:120;
+    const a=state.availStore[k]||{}, nm=Object.keys(a).find(function(n){ return nameKey(n)===me; }); if(!nm||!(a[nm]||[]).length) return; used++;
+    a[nm].forEach(function(i){ for(let m=0;m<blk;m+=60) hits[wkHour(ws+(i*blk+m)*60000)]=1; }); });
+  if(!used) return null;
+  const out=[];
+  for(let i=0;i<evSlots();i++){ const t=WIN_START_MS+i*AV_BLOCK*60000; let all=true; for(let m=0;m<AV_BLOCK;m+=60){ if(!hits[wkHour(t+m*60000)]){ all=false; break; } } if(all) out.push(i); }
+  return {slots:out, from:used};
+}
+function cycleAvail(name,slot){
+  if(!canEditAvail(name)) return false;
+  const yes=((state.availStore[state.evsel]||{})[name]||[]), mb=maybeList(name);
+  if(yes.indexOf(slot)>=0){ toggleAvail(name,slot,false); if(mb.indexOf(slot)<0) mb.push(slot); }
+  else if(mb.indexOf(slot)>=0){ mb.splice(mb.indexOf(slot),1); }
+  else { toggleAvail(name,slot,true); }
+  if(!isAdmin()){ try{ state.prefStore[state.evsel][name].tz=tzZone(); }catch(e){} }   // the driver's own zone, for "avoid my night"
+  (_availDirty[state.evsel]=_availDirty[state.evsel]||{})[name]=1; _avMsg=''; _avErr=false;
+  applyAvailToDrivers(); save(); return true;
+}
 /* Change the block size for the selected event and RESCALE every stored tick through real
    minute windows, because a slot index means nothing without the size it was recorded at —
    reinterpreting 2h ticks as 30min ticks would silently shrink everyone's availability. */
@@ -2741,8 +2883,8 @@ function renderMyBlocks(a){
   for(let i=0;i<n;i++){ const d=fmtDay(i*AV_BLOCK); if(!cur||cur.day!==d){ cur={day:d,slots:[]}; groups.push(cur);} cur.slots.push(i); }
   let h='<div class="importbox">';
   h+='<div class="myblocks-head"><span class="head" style="color:#fff;font-size:15px">'+(isAdmin()?'Editing · ':'Your blocks · ')+esc(nm.split(' ')[0])+(lockedForMe(nm)?' 🔒':'')+'</span>'
-    +(canEdit?'<span class="myblocks-btns"><button class="btn btn-amber avfree" data-action="avtickall">Tick all</button><button class="btn btn-ghost avfree" data-action="avclear">Clear</button></span>':'')+'</div>';
-  h+='<div class="meta" style="margin:2px 0 4px">Tap every '+fmtBlockLen(AV_BLOCK)+' block you can race ('+tzLabel()+' time), or drag across a row. Then Submit.</div>';
+    +(canEdit?'<span class="myblocks-btns">'+(!arr.length&&usualTimes(nm)?'<button class="btn btn-amber avfree" data-action="avusual">Use my usual times</button>':'')+'<button class="btn '+(arr.length?'btn-amber':'btn-ghost')+' avfree" data-action="avtickall">Tick all</button><button class="btn btn-ghost avfree" data-action="avclear">Clear</button></span>':'')+'</div>';
+  h+='<div class="meta" style="margin:2px 0 4px">Tap every '+fmtBlockLen(AV_BLOCK)+' block you can race ('+tzLabel()+' time), or drag across a row. Tap again for <b style="color:var(--amber)">if needed</b>, a third time to clear. Then Submit.</div>';
   const seen=avSeenFor(nm);
   if(seen) h+='<div class="meta" style="margin:2px 0 6px;color:var(--green)">Already in — you submitted '+seen.n+' block'+(seen.n===1?'':'s')+' '+esc(seen.ago)+'.</div>';
   if(evcls.length>1){
@@ -2755,12 +2897,21 @@ function renderMyBlocks(a){
                 +' <button class="quickbtn avfree" data-bulk="dayoff" data-day="'+esc(g.day)+'" data-name="'+esc(nm)+'" style="text-transform:none">none</button>':'')
       +'</div><div class="blockrow">';
     g.slots.forEach(function(i){
-      const on=arr.indexOf(i)>=0;
+      const on=arr.indexOf(i)>=0, mbe=!on&&pr.maybe.indexOf(i)>=0;
       const lbl=fmtClock(i*AV_BLOCK).split(' ').slice(1).join(' ')+'–'+fmtClock(Math.min((i+1)*AV_BLOCK,EV_WIN_MIN)).split(' ').slice(1).join(' ');
-      h+='<button class="blockcell avfree'+(on?' on':'')+'"'+(canEdit?' data-avtoggle data-name="'+esc(nm)+'" data-slot="'+i+'"':' disabled')+'>'+lbl+'</button>';
+      h+='<button class="blockcell avfree'+(on?' on':'')+(mbe?' maybe':'')+'"'+(canEdit?' data-avtoggle data-name="'+esc(nm)+'" data-slot="'+i+'"':' disabled')+'>'+lbl+'</button>';
     });
     h+='</div>';
   });
+  if(canEdit){
+    const opt=function(axis,val,label){ return '<button class="btn '+((''+pr[axis])===(''+val)?'btn-amber':'btn-ghost')+' avfree" data-prefset="'+axis+'" data-name="'+esc(nm)+'" data-val="'+esc(val)+'" style="font-size:10px;padding:5px 10px">'+label+'</button>'; };
+    h+='<details class="prefs"'+((pr.night!=='any'||pr.maxRun||pr.time!=='any'||pr.cond!=='any')?' open':'')+'><summary>Preferences (optional)</summary>'
+      +'<div class="prefrow"><span class="meta">Night where you live</span>'+opt('night','any','No preference')+opt('night','avoid','Avoid it')+'</div>'
+      +'<div class="prefrow"><span class="meta">Stints in a row</span>'+opt('maxRun','0','Any')+opt('maxRun','1','1')+opt('maxRun','2','2')+opt('maxRun','3','3')+'</div>'
+      +'<div class="prefrow"><span class="meta">Part of the race</span>'+opt('time','any','Any')+opt('time','start','The start')+opt('time','finish','The finish')+'</div>'
+      +'<div class="prefrow"><span class="meta">Rain</span>'+opt('cond','any','Any')+opt('cond','wet','Happy in the wet')+opt('cond','dry','Prefer dry')+'</div>'
+      +'<div class="meta" style="font-size:10px;margin-top:4px">Used only when stints are planned automatically, never over a change the admins made by hand.</div></details>';
+  }
   h+='</div>'; return h;
 }
 function renderAvail(){
@@ -2798,11 +2949,14 @@ function renderAvail(){
       +(state.me?'':'<span class="meta">Pick your name to enter availability.</span>')+'</div>';
   }
   if(isAdmin()){
+    const _na=notAnswered();
+    if(_na.length) html+='<div class="meta" style="margin-top:12px"><b style="color:var(--amber)">'+_na.length+' not answered:</b> '+esc(_na.join(', '))+' <button class="btn btn-ghost" data-action="copynudge" style="font-size:10px;padding:4px 10px;margin-left:6px">Copy Discord nudge</button>'+(_homeMsg?' <span style="color:var(--green)">'+esc(_homeMsg)+'</span>':'')+'</div>';
+    html+='<details style="margin-top:10px"><summary class="meta" style="cursor:pointer">Block size and clean-up</summary>';
     html+='<div class="quickrow" style="margin-top:12px"><span class="meta" style="width:56px">Block size</span>'
       +AV_BLOCK_CHOICES.map(function(b){ return '<button class="quickbtn avfree'+(b===AV_BLOCK?' on':'')+'" data-action="avblock" data-b="'+b+'"'
         +(b===AV_BLOCK?' style="border-color:var(--yellow);color:#fff"':'')+'>'+fmtBlockLen(b)+'</button>'; }).join('')
       +'<span class="meta" style="font-size:10px">· existing ticks are rescaled, then need a Submit</span>'
-      +'<button class="quickbtn avfree" data-action="avprune" style="margin-left:auto" title="drop stored availability for events that finished over 90 days ago">Clear old events</button></div>';
+      +'<button class="quickbtn avfree" data-action="avprune" style="margin-left:auto" title="drop stored availability for events that finished over 90 days ago">Clear old events</button></div></details>';
   }
   html+='</div>';
   // tile picker for the selected person (driver = themself; admin = the driver they chose)
@@ -2890,6 +3044,15 @@ function renderTeams(byId){
 function renderTeamsInner(byId,classes){
   // dropdown lists EVERY car (both tiers, all classes) so any driver can go anywhere
   let html='';
+  const _H=isAdmin()?raceHealth(byId):null, _hc={};
+  if(_H) _H.cars.forEach(function(c){ _hc[c.key]=c; });
+  if(isAdmin()) html+=renderGenPreview(byId);
+  /* 3.0: drivers with times who are in no car. Before this a late sign-up simply vanished. */
+  if(_H && _H.unplaced.length){
+    html+='<div class="card bench" data-tcar="bench"><div class="head" style="color:var(--amber);letter-spacing:1px;margin-bottom:8px">Not in a car · '+_H.unplaced.length+'</div>'
+      +'<div class="benchrow">'+_H.unplaced.map(function(d){ return '<div class="mem" data-tmem="'+d.id+'"><span class="tgrip" title="drag into a car">⠿</span><div style="min-width:0;flex:1"><div style="font-size:13px">'+esc(d.name)+'</div><div style="font-size:10px;color:var(--dim)">'+fmtLap(d._median)+' · '+(d._laps||0)+' laps · '+(d.avail&&d.avail.pct!=null?d.avail.pct:'?')+'% avail · '+(d._tier==='pro'?'Pro':'Casual')+' pick</div></div></div>'; }).join('')+'</div>'
+      +'<div class="meta" style="margin-top:6px">Drag a name into a car, or onto a driver to swap them out.</div></div>';
+  }
   if(isAdmin()){
     html+='<div class="importbox" style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:16px;border-left:4px solid '+(state.teamsLocked?'var(--green)':'var(--line)')+'">'
       +'<button class="btn '+(state.teamsLocked?'btn-amber':'btn-ghost')+'" data-action="teamlock">'+(state.teamsLocked?'🔒 Line-up locked':'🔓 Lock line-up')+'</button>'
@@ -2917,7 +3080,9 @@ function renderTeamsInner(byId,classes){
         members.forEach(d=>{
           html+='<div class="mem" data-tmem="'+d.id+'">'+(isAdmin()?'<span class="tgrip" title="drag to another car, or onto a driver to swap">⠿</span>':'')+'<div style="min-width:0;flex:1"><div style="font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'+esc(d.name)+'</div><div style="font-size:10px;color:var(--dim)">'+fmtLap(d._median)+' · '+d._laps+' laps · '+Math.round(d._clean*100)+'% clean'+(d.irating?' · iR '+d.irating:'')+(d.avail?' · <span style="color:'+(d.avail.pct>=80?'var(--green)':d.avail.pct>=40?'var(--amber)':'var(--red)')+'">'+d.avail.pct+'% avail</span>':'')+'</div></div></div>';
         });
-        if(!members.length) html+='<div class="meta">empty</div>';
+        if(!members.length) html+='<div class="meta">Empty. Drag a driver here, or remove the car.</div>';
+        const _w=_hc[rkey]; if(_w){ const ps=carProblems(_w).concat(_w.lowAvail.length?[_w.lowAvail.map(function(m){ return m.name.split(' ')[0]; }).join(', ')+' under 35% availability']:[]);
+          if(ps.length) html+='<div class="carwarn">'+ps.map(esc).join('<br>')+'</div>'; }
         html+='</div>';
       });
       html+='</div></div>';
@@ -2946,7 +3111,7 @@ function renderDrivers(model){
       let opts=(d._car?'':'<option value="" selected disabled>— no '+esc(d._class)+' car yet —</option>')+cars.map(c=>'<option value="'+esc(c)+'"'+(c===d._car?' selected':'')+'>'+esc(c)+'</option>').join('');
       const others=allCars.filter(c=>!(d.cars&&d.cars[c]));
       if(others.length) opts+='<optgroup label="— any car at this track —">'+others.map(c=>'<option value="'+esc(c)+'"'+(c===d._car?' selected':'')+'>'+esc(c)+' (no laps)</option>').join('')+'</optgroup>';
-      html+='<div class="row '+d._tier+'"><span class="meta" style="width:20px">#'+(i+1)+'</span><span style="font-size:13px;min-width:110px">'+esc(d.name)+'</span><select data-action="assign" data-id="'+d.id+'">'+opts+'</select>'+(isAdmin()?'<span class="iconbtn" data-action="carlock" data-id="'+d.id+'" title="'+(d.carLock?'car locked — imports keep this choice; click to unlock':'lock this car choice so imports keep it')+'" style="font-size:14px;opacity:'+(d.carLock?'1':'.4')+'">'+(d.carLock?'🔒':'🔓')+'</span>':(d.carLock?'<span title="car locked by admin" style="font-size:12px">🔒</span>':''))+'<span class="meta">'+fmtLap(d._median)+' · '+d._laps+' laps · '+Math.round(d._clean*100)+'% clean'+(d.avail?' · '+d.avail.pct+'% avail':'')+'</span><span class="tier '+d._tier+'">'+d._tier.toUpperCase()+' · '+(d._score*100).toFixed(0)+'</span><button class="x" data-action="remove" data-id="'+d.id+'">✕</button></div>';
+      html+='<div class="row '+d._tier+'"><span class="meta" style="width:20px">#'+(i+1)+'</span><span style="font-size:13px;min-width:110px">'+esc(d.name)+'</span>'+((cars.length+others.length)>1||!d._car?'<select data-action="assign" data-id="'+d.id+'">'+opts+'</select>':'<span class="meta" style="min-width:180px;color:var(--body)">'+esc(d._car)+'</span>')+(isAdmin()?'<span class="iconbtn" data-action="carlock" data-id="'+d.id+'" title="'+(d.carLock?'car locked — imports keep this choice; click to unlock':'lock this car choice so imports keep it')+'" style="font-size:14px;opacity:'+(d.carLock?'1':'.4')+'">'+(d.carLock?'🔒':'🔓')+'</span>':(d.carLock?'<span title="car locked by admin" style="font-size:12px">🔒</span>':''))+'<span class="meta">'+fmtLap(d._median)+' · '+d._laps+' laps · '+Math.round(d._clean*100)+'% clean'+(d.avail?' · '+d.avail.pct+'% avail':'')+'</span><span class="tier '+d._tier+'">'+d._tier.toUpperCase()+' · '+(d._score*100).toFixed(0)+'</span><button class="x" data-action="remove" data-id="'+d.id+'">✕</button></div>';
     });
     html+='</div></div>';
   });
@@ -2961,8 +3126,7 @@ function renderDrivers(model){
 function renderDriverAdmin(){
   if(!isAdmin()) return '';
   const ex=excludedMap(), keys=Object.keys(ex);
-  let h='<div class="importbox" style="margin-top:16px">';
-  h+='<div class="meta" style="text-transform:uppercase;letter-spacing:.04em;margin-bottom:2px">Manage drivers</div>';
+  let h='<details class="autobox" style="margin-top:16px"><summary>Remove or restore drivers</summary><div style="margin-top:10px">';
   h+='<div class="meta" style="font-size:10.5px;margin-bottom:8px">Remove anyone who should not be in the team builder. They stay out through imports and availability submissions, and nothing is deleted — you can put them back below.</div>';
   const list=(state.drivers||[]).slice().sort(function(a,b){ return a.name.localeCompare(b.name); });
   if(!list.length) h+='<div class="meta">No drivers in the pool yet.</div>';
@@ -2984,7 +3148,7 @@ function renderDriverAdmin(){
     });
     h+='</div>';
   }
-  h+='</div>';
+  h+='</div></details>';
   return h;
 }
 
@@ -2994,7 +3158,10 @@ function fmtClock(absMin){
   return d.toLocaleString('en-AU',{timeZone:tzZone(),weekday:'short',hour:'2-digit',minute:'2-digit',hour12:false});
 }
 function availBadge(d){ return d.avail ? d.avail.pct+'%' : 'no avail'; }
-function driverFree(d,s,e){ return !!(d.avail && d.avail.windows && d.avail.windows.some(w=>w[0]<=s && w[1]>=e)); }
+function driverSure(d,s,e){ return !!(d.avail && d.avail.windows && d.avail.windows.some(w=>w[0]<=s && w[1]>=e)); }
+function driverFree(d,s,e){ return driverSure(d,s,e) || !!(d.avail && d.avail.maybeW && d.avail.maybeW.some(w=>w[0]<=s && w[1]>=e)); }
+/* a stint falls in the driver's own night (00:00-06:00 where they live), for the "avoid my night" preference */
+function inLocalNight(tz,s){ if(!tz) return false; try{ const h=+new Date(WIN_START_MS+s*60000).toLocaleString('en-GB',{timeZone:tz,hour:'2-digit',hour12:false}); return h>=0&&h<6; }catch(e){ return false; } }
 function isWetStint(s,e){ if(!(state.evWeather&&state.evWeather[state.evsel])) return false; if(typeof weatherAt!=='function') return false; const wx=weatherAt(s); return !!(wx&&wx.wet); }
 function applyIrWeather(ev, se){  // map an iRacing schedule weather{} onto state.evWeather (F7 auto-pull)
   const w=se&&se.weather; if(!w) return;
@@ -3049,8 +3216,12 @@ function autoPlan(memberIds, byId, times){
       return b; };
     const elig=members.filter(m=>driverFree(m,s,e));
     let pool=elig.filter(m=>m.id!==prev); if(!pool.length) pool=elig;  // avoid back-to-back unless forced
+    /* 3.0 preferences: a driver's cap on stints in a row, and their own night */
+    const run=m=>{ let k=0; for(let j=arr.length-1;j>=0&&arr[j]===m.id;j--) k++; return k; };
+    const capped=pool.filter(m=>!(pref[m.id].maxRun>0 && run(m)>=pref[m.id].maxRun)); if(capped.length) pool=capped;
+    const nb=m=>(pref[m.id].night==='avoid'&&inLocalNight(pref[m.id].tz,s))?2*B:0;
     let pick=null;
-    if(pool.length){ pool.sort((a,b)=>(count[a.id]-count[b.id])||((b._score+bias(b))-(a._score+bias(a)))); pick=pool[0]; count[pick.id]++; }  // count-balance stays primary
+    if(pool.length){ pool.sort((a,b)=>((driverSure(a,s,e)?0:1)-(driverSure(b,s,e)?0:1))||(count[a.id]-count[b.id])||((b._score+bias(b)-nb(b))-(a._score+bias(a)-nb(a)))); pick=pool[0]; count[pick.id]++; }  // yes before "if needed", then count-balance
     prev=pick?pick.id:null; arr.push(pick?pick.id:null);
   });
   return arr;
@@ -3081,7 +3252,11 @@ function carFuelPlan(times, arr, byId){
   times.forEach((t,i)=>{
     const id=arr[i], m=(id!=null)?byId[id]:null;
     const med=(m&&isFinite(m._median))?m._median:null;
-    const fu=m?resolveFuel(m._car):{tankL:0,fuelPerLap:0};
+    const fu0=m?resolveFuel(m._car):{tankL:0,fuelPerLap:0};
+    /* 3.0: a per-car number an admin typed wins; otherwise the driver's OWN Garage 61 fuel use
+       (median of their clean laps in that car), then the class / global default */
+    const bcf=m?+((((state.fuelCfg||{}).byCar||{})[m._car]||{}).fuelPerLap||0):0, own=m&&m.cars&&m.cars[m._car]?+(m.cars[m._car].fuelPerLap||0):0;
+    const fu={tankL:fu0.tankL, fuelPerLap:bcf||own||fu0.fuelPerLap};
     if(fu.tankL>0&&fu.fuelPerLap>0) anyCfg=true;
     const laps=med?stintLaps((t.e-t.s)*60, med):0;
     const fuel=laps*(fu.fuelPerLap||0);
@@ -3113,10 +3288,11 @@ function renderStints(byId){
   if(isAdmin()) html+='<button class="btn '+(state.stintsLocked?'btn-amber':'btn-ghost')+'" data-action="stintlock" style="align-self:center">'+(state.stintsLocked?'🔒 Stints locked':'🔓 Lock stints')+'</button>';
   html+='<div class="meta" style="align-self:center;max-width:360px"><b style="color:#fff">Each car can run a different session.</b> Pick its start below (or set a default for all). Clock = '+tzLabel()+'. Drag blocks or bank names, or click a driver\'s lane to hand them that stint.</div>';
   html+='</div>';
+  let wxHtml='';   /* 3.0: weather, reminders and voice channels fold away under the grids */
   if(isAdmin()){
     const w=(state.evWeather&&state.evWeather[state.evsel])||{};
     const tod=(w.startTod!=null&&w.startTod!=='')?((('0'+Math.floor(w.startTod/60)).slice(-2))+':'+(('0'+(w.startTod%60)).slice(-2))):'';
-    html+='<div class="importbox" style="display:flex;gap:14px;flex-wrap:wrap;align-items:flex-end;margin-bottom:14px"><div class="meta" style="width:100%;text-transform:uppercase;letter-spacing:.04em;margin-bottom:2px">Event weather — '+(w.src==='iracing'?'<span style="color:var(--green)">pulled from iRacing automatically</span>':(w.src==='manual'?'manual override':'auto-pulls from iRacing on the site'))+' · drivers see day/night and wet per stint</div>'
+    wxHtml+='<div class="importbox" style="display:flex;gap:14px;flex-wrap:wrap;align-items:flex-end;margin-bottom:14px"><div class="meta" style="width:100%;text-transform:uppercase;letter-spacing:.04em;margin-bottom:2px">Event weather — '+(w.src==='iracing'?'<span style="color:var(--green)">pulled from iRacing automatically</span>':(w.src==='manual'?'manual override':'auto-pulls from iRacing on the site'))+' · drivers see day/night and wet per stint</div>'
       +'<div class="ctl"><label>START (local, HH:MM)</label><input type="time" value="'+tod+'" data-action="wxstart" style="padding:6px"></div>'
       +'<div class="ctl"><label>TEMP (°C)</label><input type="number" step="1" value="'+(w.tempC!=null?w.tempC:'')+'" placeholder="—" data-action="wxtemp" style="width:74px;padding:6px"></div>'
       +'<div class="ctl"><label>SIM MULT</label><input type="number" step="0.5" min="1" value="'+(w.mult||'')+'" placeholder="1" data-action="wxmult" style="width:74px;padding:6px"></div>'
@@ -3128,8 +3304,9 @@ function renderStints(byId){
   }
   const classes=Object.keys(state.teams);
   if(!classes.length) return html+'<div class="meta">Hit Generate to build teams first.</div>';
-  html+=renderConfirmAdmin(byId);
-  html+=renderVcAdmin(byId);
+  const _autoHtml=isAdmin()?renderConfirmAdmin(byId)+renderVcAdmin(byId)+wxHtml:'';
+  if(isAdmin()) html+=renderSwapAdmin(byId);
+  const _SH=isAdmin()?raceHealth(byId):null;
   const _cfOpen=cfOpen(byId);
   // driver bank — drag any name onto any stint block
   const bankByCls={}; Object.values(byId).forEach(d=>{(bankByCls[d._class]=bankByCls[d._class]||[]).push(d);});
@@ -3178,6 +3355,9 @@ function renderStints(byId){
             +'<span class="meta" style="font-size:10px">blank = global default</span></div>';
         }
         html+='<div class="sgnav"><button class="btn btn-ghost avfree" data-sgscroll="-1" title="earlier stints">&lsaquo;</button><button class="btn btn-ghost avfree" data-sgscroll="1" title="later stints">&rsaquo;</button><span class="meta" style="font-size:10px">More stints to the right. Use the arrows, the yellow scrollbar, or Shift + scroll wheel.</span></div>';
+        { const _c=_SH&&_SH.cars.find(function(x){ return x.key===key; }), _ps=_c?carProblems(_c):[];
+          if(_ps.length) html+='<div class="carwarn" style="border:0;padding:0;margin:0 0 10px;display:flex;gap:10px;align-items:center;flex-wrap:wrap"><span>'+_ps.map(esc).join(' · ')+'</span>'
+            +((_c.gaps.length||_c.conflicts.length)&&!state.stintsLocked?'<button class="btn btn-ghost" data-action="fixcar" data-key="'+esc(key)+'" style="font-size:10px;padding:4px 10px">Fix empty and clashing stints</button>':'')+'</div>'; }
         html+='<div class="stintwrap" data-key="'+key+'"><div class="stintgrid" style="grid-template-columns:150px repeat('+times.length+',minmax(84px,1fr))">';
         html+='<div class="sg-corner">stint →</div>';
         times.forEach((t,i)=>{ const wx=weatherAt(t.s,off,win); html+='<div class="sg-time"><b>'+(i+1)+'</b>'+fmtClock(t.s)+(wx?'<div style="font-size:9px;color:'+(wx.wet?'#6ea8ff':wx.night?'var(--dim)':'var(--amber)')+'">'+wx.icon+' '+wx.label+'</div>':'')+'</div>'; });
@@ -3192,7 +3372,7 @@ function renderStints(byId){
           html+='<div class="sg-label"><span class="sg-dot" style="background:'+colr[m.id]+'"></span><span style="overflow:hidden;text-overflow:ellipsis">'+esc(m.name.split(' ')[0])+'</span>'+(_cfOpen&&_mine.length?cfIcon(confirmState(m.name,stintSig({key:key,win:win,times:times},_mine)).st):'')+'<span class="meta">'+(count[m.id]||0)+'× · '+availBadge(m)+'</span></div>';
           times.forEach((t,i)=>{
             const free=driverFree(m,t.s,t.e), driving=arr[i]===m.id;
-            html+='<div class="sg-lane '+(driving?'driving':free?'free':'busy')+'" data-lanecell data-key="'+key+'" data-block="'+i+'" data-driver="'+m.id+'" style="--dc:'+colr[m.id]+'" title="'+esc(m.name.split(' ')[0])+' · stint '+(i+1)+' · '+(free?'available':'not available')+(driving?' · driving, click to clear':' · click to assign')+'"></div>';
+            html+='<div class="sg-lane '+(driving?'driving':free?'free':'busy')+(free&&!driverSure(m,t.s,t.e)?' maybe':'')+'" data-lanecell data-key="'+key+'" data-block="'+i+'" data-driver="'+m.id+'" style="--dc:'+colr[m.id]+'" title="'+esc(m.name.split(' ')[0])+' · stint '+(i+1)+' · '+(free?'available':'not available')+(driving?' · driving, click to clear':' · click to assign')+'"></div>';
           });
         });
         if(fp.anyCfg){
@@ -3204,9 +3384,197 @@ function renderStints(byId){
       });
     });
   });
+  if(_autoHtml) html+='<details class="autobox"'+(_autoOpen?' open':'')+'><summary data-action="autotoggle">Race-day automation: Discord reminders, voice channels, weather</summary><div style="margin-top:12px">'+_autoHtml+'</div></details>';
   return html;
 }
+let _autoOpen=false;
+/* 3.0 "Fix": fill a car's empty and clashing stints with a driver from that car who is free for
+   it, least-used first, skipping anyone it would put over 4 h in 6 h. Stints it cannot fill stay
+   as they are for a hand decision. */
+function fixCar(key){
+  const byId=modelById(), c=raceHealth(byId).cars.find(function(x){ return x.key===key; }); if(!c) return 0;
+  const arr=c.arr.slice(), mins={}; c.members.forEach(function(m){ mins[m.id]=0; });
+  arr.forEach(function(id,i){ if(id!=null&&mins[id]!=null&&c.gaps.indexOf(i)<0&&c.conflicts.indexOf(i)<0) mins[id]+=c.times[i].e-c.times[i].s; });
+  let fixed=0;
+  c.gaps.concat(c.conflicts).sort(function(a,b){ return a-b; }).forEach(function(i){
+    const t=c.times[i];
+    const ok=c.members.filter(function(m){ if(!driverFree(m,t.s,t.e)) return false;
+      const mine=arr.map(function(x,j){ return String(x)===String(m.id)&&j!==i?c.times[j]:null; }).filter(Boolean).concat([t]);
+      return !mine.some(function(a){ const w1=a.s+REST_WIN; let on=0; mine.forEach(function(b){ on+=Math.max(0,Math.min(b.e,w1)-Math.max(b.s,a.s)); }); return on>REST_MAX; }); })
+      .sort(function(a,b){ return mins[a.id]-mins[b.id]; });
+    if(ok.length){ arr[i]=ok[0].id; mins[ok[0].id]+=t.e-t.s; fixed++; } else if(c.conflicts.indexOf(i)>=0){ /* keep the clash for a hand decision */ }
+  });
+  state.stintAssign[key]=arr; save(); return fixed;
+}
 
+/* ===== Race health (3.0): one pass that finds what still needs doing for the selected race =====
+   Shared by the race-week home, the Teams and Stints warnings and the driver's step 4. */
+const FAIR_SHARE=0.25;      /* iRacing team rule: each declared driver drives >= 25% of an equal share */
+const REST_WIN=360, REST_MAX=240;   /* warn when a driver is in the car for more than 4 h of any 6 h */
+function placedIds(){
+  const set={};
+  Object.keys(state.teams||{}).forEach(function(c){ ['pro','casual'].forEach(function(t){ ((state.teams[c]||{})[t]||[]).forEach(function(team){ team.forEach(function(id){ set[String(id)]=1; }); }); }); });
+  return set;
+}
+function restWarnings(car){
+  const out=[];
+  car.members.forEach(function(m){
+    const mine=driverStints(car,m.id).map(function(i){ return car.times[i]; });
+    if(mine.length<2) return;
+    const bad=mine.some(function(a){ const w0=a.s, w1=a.s+REST_WIN; let on=0;
+      mine.forEach(function(b){ on+=Math.max(0, Math.min(b.e,w1)-Math.max(b.s,w0)); }); return on>REST_MAX; });
+    if(bad) out.push(m);
+  });
+  return out;
+}
+function raceHealth(byId){
+  byId=byId||modelById();
+  const pool=Object.values(byId), placed=placedIds();
+  const unplaced=pool.filter(function(d){ return !placed[String(d.id)]; }).sort(function(a,b){ return (b._score||0)-(a._score||0); });
+  const cars=stintCars(byId).map(function(c){
+    const team=c.team.map(String); let gaps=[], conflicts=[];
+    c.arr.forEach(function(id,i){ const t=c.times[i], m=(id!=null&&team.indexOf(String(id))>=0)?byId[id]:null;
+      if(!m){ gaps.push(i); return; } if(!driverFree(m,t.s,t.e)) conflicts.push(i); });
+    const tot=c.times.reduce(function(a,t){ return a+(t.e-t.s); },0), per={};
+    c.members.forEach(function(m){ per[m.id]=0; });
+    c.arr.forEach(function(id,i){ if(id!=null && per[id]!=null) per[id]+=c.times[i].e-c.times[i].s; });
+    const fairMin=c.members.length?tot*FAIR_SHARE/c.members.length:0;
+    const underFair=c.members.filter(function(m){ return per[m.id]<fairMin; });
+    const lowAvail=c.members.filter(function(m){ return m.avail && m.avail.pct!=null && m.avail.pct<35; });
+    return Object.assign({}, c, {gaps:gaps, conflicts:conflicts, underFair:underFair, lowAvail:lowAvail, rest:restWarnings(c), mins:per, fairMin:fairMin});
+  });
+  return {pool:pool, unplaced:unplaced, cars:cars};
+}
+function carProblems(c){
+  const p=[];
+  if(c.gaps.length) p.push(c.gaps.length+' empty stint'+(c.gaps.length>1?'s':''));
+  if(c.conflicts.length) p.push(c.conflicts.length+' conflict'+(c.conflicts.length>1?'s':''));
+  if(c.underFair.length) p.push(c.underFair.map(function(m){ return m.name.split(' ')[0]; }).join(', ')+' under the 25% fair-share rule');
+  if(c.rest.length) p.push(c.rest.map(function(m){ return m.name.split(' ')[0]; }).join(', ')+' over 4 h in 6 h');
+  return p;
+}
+/* who on the roster has not given times for the selected race */
+function notAnswered(){
+  const a=state.availStore[state.evsel]||{}, have={};
+  Object.keys(a).forEach(function(n){ if((a[n]||[]).length) have[nameKey(n)]=1; });
+  return availRoster().filter(function(n){ return !have[nameKey(n)]; });
+}
+function nudgeText(){
+  const ev=state.evsel?calEvent(state.evsel):null; if(!ev) return '';
+  const url=(typeof EDR_TB!=='undefined'&&EDR_TB.page)?EDR_TB.page:(location.href.split('#')[0]);
+  return 'Still need your times for '+ev.n+' ('+fmtDates(ev.s,ev.e)+'). Takes a minute: '+url+'#availability';
+}
+/* "Publish plan": both locks at once, which is what the Discord reminders and voice channels wait for */
+function publishPlan(on){
+  state.teamsLocked=!!on; state.stintsLocked=!!on;
+  if(on){ const byId=modelById(); stintCars(byId).forEach(function(c){ state.stintAssign[c.key]=c.arr.slice(); }); }   // freeze what is on screen
+  save(); renderContent(); setStatus(on?'Plan published: line-up and stints locked.':'Plan unpublished: line-up and stints unlocked.');
+}
+function homeStep(n, title, stateCls, body, actions){
+  const mark=stateCls==='done'?'✓':stateCls==='warn'?'!':n;
+  return '<div class="hstep '+stateCls+'"><div class="hnum">'+mark+'</div><div class="hbody"><div class="htitle">'+title+'</div>'
+    +'<div class="htext">'+body+'</div>'+(actions?'<div class="hacts">'+actions+'</div>':'')+'</div></div>';
+}
+function hbtn(label, action, extra, primary){ return '<button class="btn '+(primary?'btn-amber':'btn-ghost')+'" data-action="'+action+'"'+(extra||'')+'>'+label+'</button>'; }
+let _homeMsg='';
+function renderHome(byId){
+  if(!state.evsel) return '<div class="hero"><div class="meta">No race selected yet.</div>'+hbtn('Pick a race','gotab',' data-tab="event"',true)+'</div>';
+  const ev=calEvent(state.evsel)||{n:state.evsel.split('|')[0]}, H=raceHealth(byId);
+  const tm=(state.evTiming||{})[state.evsel]||{}, nStarts=Object.keys(START_OFFSETS||{}).length;
+  const firstStart=START_LABELS[Object.keys(START_OFFSETS||{})[0]]||'';
+  let h='<div class="hero"><div class="meta" style="text-transform:uppercase;letter-spacing:.08em;color:var(--yellow)">Race week</div>'
+    +'<div class="head" style="font-size:22px;color:#fff;margin:4px 0">'+esc(ev.n)+'</div>'
+    +'<div class="meta">'+(ev.track?esc(ev.track)+' · ':'')+(ev.s?fmtDates(ev.s,ev.e):'')+(ev.dur?' · '+ev.dur+'h race':'')+'</div></div>';
+  h+='<div class="hsteps">';
+  /* 1 race and times */
+  const src=tm.src&&tm.src!=='calendar'?'Official iRacing times ('+esc(tm.src)+')':'Calendar times (no official iRacing times applied)';
+  h+=homeStep(1,'Race and session times', tm.src&&tm.src!=='calendar'?'done':'warn',
+    src+': '+nStarts+' start'+(nStarts===1?'':'s')+', first '+esc(firstStart)+'.',
+    hbtn('Change race','gotab',' data-tab="event"')+(typeof renderSetup==='function'?hbtn('Session times','gotab',' data-tab="setup"'):''));
+  /* 2 availability */
+  const na=notAnswered(), pool=H.pool.length;
+  h+=homeStep(2,'Availability', pool?(na.length?'warn':'done'):'todo',
+    '<b>'+pool+'</b> driver'+(pool===1?'':'s')+' have given times.'+(na.length?' <b>'+na.length+'</b> on the roster have not answered'+(na.length<=10?': '+esc(na.map(function(n){ return n.split(' ')[0]; }).join(', ')):'')+'.':''),
+    hbtn('Copy Discord nudge','copynudge')+hbtn('View coverage','gotab',' data-tab="availability"'));
+  /* 3 line-up */
+  const nCars=H.cars.length, carWarn=H.cars.filter(function(c){ return c.lowAvail.length; });
+  const lu=!Object.keys(state.teams||{}).length?'No line-up yet.'
+    :nCars+' car'+(nCars===1?'':'s')+'.'+(H.unplaced.length?' <b style="color:var(--amber)">Not in a car: '+esc(H.unplaced.map(function(d){ return d.name.split(' ')[0]; }).join(', '))+'.</b>':' Everyone with times is in a car.')
+      +(carWarn.length?' Low availability: '+esc(carWarn.map(function(c){ return c.label+' ('+c.lowAvail.map(function(m){ return m.name.split(' ')[0]; }).join(', ')+')'; }).join('; '))+'.':'');
+  h+=homeStep(3,'Line-up', !Object.keys(state.teams||{}).length?'todo':(H.unplaced.length?'warn':'done'), lu,
+    hbtn('Open Teams','gotab',' data-tab="teams"',!!H.unplaced.length));
+  /* 4 stints */
+  const probs=H.cars.map(function(c){ const p=carProblems(c); return p.length?'<b>'+esc(c.label)+'</b>: '+esc(p.join(', ')):''; }).filter(Boolean);
+  h+=homeStep(4,'Stints', !nCars?'todo':(probs.length?'warn':'done'),
+    !nCars?'Build the line-up first.':(probs.length?probs.join('<br>'):'Every stint has a free driver, and every driver meets the fair-share rule.'),
+    hbtn('Open Stints','gotab',' data-tab="stints"',!!probs.length));
+  /* 5 publish */
+  const pub=state.teamsLocked&&state.stintsLocked, cp=nCars?confirmPlan(byId):null, start=cp&&cp.start;
+  const when=start?'Discord: 4-day reminder '+fmtWhen(start-4*86400000)+', 2-day reminder '+fmtWhen(start-2*86400000)+', car voice channels '+fmtWhen(start-86400000)+'.':'';
+  h+=homeStep(5,'Publish the plan', pub?'done':(nCars?'todo':'todo'),
+    (pub?'Published: line-up and stints are locked. ':'Not published. The Discord reminders and voice channels only run once it is. ')+when,
+    nCars?(pub?hbtn('Unpublish','publish',' data-on="0"'):hbtn('Publish plan','publish',' data-on="1"',true)):'');
+  /* 6 race day */
+  let rd='';
+  if(cp&&Object.keys(cp.drivers).length){
+    const names=Object.keys(cp.drivers); let ok=0, no=[];
+    names.forEach(function(n){ const cs=confirmState(n,cp.drivers[n].sig); if(cs.st==='ok') ok++; else if(cs.st==='no') no.push(n.split(' ')[0]); });
+    rd=ok+' of '+names.length+' drivers confirmed their stints.'+(no.length?' Can\'t make one: '+esc(no.join(', '))+'.':'');
+    const posted=(typeof CONFIRM_POSTED!=='undefined'&&CONFIRM_POSTED&&CONFIRM_POSTED[state.evsel])||{};
+    rd+=' Reminders sent: '+(posted.d4?'4-day ✓':'4-day —')+', '+(posted.d2?'2-day ✓':'2-day —')+'.';
+    const vc=((typeof VC_STATE!=='undefined'&&VC_STATE&&VC_STATE.events)||{})[state.evsel]||{};
+    rd+=' Voice channels: '+(vc.deleted?'deleted':(Object.keys(vc.chans||{}).length?'open':'not made yet'))+'.';
+  } else rd='Confirmations open 4 days before the race once stints are set.';
+  h+=renderSwapAdmin(byId).replace('margin-bottom:14px','margin:0');
+  h+=homeStep(6,'Race weekend', 'todo', rd, hbtn('Race-day view','gotab',' data-tab="raceday"'));
+  h+='</div>'+(_homeMsg?'<div class="meta" style="margin-top:10px">'+esc(_homeMsg)+'</div>':'');
+  return h;
+}
+
+/* ===== Race day (3.0): who is in each car now, how long is left, who is next. "Driver change
+   done" moves the rest of that car's stints to start from now (stored server-side for everyone)
+   and pings the stint channel. Works from a phone at the pit wall; no telemetry needed. ===== */
+let RACEDAY={}, _rdMsg='', _sumText='', _sumMsg='';
+function rdPost(body){ return Promise.reject(new Error('Race day runs on the live site.')); }       /* WP build overrides: POST /raceday */
+function summaryPost(dry){ return Promise.reject(new Error('The race summary runs on the live site.')); }   /* WP build overrides: POST /summary */
+function rdTimes(c){
+  const r=objOr(objOr(RACEDAY[state.evsel])[c.key]), shift=+r.shift||0, from=+r.n||0;
+  return c.times.map(function(t,i){ const add=(i>=from?shift:0); return {i:i, s:WIN_START_MS+t.s*60000+add, e:WIN_START_MS+t.e*60000+add}; });
+}
+function fmtHM(ms){ return new Date(ms).toLocaleTimeString('en-AU',{timeZone:tzZone(),hour:'2-digit',minute:'2-digit',hour12:false}); }
+function fmtLeft(ms){ const m=Math.max(0,Math.round(ms/60000)); return m>=60?Math.floor(m/60)+'h '+(m%60)+'m':m+' min'; }
+function renderRaceDay(byId){
+  if(!state.evsel) return '<div class="meta">No race selected.</div>';
+  const cars=stintCars(byId); if(!cars.length) return '<div class="importbox"><div class="meta">No line-up or stints for this race yet.</div></div>';
+  const now=Date.now();
+  let h='<div class="meta" style="margin-bottom:12px">Live view for race day. Times in '+esc(tzLabel())+'. It refreshes by itself every 30 seconds. Tap <b>Driver change done</b> the moment the new driver leaves the pits, and the rest of that car\'s stints move to match.</div>';
+  cars.forEach(function(c){
+    const T=rdTimes(c), cur=T.find(function(t){ return now>=t.s&&now<t.e; }), first=T[0], lastT=T[T.length-1];
+    const team=c.team.map(String), name=function(i){ const id=c.arr[i], m=(id!=null&&team.indexOf(String(id))>=0)?byId[id]:null; return m?m.name.split(' ')[0]:'nobody yet'; };
+    let body='';
+    if(now<first.s) body='<div class="rd-big">Starts in '+fmtLeft(first.s-now)+'</div><div class="meta">'+esc(name(0))+' starts at '+fmtHM(first.s)+'.</div>';
+    else if(now>=lastT.e) body='<div class="rd-big">Finished</div><div class="meta">Last stint ended at '+fmtHM(lastT.e)+'.</div>';
+    else if(cur){
+      const nx=T[cur.i+1], pct=Math.round((now-cur.s)/(cur.e-cur.s)*100);
+      body='<div class="meta" style="text-transform:uppercase;letter-spacing:.06em">Now · stint '+(cur.i+1)+'</div><div class="rd-big">'+esc(name(cur.i))+'</div>'
+        +'<div class="rd-bar"><span style="width:'+Math.min(100,pct)+'%"></span></div>'
+        +'<div class="meta">'+fmtLeft(cur.e-now)+' left · ends about '+fmtHM(cur.e)+'</div>'
+        +(nx?'<div class="meta" style="margin-top:6px">Next: <b style="color:#fff">'+esc(name(nx.i))+'</b> at about '+fmtHM(nx.s)+'</div>'
+            +'<button class="btn btn-amber avfree" data-action="rdchange" data-key="'+esc(c.key)+'" data-n="'+(cur.i+1)+'" style="margin-top:10px;font-size:11px;padding:8px 14px">Driver change done: '+esc(name(nx.i))+' is in</button>':'<div class="meta" style="margin-top:6px">Last stint.</div>');
+    }
+    const r=objOr(objOr(RACEDAY[state.evsel])[c.key]);
+    h+='<div class="rdcar"><div class="htitle">'+esc(c.label)+'</div>'+body
+      +(isAdmin()&&r.at?'<div class="meta" style="margin-top:8px;font-size:10px">Last change marked '+fmtHM(r.at*1000)+(r.by?' by '+esc(r.by):'')+' · <span class="wiz-link" data-action="rdundo" data-key="'+esc(c.key)+'">undo</span></div>':'')+'</div>';
+  });
+  if(_rdMsg) h+='<div class="meta" style="margin-top:8px">'+esc(_rdMsg)+'</div>';
+  if(isAdmin()){
+    h+='<div class="importbox" style="margin-top:16px"><div class="htitle">After the race</div><div class="meta">Pull the official iRacing result and post each car\'s finish, laps and incidents to Discord, with each driver\'s laps against the plan.</div>'
+      +'<div class="hacts"><button class="btn btn-ghost" data-action="sumprev">Preview summary</button>'+(_sumText?'<button class="btn btn-amber" data-action="sumpost">Post to Discord</button>':'')+'</div>'
+      +(_sumMsg?'<div class="meta" style="margin-top:8px">'+esc(_sumMsg)+'</div>':'')+(_sumText?'<pre class="sumpre">'+esc(_sumText)+'</pre>':'')+'</div>';
+  }
+  return h;
+}
+setInterval(function(){ try{ if(state.tab==='raceday' && !document.hidden) renderContent(); }catch(e){} }, 30000);
 function renderContent(){
   (document.getElementById('edr-tb-app')||document.body).classList.toggle('readonly', !isAdmin());
   const model=computeModel();
@@ -3217,7 +3585,7 @@ function renderContent(){
   (document.getElementById('edr-tb-app')||document.body).classList.toggle('simple', simple);
   if(simple){ el.innerHTML=renderWizard(byId); return; }
   const _sx={}; el.querySelectorAll('.stintwrap[data-key]').forEach(w=>{ if(w.scrollLeft) _sx[w.dataset.key]=w.scrollLeft; });   // keep horizontal scroll across re-renders
-  el.innerHTML = state.tab==='weekly' ? renderWeekly() : state.tab==='event' ? renderEventTab() : state.tab==='availability' ? renderAvail() : state.tab==='teams' ? renderTeams(byId) : state.tab==='stints' ? renderStints(byId) : state.tab==='instructions' ? renderInstructions() : renderDrivers(model);
+  el.innerHTML = state.tab==='home' ? renderHome(byId) : state.tab==='raceday' ? renderRaceDay(byId) : state.tab==='weekly' ? renderWeekly() : state.tab==='event' ? renderEventTab() : state.tab==='availability' ? renderAvail() : state.tab==='teams' ? renderTeams(byId) : state.tab==='stints' ? renderStints(byId) : state.tab==='instructions' ? renderInstructions() : renderDrivers(model);
   if(Object.keys(_sx).length) el.querySelectorAll('.stintwrap[data-key]').forEach(w=>{ const v=_sx[w.dataset.key]; if(v!=null) w.scrollLeft=v; });
   sgOverflow();
 }
@@ -3256,7 +3624,10 @@ function syncControls(){
 document.getElementById('propct').addEventListener('input',e=>{
   state.proPct=+e.target.value; document.getElementById('lpro').textContent=state.proPct; save(); renderContent();
 });
-document.getElementById('gen').addEventListener('click',()=>{ if(state.teamsLocked && Object.keys(state.teams||{}).length){ state.tab='teams'; setActiveTab(); renderContent(); setStatus('Line-up is locked — unlock it on the Teams tab to regenerate.'); return; } generate(); state.tab='teams'; setActiveTab(); save(); renderContent(); });
+document.getElementById('gen').addEventListener('click',()=>{ if(state.teamsLocked && Object.keys(state.teams||{}).length){ state.tab='teams'; setActiveTab(); renderContent(); setStatus('Line-up is locked — unlock it on the Teams tab to regenerate.'); return; }
+  /* 3.0: an empty line-up is built straight away; one that exists gets a preview of who moves first */
+  if(!Object.keys(state.teams||{}).length){ generate(); state.tab='teams'; setActiveTab(); save(); renderContent(); return; }
+  genPreview(); state.tab='teams'; setActiveTab(); renderContent(); });
 document.getElementById('reset').addEventListener('click',()=>{ seed(SAMPLE); state.w={pace:50,clean:30,prep:20}; state.proPct=40; syncControls(); generate(); save(); renderContent(); setStatus('Reset to sample'); });
 document.getElementById('imp').addEventListener('click',()=>{ document.getElementById('importbox').classList.toggle('hide'); });
 document.getElementById('load').addEventListener('click',()=>{
@@ -3276,6 +3647,7 @@ document.getElementById('load').addEventListener('click',()=>{
 document.querySelectorAll('.tab').forEach(t=>t.addEventListener('click',()=>{ state.tab=t.dataset.tab; setActiveTab(); renderContent(); }));
 function setActiveTab(){
   document.querySelectorAll('.tab').forEach(t=>t.classList.toggle('active',t.dataset.tab===state.tab));
+  (document.getElementById('edr-tb-app')||document.body).classList.toggle('on-teams', state.tab==='teams');
   if(state.tab==='stints') markStintsSeen();
   paintTabBadges();
   /* the tab in the URL, so "fill in your availability: <link>#availability" from Discord lands
@@ -3439,6 +3811,45 @@ document.getElementById('content').addEventListener('click',e=>{
   if(filt){ _calFilter=filt.dataset.val; renderContent(); return; }
   if(e.target.dataset.action==='calall'){ _calAll=!_calAll; renderContent(); return; }
   if(e.target.dataset.action==='gotoevent'){ state.tab='event'; setActiveTab(); renderContent(); return; }
+  if(e.target.dataset.action==='genapply'&&_genPrev){ if(isAdmin()&&!state.teamsLocked){ state.teams=_genPrev.next; if(!state.stintsLocked){ state.stintAssign={}; state.stintSig=''; } _genPrev=null; save(); renderContent(); setStatus('Line-up rebuilt.'); } return; }
+  if(e.target.dataset.action==='gencancel'){ _genPrev=null; renderContent(); return; }
+  if(e.target.dataset.action==='avusual'){ const nm=state.me, u=usualTimes(nm); if(u&&canEditAvail(nm)){ const st=(state.availStore[state.evsel]=state.availStore[state.evsel]||{}); st[nm]=u.slots.slice();
+      (_availDirty[state.evsel]=_availDirty[state.evsel]||{})[nm]=1; _avMsg='Ticked '+u.slots.length+' block'+(u.slots.length===1?'':'s')+' from your last '+u.from+' race'+(u.from===1?'':'s')+'. Check them, then Submit.'; _avErr=false; applyAvailToDrivers(); save(); renderContent(); } return; }
+  const rdc=e.target.closest&&e.target.closest('[data-action="rdchange"]');
+  if(rdc){ const byId=modelById(), c=stintCars(byId).find(function(x){ return x.key===rdc.dataset.key; }), n=+rdc.dataset.n; if(c&&c.times[n]){
+      const shift=Date.now()-(WIN_START_MS+c.times[n].s*60000), T=c.times.map(function(t){ return WIN_START_MS+t.s*60000+shift; });
+      const nm=function(i){ const id=c.arr[i], m=(id!=null&&c.team.map(String).indexOf(String(id))>=0)?byId[id]:null; return m?m.name.split(' ')[0]:'nobody'; };
+      const say='🔄 **'+c.label+'**: '+nm(n)+' is in the car (stint '+(n+1)+').'+(c.times[n+1]?' Next: '+nm(n+1)+' around <t:'+Math.round(T[n+1]/1000)+':t>.':' Last stint.');
+      _rdMsg='Saving…'; renderContent();
+      rdPost({ev:state.evsel, key:c.key, action:'change', n:n, shift:shift, by:(state.me||'').split(' ')[0], say:say})
+        .then(function(j){ if(j&&j.raceday) RACEDAY[state.evsel]=j.raceday; _rdMsg='Marked. '+nm(n)+'\'s stint runs from now.'; renderContent(); })
+        .catch(function(err){ _rdMsg=(err&&err.message)||'Could not reach the server.'; renderContent(); }); } return; }
+  const rdu=e.target.closest&&e.target.closest('[data-action="rdundo"]');
+  if(rdu&&isAdmin()){ rdPost({ev:state.evsel, key:rdu.dataset.key, action:'undo'}).then(function(j){ if(j&&j.raceday) RACEDAY[state.evsel]=j.raceday; _rdMsg='Last change undone.'; renderContent(); }).catch(function(err){ _rdMsg=(err&&err.message)||'Could not reach the server.'; renderContent(); }); return; }
+  if(e.target.dataset.action==='sumprev'||e.target.dataset.action==='sumpost'){ const dry=e.target.dataset.action==='sumprev'; _sumMsg=dry?'Looking up the result…':'Posting…'; renderContent();
+    summaryPost(dry).then(function(j){ if(j&&j.text) _sumText=j.text; _sumMsg=dry?'Preview below. Post it when it looks right.':((j&&j.message)||'Posted.'); renderContent(); })
+      .catch(function(err){ _sumMsg=(err&&err.message)||'Could not reach the server.'; renderContent(); }); return; }
+  const sr=e.target.closest&&e.target.closest('[data-action="swaprel"]');
+  if(sr){ const byId=modelById(), car=stintCars(byId).find(function(c){ return c.key===sr.dataset.key; }), n=+sr.dataset.n; if(car&&car.times[n]){ const t=car.times[n];
+    swapDo('release',{name:state.me, key:car.key, car:car.label, n:n, s:WIN_START_MS+t.s*60000, e:WIN_START_MS+t.e*60000}); } return; }
+  const stk=e.target.closest&&e.target.closest('[data-action="swaptake"]');
+  if(stk){ swapDo('claim',{id:stk.dataset.id, name:state.me}); return; }
+  const sok=e.target.closest&&e.target.closest('[data-action="swapok"]');
+  if(sok&&isAdmin()){ const x=swapsFor(state.evsel).find(function(y){ return y.id===sok.dataset.id; }); if(x&&x.to){
+      const to=Object.values(modelById()).find(function(d){ return nameKey(d.name)===nameKey(x.to); });
+      const byId=modelById(), car=stintCars(byId).find(function(c){ return c.key===x.key; });
+      if(to&&car){ const arr=car.arr.slice(); arr[x.n]=to.id; state.stintAssign[x.key]=arr; save(); swapDo('approve',{id:x.id}); }
+      else { _swapMsg='That driver is no longer in this car: decline it and sort it by hand.'; renderContent(); } } return; }
+  const sno=e.target.closest&&e.target.closest('[data-action="swapno"]');
+  if(sno&&isAdmin()){ swapDo('decline',{id:sno.dataset.id}); return; }
+  const fx=e.target.closest&&e.target.closest('[data-action="fixcar"]');
+  if(fx){ if(isAdmin()&&!state.stintsLocked){ const n=fixCar(fx.dataset.key); renderContent(); setStatus(n?'Filled '+n+' stint'+(n>1?'s':'')+' with free drivers from that car.':'No free driver in that car for those stints: drag someone from the bank.'); } return; }
+  if(e.target.closest&&e.target.closest('[data-action="autotoggle"]')){ setTimeout(function(){ const d=document.querySelector('details.autobox'); _autoOpen=!!(d&&d.open); },0); }
+  const gt=e.target.closest&&e.target.closest('[data-action="gotab"]');
+  if(gt){ state.tab=gt.dataset.tab; setActiveTab(); renderContent(); window.scrollTo(0,0); return; }
+  const pubBtn=e.target.closest&&e.target.closest('[data-action="publish"]');
+  if(pubBtn){ if(isAdmin()) publishPlan(pubBtn.dataset.on==='1'); return; }
+  if(e.target.dataset.action==='copynudge'){ const t=nudgeText(); try{ navigator.clipboard.writeText(t).then(function(){ _homeMsg='Copied. Paste it in Discord.'; renderContent(); },function(){ _homeMsg=t; renderContent(); }); }catch(err){ _homeMsg=t; renderContent(); } return; }
   if(e.target.dataset.action==='gotoavail'){ state.tab='availability'; setActiveTab(); renderContent(); return; }
   const wz=e.target.closest&&e.target.closest('[data-action="wizstep"]');
   if(wz){ _wizStep=+wz.dataset.step; renderContent(); wizTop(); return; }
@@ -3465,7 +3876,7 @@ document.getElementById('content').addEventListener('click',e=>{
   if(e.target.dataset.action==='wizadmin'){ setFullView(true); unlockAdmin(); return; }
   const bcell=e.target.closest&&e.target.closest('button[data-avtoggle]');
   if(bcell){ if(_dragDid){ _dragDid=false; return; }   // a drag already applied this run; don't undo its last cell
-    if(toggleAvail(bcell.dataset.name,+bcell.dataset.slot)){ if(simpleView()) refreshAvBits(bcell); else renderContent(); } return; }
+    if(cycleAvail(bcell.dataset.name,+bcell.dataset.slot)){ if(simpleView()) refreshAvBits(bcell); else renderContent(); } return; }
   const bulk=e.target.closest&&e.target.closest('[data-bulk]');
   if(bulk){
     const nm=bulk.dataset.name, kind=bulk.dataset.bulk;
@@ -3555,7 +3966,8 @@ document.getElementById('content').addEventListener('click',e=>{
   if(e.target.dataset.action==='avprune'){ if(isAdmin()) pruneOldEvents(); return; }
   const pb=e.target.closest&&e.target.closest('[data-prefset]');
   if(pb){ const nm=pb.dataset.name; if(!canEditAvail(nm)) return; const axis=pb.dataset.prefset, val=pb.dataset.val;
-    const st=(state.prefStore[state.evsel]=state.prefStore[state.evsel]||{}); const p=(st[nm]=st[nm]||{time:'any',cond:'any'}); p[axis]=val;
+    const st=(state.prefStore[state.evsel]=state.prefStore[state.evsel]||{}); const p=(st[nm]=st[nm]||{time:'any',cond:'any'}); p[axis]=(axis==='maxRun'?+val:val);
+    if(!isAdmin()) p.tz=tzZone();
     (_availDirty[state.evsel]=_availDirty[state.evsel]||{})[nm]=1; _avMsg=''; _avErr=false; save(); renderContent(); return; }
   if(e.target.dataset.action==='iridgo'){ const inp=document.getElementById('iridbox'); const v=((inp&&inp.value)||'').replace(/\D/g,'');
     if(!v){ _iridMsg='Type your iRacing customer ID first.'; renderContent(); return; }
@@ -3642,10 +4054,35 @@ function teamMove(id, where){
   state.teams[tc][tt][tj].push(id);
   return true;
 }
+/* ---- Rebuild preview (3.0): Generate shows who would move before it replaces hand-made work ---- */
+let _genPrev=null;
+function carOfIds(teams){ const m={}; Object.keys(teams||{}).forEach(c=>['pro','casual'].forEach(t=>((teams[c]||{})[t]||[]).forEach((car,j)=>car.forEach(id=>{ m[String(id)]=c+'|'+t+'|'+j; })))); return m; }
+function genPreview(){
+  const old=JSON.parse(JSON.stringify(state.teams)), oldA=JSON.parse(JSON.stringify(state.stintAssign)), oldSig=state.stintSig;
+  generate(); const next=JSON.parse(JSON.stringify(state.teams));
+  state.teams=old; state.stintAssign=oldA; state.stintSig=oldSig;
+  const a=carOfIds(old), b=carOfIds(next), moves=[];
+  Object.keys(Object.assign({},a,b)).forEach(id=>{ if(a[id]!==b[id]) moves.push({id:id, from:a[id]||'', to:b[id]||''}); });
+  _genPrev={next:next, moves:moves};
+}
+function _carName(k){ if(!k) return 'not in a car'; const p=k.split('|'); return carLabel(p[0],p[1],+p[2])||((p[1]==='pro'?'Pro ':'Casual ')+(+p[2]+1)); }
+function renderGenPreview(byId){
+  if(!_genPrev) return '';
+  const mv=_genPrev.moves;
+  let h='<div class="importbox" style="border-left:4px solid var(--yellow);margin-bottom:16px"><div class="htitle">Rebuild preview</div>';
+  if(!mv.length) h+='<div class="meta">Generate would give the same line-up. Nothing to change.</div>';
+  else h+='<div class="meta" style="margin-bottom:6px">'+mv.length+' driver'+(mv.length>1?'s':'')+' would move'+(state.stintsLocked?'':', and the stints would be planned again')+':</div><div class="meta" style="line-height:1.7">'
+    +mv.map(m=>{ const d=byId[m.id]||{name:_drvName(m.id)}; return '<b>'+esc(d.name)+'</b>: '+esc(_carName(m.from))+' → '+esc(_carName(m.to)); }).join('<br>')+'</div>';
+  h+='<div class="hacts">'+(mv.length?'<button class="btn btn-amber" data-action="genapply">Apply</button>':'')+'<button class="btn btn-ghost" data-action="gencancel">'+(mv.length?'Keep my line-up':'Close')+'</button></div></div>';
+  return h;
+}
+function teamUnplace(id){ let hit=false; Object.keys(state.teams).forEach(c=>['pro','casual'].forEach(t=>{ if(state.teams[c][t]) state.teams[c][t]=state.teams[c][t].map(car=>{ const n=car.filter(x=>x!==id); if(n.length!==car.length) hit=true; return n; }); })); return hit; }
 /* two drivers trade places, each keeping the other's slot in the car's order */
 function teamSwap(a, b){
   let pa=null, pb=null;
   Object.keys(state.teams).forEach(c=>['pro','casual'].forEach(t=>{ (state.teams[c][t]||[]).forEach((car,j)=>{ car.forEach((x,k)=>{ if(x===a) pa=[c,t,j,k]; if(x===b) pb=[c,t,j,k]; }); }); }));
+  if(!pa&&pb){ state.teams[pb[0]][pb[1]][pb[2]][pb[3]]=a; return true; }   // from "Not in a car": take the seat, the other driver goes to the bench
+  if(pa&&!pb){ state.teams[pa[0]][pa[1]][pa[2]][pa[3]]=b; return true; }
   if(!pa||!pb) return false;
   state.teams[pa[0]][pa[1]][pa[2]][pa[3]]=b; state.teams[pb[0]][pb[1]][pb[2]][pb[3]]=a;
   return true;
@@ -3710,7 +4147,7 @@ document.addEventListener('pointerup',e=>{
   if(!d.on) return;
   _td=d; const t=_tdTarget(e.clientX,e.clientY); _td=null;
   if(!t) return;
-  const ok=(t.swap!=null)?teamSwap(d.id,t.swap):teamMove(d.id,t.car);
+  const ok=(t.swap!=null)?teamSwap(d.id,t.swap):(t.car==='bench'?teamUnplace(d.id):teamMove(d.id,t.car));
   if(ok){ save(); renderContent(); setStatus(t.swap!=null?'Swapped '+_drvName(d.id)+' and '+_drvName(t.swap)+'.':'Moved '+_drvName(d.id)+'.'); }
 });
 document.addEventListener('pointercancel',()=>{ if(_td){ if(_td.ghost) _td.ghost.remove(); _tdClear(); _td=null; } });

@@ -98,27 +98,31 @@ APP_HTML = r"""
     <div id="evheading" style="margin-top:2px"></div>
     <div class="meta" id="summary" style="display:flex;gap:16px;flex-wrap:wrap;margin-top:4px"></div>
   </div>
-  <div id="rolebar" style="margin-left:auto;display:flex;gap:10px;align-items:center"></div>
+  <div style="margin-left:auto;display:flex;flex-direction:column;align-items:flex-end;gap:6px"><div id="rolebar" style="display:flex;gap:10px;align-items:center"></div><span id="savebadge" class="savebadge"></span></div>
 </div>
 <div class="controls">
   <div class="ctl"><label>PACE weight <b id="lpace" style="color:var(--amber)"></b></label><input type="range" id="pace" min="0" max="100" style="accent-color:var(--amber)"></div>
   <div class="ctl"><label>CLEAN weight <b id="lclean" style="color:var(--steel)"></b></label><input type="range" id="clean" min="0" max="100" style="accent-color:var(--steel)"></div>
   <div class="ctl"><label>PREP weight <b id="lprep" style="color:var(--green)"></b></label><input type="range" id="prep" min="0" max="100" style="accent-color:var(--green)"></div>
   <div class="ctl" style="flex:1 1 160px"><label>PRO = top <b id="lpro" style="color:var(--gold)"></b>% of each class</label><input type="range" id="propct" min="0" max="100" step="5" style="accent-color:var(--gold)"></div>
-  <button class="btn btn-amber" id="gen">Generate</button>
-  <button class="btn btn-ghost" id="imp">Import JSON</button>
-  <button class="btn btn-ghost" id="reset">Reset</button>
+  <button class="btn btn-amber" id="gen">Rebuild line-up</button>
+  <!-- 3.0: Import JSON and Reset are standalone-only. In WordPress Reset sent the server an EMPTY plan
+       with one click; they stay in the DOM (the shared boot code binds them) but can never fire. -->
+  <button class="btn btn-ghost" id="imp" hidden disabled style="display:none">Import JSON</button>
+  <button class="btn btn-ghost" id="reset" hidden disabled style="display:none">Reset</button>
   <span class="status" id="status"></span>
 </div>
 <div class="tabs">
-  <button class="tab active" data-tab="setup">Setup</button>
-  <button class="tab" data-tab="instructions">Instructions</button>
+  <button class="tab active" data-tab="home">Race week</button>
   <button class="tab" data-tab="event">Event</button>
   <button class="tab" data-tab="availability">Availability</button>
   <button class="tab" data-tab="drivers">Drivers</button>
   <button class="tab" data-tab="teams">Teams</button>
   <button class="tab" data-tab="stints">Stints</button>
-  <button class="tab" data-tab="weekly">Weekly</button>
+  <button class="tab" data-tab="raceday">Race day</button>
+  <button class="tab" data-tab="setup">Data</button>
+  <button class="tab" data-tab="instructions">Help</button>
+  <button class="tab" data-tab="weekly">Newsletter</button>
 </div>
 <div class="wrap"><div class="importbox hide" id="importbox">
   <div class="meta" style="margin-bottom:8px">Paste a roster JSON (advanced / manual fallback), then Load.</div>
@@ -177,6 +181,17 @@ function persistAvail(evk,name){
     });
 }
 /* stint confirmations sync through their own public route, like availability */
+/* 3.0 race day + post-race summary */
+function rdPost(body){
+  return fetch(API+'raceday',{method:'POST',headers:_hdrs(true),body:JSON.stringify(body)})
+    .then(function(r){ return r.json().catch(function(){ return {}; }).then(function(j){ if(!r.ok) throw new Error((j&&j.message)||'Not saved.'); return j; }); });
+}
+function summaryPost(dry){ return apiPOST('summary',{ev:state.evsel||'', dry:dry?1:0}).then(function(j){ if(j&&j.code) throw new Error(j.message||j.code); return j; }); }
+/* 3.0 stint swaps: release / claim (public) and approve / decline (admin) */
+function swapPost(action,body){
+  return fetch(API+'swap',{method:'POST',headers:_hdrs(true),body:JSON.stringify(Object.assign({action:action},body))})
+    .then(function(r){ return r.json().catch(function(){ return {}; }).then(function(j){ if(!r.ok) throw new Error((j&&j.message)||'Swap not saved.'); return j; }); });
+}
 function persistConfirm(evk,name){
   const rec=((state.confirmStore[evk]||{})[name])||null;
   return fetch(API+'confirm',{method:'POST',headers:_hdrs(true),body:JSON.stringify({ev:evk,name:name,st:rec?rec.st:'clear',sig:rec?rec.sig:'',cant:rec?rec.cant:[]})})
@@ -185,7 +200,7 @@ function persistConfirm(evk,name){
 /* admin: preview or post the confirmation reminder to the team channel */
 function sendConfirmReminder(stage,dry){
   _cfAdminMsg=dry?'Building preview…':'Posting to Discord…'; renderContent();
-  apiPOST('confirm/remind',{stage:stage,dry:dry?1:0}).then(function(j){
+  apiPOST('confirm/remind',{stage:stage,dry:dry?1:0,ev:state.evsel||''}).then(function(j){
     if(j&&j.ok){ _cfPreview=j.text||''; _cfAdminMsg=dry?'Preview of what would be posted:':'Posted to Discord.'; if(!dry) pullAvail().then(renderContent); }
     else { _cfAdminMsg=(j&&j.message)||'Could not reach the server.'; }
     renderContent();
@@ -194,7 +209,7 @@ function sendConfirmReminder(stage,dry){
 /* admin: car voice channels — test the bot, make/repost now, delete now */
 function vcAction(act){
   _vcMsg=act==='test'?'Testing the bot…':act==='delete'?'Deleting channels…':'Making channels…'; renderContent();
-  apiPOST('vc',{action:act}).then(function(j){ _vcMsg=(j&&j.message)||'Could not reach the server.'; pullAvail().then(renderContent); })
+  apiPOST('vc',{action:act,ev:state.evsel||''}).then(function(j){ _vcMsg=(j&&j.message)||'Could not reach the server.'; pullAvail().then(renderContent); })
     .catch(function(){ _vcMsg='Could not reach the server.'; renderContent(); });
 }
 function _channelsForPlan(){ try{ return channelPlan(modelById()); }catch(e){ return null; } }
@@ -361,18 +376,25 @@ function releaseLock(name){
   }).catch(function(){});
 }
 let lastTrackIds=[], lastTrackEv=null, _saveT=null;
-function serializePlan(){ return {confirm:_confirmForPlan(),channels:_channelsForPlan(),drivers:state.drivers,w:state.w,proPct:state.proPct,teams:state.teams,stint:state.stint,stintAssign:state.stintAssign,stintWin:state.stintWin,stintSig:state.stintSig,overrides:overrides,meta:IMPORT_META,winStart:WIN_START_MS,startOffsets:START_OFFSETS,startLabels:START_LABELS,matches:lastMatches,trackIds:lastTrackIds,trackEv:lastTrackEv,paceAt:_planPaceAt,evsel:state.evsel,evWinMin:EV_WIN_MIN,evTiming:state.evTiming,teamsLocked:state.teamsLocked,stintsLocked:state.stintsLocked,teamNames:state.teamNames,fuelCfg:state.fuelCfg,customEvents:state.customEvents,irEvents:state.irEvents,evWeather:state.evWeather,swapNote:state.swapNote,excluded:state.excluded}; }
+/* 3.0: every race keeps its own plan in evPlans; the active one is copied in on each save together
+   with its Discord payloads, so the reminder and voice-channel jobs can run for EVERY locked race,
+   not only the one an admin happens to have open (see edr_tb_plan_events in the PHP). */
+function _evStashForSwitch(){ evPlanStash({confirm:_confirmForPlan(), channels:_channelsForPlan()}); }
+function serializePlan(){ var _cf=_confirmForPlan(), _ch=_channelsForPlan(); if(state.evsel) evPlanStash({confirm:_cf, channels:_ch}); return {evPlans:evPlansPruned(),confirm:_cf,channels:_ch,drivers:state.drivers,w:state.w,proPct:state.proPct,teams:state.teams,stint:state.stint,stintAssign:state.stintAssign,stintWin:state.stintWin,stintSig:state.stintSig,overrides:overrides,meta:IMPORT_META,winStart:WIN_START_MS,startOffsets:START_OFFSETS,startLabels:START_LABELS,matches:lastMatches,trackIds:lastTrackIds,trackEv:lastTrackEv,paceAt:_planPaceAt,evsel:state.evsel,evWinMin:EV_WIN_MIN,evTiming:state.evTiming,teamsLocked:state.teamsLocked,stintsLocked:state.stintsLocked,teamNames:state.teamNames,fuelCfg:state.fuelCfg,customEvents:state.customEvents,irEvents:state.irEvents,evWeather:state.evWeather,swapNote:state.swapNote,excluded:state.excluded}; }
 var _postBusy=false, _postAgain=false;
+/* 3.0: saves used to be silent; a refused one only flashed a status line for 3 s */
+function _saveBadge(t,cls){ var b=document.getElementById('savebadge'); if(!b||!isAdmin()) return; b.textContent=t; b.className='savebadge '+(cls||''); }
 function _flushPlan(){
   if(_postBusy){ _postAgain=true; return; }              // serialize: the retry below re-posts the LATEST state with the updated rev
-  _postBusy=true;
+  _postBusy=true; _saveBadge('Saving…','');
   var _sent=serializePlan();
   apiPOST('plan',{plan:_sent, baseRev:PLAN_REV}).then(function(r){
     _postBusy=false;
-    if(r&&r.ok&&typeof r.rev==='number'){ PLAN_REV=r.rev; _planEvsel=_sent.evsel||null; _postRetried=false; if(_postAgain){ _postAgain=false; _flushPlan(); } }
-    else if(r&&r.code==='stale_plan'){ _postAgain=false; clearTimeout(_saveT); _saveT=null; refreshShared(true); }   // adopt latest; message shown after the pull actually lands
+    if(r&&r.ok&&typeof r.rev==='number'){ PLAN_REV=r.rev; _planEvsel=_sent.evsel||null; _postRetried=false; _saveBadge('Saved','ok'); if(_postAgain){ _postAgain=false; _flushPlan(); } }
+    else if(r&&r.code==='stale_plan'){ _postAgain=false; clearTimeout(_saveT); _saveT=null; _saveBadge('Another device saved first: reloaded, redo your last change','err'); refreshShared(true); }   // adopt latest; message shown after the pull actually lands
     else if(_postAgain){ _postAgain=false; _flushPlan(); }
-  }).catch(function(){ _postBusy=false; if(!_postRetried){ _postRetried=true; setTimeout(_flushPlan, 1500); } else { _postAgain=false; } });
+    else { _saveBadge('Not saved'+((r&&r.message)?': '+r.message:''),'err'); }
+  }).catch(function(){ _postBusy=false; if(!_postRetried){ _postRetried=true; _saveBadge('Not saved yet, retrying…','err'); setTimeout(_flushPlan, 1500); } else { _postAgain=false; _saveBadge('Not saved: check your connection','err'); } });
 }
 var _postRetried=false;
 function save(){
@@ -420,7 +442,9 @@ function _adoptPlan(p, keepEvsel){
      Only read the legacy copy, as a fallback for plans saved before 2.4.11. */
   if(p.prefStore && !Object.keys(state.prefStore||{}).length) state.prefStore=p.prefStore;
   lastMatches=p.matches||[]; lastTrackIds=p.trackIds||[]; lastTrackEv=p.trackEv||null; _planEvsel=p.evsel||null;
-  if(_localEv && _localEv!==state.evsel && calEvent(_localEv)){ state.evsel=_localEv; }   // don't yank the viewer off their selected event
+  state.evPlans=_asMap(p.evPlans);
+  if(state.evsel) evPlanStash({confirm:p.confirm||null, channels:p.channels||null});   // the top-level copy is the newest for the plan's own race
+  if(_localEv && _localEv!==state.evsel && calEvent(_localEv)){ state.evsel=_localEv; evPlanRestore(_localEv); }   // don't yank the viewer off their selected event; show THAT race's own plan
   /* the adopted plan may lag the warm cache (re-apply ours) or be AHEAD of it (another device
      saved a newer refresh) — compare refresh times so an adopt can never rewind pace */
   _planPaceAt=p.paceAt||0; _paceDirty=false;
@@ -445,6 +469,8 @@ function pullAvail(){
       if(av.confirm) state.confirmStore=av.confirm;
       if(av.confirmPosted) CONFIRM_POSTED=av.confirmPosted;
       if(av.vc) VC_STATE=av.vc;
+      if(av.swaps) SWAPS=_asMap(av.swaps);
+      if(av.raceday) RACEDAY=_asMap(av.raceday);
       LOCKED_NAMES=av.locked||[];
     }
   }).catch(function(){});
@@ -787,12 +813,12 @@ async function bootSetup(){
   });
   renderRolebar();
   syncControls();
-  state.tab = tabFromHash() || (CAN ? 'setup' : 'instructions'); setActiveTab();
+  state.tab = tabFromHash() || (isAdmin() ? 'home' : 'instructions'); setActiveTab();
   var ok=false; try{ ok=await loadPlan(); }catch(e){}
   if(state.evsel){ var _bev=calEvent(state.evsel); if(_bev){ var _br=state.stint.race; applyEventTiming(_bev); if(_br>0) state.stint.race=_br; } }  // rebuild timing globals from the restored event (don't trust persisted globals)
   try{
     const av=await apiGET('avail');
-    if(av&&av.store){ state.availStore=av.store; LOCKED_NAMES=av.locked||[]; if(av.prefs)state.prefStore=av.prefs; if(av.seen)AV_SEEN=av.seen; if(av.confirm)state.confirmStore=av.confirm; if(av.confirmPosted)CONFIRM_POSTED=av.confirmPosted; if(av.vc)VC_STATE=av.vc; }
+    if(av&&av.store){ state.availStore=av.store; LOCKED_NAMES=av.locked||[]; if(av.prefs)state.prefStore=av.prefs; if(av.seen)AV_SEEN=av.seen; if(av.confirm)state.confirmStore=av.confirm; if(av.confirmPosted)CONFIRM_POSTED=av.confirmPosted; if(av.vc)VC_STATE=av.vc; if(av.swaps)SWAPS=_asMap(av.swaps); if(av.raceday)RACEDAY=_asMap(av.raceday); }
     else if(av&&typeof av==='object'&&!Array.isArray(av)) state.availStore=av;  /* pre-2.1.4 server shape */
   }catch(e){}
   try{ const tr=await apiGET('roster');
