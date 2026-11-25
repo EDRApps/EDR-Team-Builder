@@ -2,7 +2,7 @@
 /**
  * Plugin Name: EDR Team Builder
  * Description: Endurotech Racing endurance team + stint planner. Pulls Garage 61 pace and official iRacing session times, collects driver availability in-house, and builds Pro/Casual teams and stint rotations. Add the [edr_team_builder] shortcode to a page.
- * Version: 3.1.4
+ * Version: 3.1.5
  * Author: Endurotech Racing
  * License: GPL-2.0-or-later
  */
@@ -11,7 +11,7 @@ if (!defined('ABSPATH')) exit; // no direct access
 
 define('EDR_TB_DIR', plugin_dir_path(__FILE__));
 define('EDR_TB_URL', plugin_dir_url(__FILE__));
-define('EDR_TB_VER', '3.1.4');
+define('EDR_TB_VER', '3.1.5');
 
 require_once EDR_TB_DIR . 'includes/garage61.php';
 require_once EDR_TB_DIR . 'includes/iracing.php';
@@ -1445,7 +1445,7 @@ function edr_tb_rest_avail_set(WP_REST_Request $req) {
     // re-read their own grid to work out whether they are already in
     $stamps = (array) get_option('edr_tb_avail_seen', array());
     if (!isset($stamps[$ev]) || !is_array($stamps[$ev])) $stamps[$ev] = array();
-    $stamps[$ev][$name] = array('at' => current_time('mysql'), 'n' => count($slots));
+    $stamps[$ev][$name] = array('at' => current_time('mysql'), 'ts' => time(), 'n' => count($slots));   // 3.1.5: ts = exact epoch
     update_option('edr_tb_avail_seen', $stamps, false);
 
     edr_tb_bump_avail_rev();   // so every other open tab notices on its next heartbeat
@@ -1536,7 +1536,7 @@ function edr_tb_rest_confirm_set(WP_REST_Request $req) {
         return new WP_Error('ev_full', 'Too many drivers on this event.', array('status' => 409));
     }
     if ($st === 'clear') unset($all[$ev][$name]);
-    else $all[$ev][$name] = array('st' => $st, 'sig' => $sig, 'cant' => ($st === 'no' ? $cant : array()), 'at' => current_time('mysql'));
+    else $all[$ev][$name] = array('st' => $st, 'sig' => $sig, 'cant' => ($st === 'no' ? $cant : array()), 'at' => current_time('mysql'), 'ts' => time());
     update_option('edr_tb_confirm', $all, false);
     edr_tb_bump_avail_rev();   // admins see it on their next heartbeat
     $wpdb->query("SELECT RELEASE_LOCK('edr_tb_avail_write')");
@@ -1621,6 +1621,15 @@ function edr_tb_rest_swap(WP_REST_Request $req) {
         $list[$i]['to'] = $name; $list[$i]['st'] = 'claimed'; $list[$i]['at'] = time();
         $msg = 'You\'re down for it. It moves to you once an admin approves.';
         $say = '✋ **' . $name . '** will take stint ' . ($list[$i]['n'] + 1) . ' in **' . $list[$i]['car'] . '** from ' . $list[$i]['from'] . '. Admins: approve it in the Team Builder.';
+    } elseif ($act === 'withdraw') {
+        /* 3.1.5: the driver who released a stint can take it back until an admin approves a swap */
+        $i = $find($req->get_param('id')); $name = edr_tb_swap_name($req->get_param('name'));
+        if ($i < 0 || !in_array($list[$i]['st'] ?? '', array('open', 'claimed'), true) || strtolower($name) !== strtolower((string) ($list[$i]['from'] ?? ''))) {
+            $wpdb->query("SELECT RELEASE_LOCK('edr_tb_avail_write')"); return new WP_Error('gone', 'That release can no longer be taken back.', array('status' => 409)); }
+        $was = $list[$i]['to'] ?? '';
+        $list[$i]['st'] = 'withdrawn'; $list[$i]['at'] = time();
+        $msg = 'Taken back: the stint is yours again.';
+        $say = '↩️ **' . $list[$i]['from'] . '** is keeping stint ' . ($list[$i]['n'] + 1) . ' in **' . $list[$i]['car'] . '** after all.' . ($was !== '' ? ' (' . $was . ': no need to take it.)' : '');
     } elseif ($act === 'approve' || $act === 'decline') {
         $i = $find($req->get_param('id'));
         if ($i < 0) { $wpdb->query("SELECT RELEASE_LOCK('edr_tb_avail_write')"); return new WP_Error('gone', 'That swap is gone.', array('status' => 404)); }
@@ -2278,6 +2287,11 @@ add_shortcode('edr_team_builder', function () {
         'nonce' => wp_create_nonce('wp_rest'),
         'logo'  => EDR_TB_URL . 'assets/edr_logo.png',
         'can_edit' => is_user_logged_in(),
+        /* 3.1.5: scalars arrive as strings. remind_hook says whether the stint-reminder webhook is set
+           (never the URL); site_off is the WordPress timezone's offset in seconds, so the builder can
+           read current_time('mysql') stamps correctly. */
+        'remind_hook' => empty(edr_tb_settings()['confirm_webhook']) ? 'no' : 'yes',
+        'site_off'    => (string) wp_timezone()->getOffset(new DateTime('now')),
     ));
     return '<div id="edr-tb-app"><noscript>This tool needs JavaScript.</noscript></div>';
 });

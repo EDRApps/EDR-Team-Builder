@@ -160,6 +160,16 @@ Details in the plugin's [CLAUDE.md](files/edr-team-builder/CLAUDE.md).
   timezone). The `labels`/`startLabels` saved in the plan were formatted on the admin's screen, so a Sydney
   driver read "Session opens Sat 17:00" (Brisbane) next to "Practice 18:00" (his time). Never display
   `START_LABELS[w]` directly; it is only `startLbl`'s fallback.
+- 3.1.5 (from the full site test): `EDR_TB` now carries `remind_hook` ('yes'/'no', whether the
+  stint-confirmation webhook is set; never the URL) and `site_off` (WP timezone offset, seconds; the live
+  site is NZ). `wp_localize_script` turns scalars into strings, so compare to 'no' and use `+`. Race week
+  says reminders and swap pings are OFF when the webhook is missing (they used to be listed as scheduled
+  while the server skipped them). Publish needs a second tap when practice/qualifying is empty
+  (`pqMissing`, `_pubArm`). Release needs a second tap (`_relArm`), and the releasing driver can **Take it
+  back** (`/swap` action `withdraw`, only by `from`, only while open/claimed, Discord says so). The confirm
+  card shows "You released stint N" instead of "confirmed" while a release is open. Seen/confirm stamps
+  gain `ts` (epoch); `relTime()` takes epoch ms, or reads a `current_time('mysql')` string as site time
+  via `site_off` (it used to read it as the viewer's local time: "just now" for 2-3 h old submissions).
 
 ## Team Builder workflow & roles (v2.4)
 

@@ -1210,6 +1210,7 @@ function confirmPlan(byId){
 let SWAPS={}, _swapMsg='';
 function swapPost(action,body){ return Promise.reject(new Error('Stint swaps run on the live site.')); }   /* WP build overrides: POST /swap */
 function swapsFor(ev){ return (SWAPS&&SWAPS[ev])||[]; }
+let _relArm='';   /* 3.1.5: "car#stint" armed by the first Release tap */
 function swapDo(action,body){ _swapMsg='Saving…'; renderContent();
   swapPost(action,Object.assign({ev:state.evsel},body)).then(function(j){ if(j&&j.swaps){ SWAPS[state.evsel]=j.swaps; } _swapMsg=(j&&j.message)||''; renderContent(); })
     .catch(function(e){ _swapMsg=(e&&e.message)||'Could not reach the server.'; renderContent(); }); }
@@ -1331,6 +1332,10 @@ function renderConfirmCard(car,mine,byId){
   if(!opens || cfNow()<opens)
     return '<div class="wiz-card" style="margin-top:14px"><div class="meta" style="line-height:1.6">'+(opens?'From <b style="color:#fff">'+fmtWhen(opens)+'</b> (4 days before the race) you\'ll be asked to confirm these stints.':'You\'ll be asked to confirm these stints 4 days before the race.')+' Until then they can still change.</div></div>';
   const sig=stintSig(car,mine), cs=confirmState(state.me,sig);
+  /* 3.1.5: after a release the card must not still say "you're confirmed" */
+  const myRel=swapsFor(state.evsel).filter(function(x){ return x.key===car.key&&mine.indexOf(x.n)>=0&&(x.st==='open'||x.st==='claimed')&&nameKey(x.from)===nameKey(state.me); });
+  if(myRel.length) return '<div class="wiz-card" style="border-left:4px solid var(--amber);margin-top:14px"><div class="head" style="color:var(--amber);font-size:16px">You released stint '+myRel.map(function(x){ return x.n+1; }).join(', ')+'</div>'
+    +'<div class="meta" style="margin-top:6px;line-height:1.6">'+(myRel.some(function(x){ return x.st==='claimed'; })?'Someone has offered to take it; it moves once an admin approves.':'It stays yours until someone in your car takes it and an admin approves.')+' Changed your mind? Tap <b>Take it back</b> on the stint.</div></div>';
   const wn=(state.swapNote||'').trim(), contact=wn||'Message Thomaz on Discord — @tomhernandes';
   const edge=cs.st==='ok'?'var(--green)':cs.st==='no'?'var(--red)':'var(--yellow)';
   let h='<div class="wiz-card" style="border-left:4px solid '+edge+';margin-top:14px">';
@@ -1530,7 +1535,10 @@ function renderWizard(byId){
           +(rel?'<div class="meta" style="color:var(--amber)">Released'+(rel.st==='claimed'?': '+esc(rel.to.split(' ')[0])+' will take it once an admin approves':', waiting for someone to take it')+'.</div>':'')
           +(Array.isArray(t.stops)?'<div class="wiz-stops">'+stopListHtml(t, (function(){ const nid=arr[i+1]; return (nid!=null&&car.team.map(String).indexOf(String(nid))>=0&&byId[nid])?byId[nid].name.split(' ')[0]:null; })(), i===times.length-1, null, arr[i+1]!=null&&String(arr[i+1])===String(arr[i]))+'</div>':'')+'</span>'
           +(wx?'<span class="meta" style="color:'+(wx.wet?'#6ea8ff':wx.night?'var(--dim)':'var(--amber)')+'">'+wx.icon+' '+wx.label+'</span>':'')
-          +(rel?'':'<button class="btn btn-ghost avfree" data-action="swaprel" data-key="'+esc(car.key)+'" data-n="'+i+'" style="font-size:10px;padding:4px 10px;margin-left:8px">Release</button>')+'</div>'; });
+          +(rel?(nameKey(rel.from)===nameKey(r.me.name)?'<button class="btn btn-ghost avfree" data-action="swapundo" data-id="'+esc(rel.id)+'" style="font-size:11px;padding:8px 12px;margin-left:8px">Take it back</button>':'')
+              :(_relArm===car.key+'#'+i
+                ?'<button class="btn avfree" data-action="swaprel" data-key="'+esc(car.key)+'" data-n="'+i+'" style="font-size:11px;padding:8px 12px;margin-left:8px;background:var(--red);color:#fff;border-color:var(--red)">Tap again to release</button>'
+                :'<button class="btn btn-ghost avfree" data-action="swaprel" data-key="'+esc(car.key)+'" data-n="'+i+'" style="font-size:11px;padding:8px 12px;margin-left:8px">Release</button>'))+'</div>'; });
       if(mine.length) h+=renderConfirmCard(car,mine,byId);
       /* stints released by someone else in this car that this driver is free for */
       const takeable=sw.filter(function(x){ return x.key===car.key&&x.st==='open'&&nameKey(x.from)!==nameKey(r.me.name)&&times[x.n]&&driverFree(r.me,times[x.n].s,times[x.n].e); });
@@ -2146,7 +2154,7 @@ function recapAgeLabel(){
   }
   if(!RECAP||!RECAP.at) return 'no results pulled yet — the recap section is left out until you do';
   const d=RECAP.drivers?RECAP.drivers.length:0;
-  return 'last pulled '+relTime(new Date(RECAP.at*1000).toISOString().replace('T',' ').slice(0,19))
+  return 'last pulled '+relTime(RECAP.at*1000)
        +' · '+d+' driver'+(d===1?'':'s')+', '+(RECAP.races||0)+' race'+((RECAP.races||0)===1?'':'s')
        +((RECAP.dropped)?' · '+RECAP.dropped+' not fetched (run capped)':'');
 }
@@ -2160,7 +2168,7 @@ function histAgeLabel(){
   }
   if(!haveHistory() || !HISTORY.at) return 'no team history yet — "EDR here" lines and earned mentions stay off until you pull it';
   const nd=(HISTORY.drivers?HISTORY.drivers.length:0);
-  return 'last pulled '+relTime(new Date(HISTORY.at*1000).toISOString().replace('T',' ').slice(0,19))
+  return 'last pulled '+relTime(HISTORY.at*1000)
        +' · last '+(HISTORY.days||90)+' days · '+nd+' driver'+(nd===1?'':'s')+', '+(HISTORY.races||0)+' race'+((HISTORY.races||0)===1?'':'s')
        +((HISTORY.fields && !HISTORY.fields.pos)?' · positions not in feed — starts only':'');
 }
@@ -2924,12 +2932,17 @@ let AV_SEEN={};
 function avSeenFor(nm){
   const s=((AV_SEEN||{})[state.evsel]||{})[nm];
   if(!s||!s.at) return null;
-  return {n:s.n||0, ago:relTime(s.at)};
+  return {n:s.n||0, ago:relTime(s.ts?s.ts*1000:s.at)};
 }
 function relTime(sqlish){
-  /* WP current_time('mysql') is "YYYY-MM-DD HH:MM:SS" in the SITE's zone, with no offset to
-     anchor it. Close enough for "3 days ago"; never used for anything that has to be exact. */
-  const t=Date.parse(String(sqlish).replace(' ','T'));
+  /* 3.1.5: a number is epoch ms (exact). A string is WP current_time('mysql') in the SITE's zone
+     (New Zealand on the live site) with no offset, so read it as UTC and take off the site's offset
+     (EDR_TB.site_off, seconds). Before, it was read as the viewer's local time: an Australian driver
+     saw "just now" for anything from the last 2-3 hours. */
+  let t;
+  if(typeof sqlish==='number') t=sqlish;
+  else { const off=(typeof EDR_TB!=='undefined'&&EDR_TB&&EDR_TB.site_off!=null&&EDR_TB.site_off!=='')?(+EDR_TB.site_off||0):null;
+    t=(off!=null)?Date.parse(String(sqlish).replace(' ','T')+'Z')-off*1000:Date.parse(String(sqlish).replace(' ','T')); }
   if(isNaN(t)) return 'earlier';
   const mins=Math.round((Date.now()-t)/60000);
   if(mins<2) return 'just now';
@@ -3835,6 +3848,9 @@ function nudgeText(){
   return 'Still need your times for '+ev.n+' ('+fmtDates(ev.s,ev.e)+'). Takes a minute: '+url+'#availability';
 }
 /* "Publish plan": both locks at once, which is what the Discord reminders and voice channels wait for */
+/* 3.1.5: cars whose practice or qualifying block has nobody in it (Publish asks twice when any) */
+function pqMissing(byId){ if(!RACE_PRE) return []; return stintCars(byId).filter(function(c){ return preList(c).some(function(x){ return x.id==null; }); }).map(function(c){ return c.label; }); }
+let _pubArm=false;
 function publishPlan(on){
   state.teamsLocked=!!on; state.stintsLocked=!!on;
   state.stintLens={};
@@ -3881,10 +3897,17 @@ function renderHome(byId){
     hbtn('Open Stints','gotab',' data-tab="stints"',!!probs.length));
   /* 5 publish */
   const pub=state.teamsLocked&&state.stintsLocked, cp=nCars?confirmPlan(byId):null, start=cp&&cp.start;
-  const when=start?'Discord: 4-day reminder '+fmtWhen(start-4*86400000)+', 2-day reminder '+fmtWhen(start-2*86400000)+', car voice channels '+fmtWhen(start-86400000)+'.':'';
-  h+=homeStep(5,'Publish the plan', pub?'done':(nCars?'todo':'todo'),
-    (pub?'Published: line-up and stints are locked. ':'Not published. The Discord reminders and voice channels only run once it is. ')+when,
-    nCars?(pub?hbtn('Unpublish','publish',' data-on="0"'):hbtn('Publish plan','publish',' data-on="1"',true)):'');
+  /* 3.1.5: the reminders and swap pings need the team-channel webhook in plugin Settings. Without it
+     the server skips them silently, so say so here instead of listing them as scheduled. */
+  const hookOff=(typeof EDR_TB!=='undefined'&&EDR_TB&&EDR_TB.remind_hook==='no');
+  const when=start?(hookOff
+      ?'<b style="color:var(--amber)">Discord reminders and swap pings are OFF: no team-channel webhook is set (WordPress → Settings → EDR Team Builder → "Discord webhook (stint confirmations)").</b> Car voice channels '+fmtWhen(start-86400000)+'.'
+      :'Discord: 4-day reminder '+fmtWhen(start-4*86400000)+', 2-day reminder '+fmtWhen(start-2*86400000)+', car voice channels '+fmtWhen(start-86400000)+'.'):'';
+  const pqGap=nCars?pqMissing(byId):[];
+  h+=homeStep(5,'Publish the plan', pub?(hookOff?'warn':'done'):(nCars?'todo':'todo'),
+    (pub?'Published: line-up and stints are locked. ':'Not published. The Discord reminders and voice channels only run once it is. ')+when
+      +(!pub&&pqGap.length?' <b style="color:var(--amber)">Practice / qualifying has nobody yet: '+esc(pqGap.join(', '))+'.</b>':''),
+    nCars?(pub?hbtn('Unpublish','publish',' data-on="0"'):hbtn(_pubArm?'Tap again: publish anyway':'Publish plan','publish',' data-on="1"'+(_pubArm?' style="background:var(--amber)"':''),true)):'');
   /* 6 race day */
   let rd='';
   if(cp&&Object.keys(cp.drivers).length){
@@ -4210,8 +4233,15 @@ document.getElementById('content').addEventListener('click',e=>{
     summaryPost(dry).then(function(j){ if(j&&j.text) _sumText=j.text; _sumMsg=dry?'Preview below. Post it when it looks right.':((j&&j.message)||'Posted.'); renderContent(); })
       .catch(function(err){ _sumMsg=(err&&err.message)||'Could not reach the server.'; renderContent(); }); return; }
   const sr=e.target.closest&&e.target.closest('[data-action="swaprel"]');
-  if(sr){ const byId=modelById(), car=stintCars(byId).find(function(c){ return c.key===sr.dataset.key; }), n=+sr.dataset.n; if(car&&car.times[n]){ const t=car.times[n];
+  if(sr){ const byId=modelById(), car=stintCars(byId).find(function(c){ return c.key===sr.dataset.key; }), n=+sr.dataset.n;
+    /* 3.1.5: a release pings Discord and offers the stint to the car, so it takes two taps */
+    const armKey=sr.dataset.key+'#'+n;
+    if(_relArm!==armKey){ _relArm=armKey; renderContent(); setTimeout(function(){ if(_relArm===armKey){ _relArm=''; renderContent(); } },5000); return; }
+    _relArm='';
+    if(car&&car.times[n]){ const t=car.times[n];
     swapDo('release',{name:state.me, key:car.key, car:car.label, n:n, s:WIN_START_MS+t.s*60000, e:WIN_START_MS+t.e*60000}); } return; }
+  const sun=e.target.closest&&e.target.closest('[data-action="swapundo"]');
+  if(sun){ swapDo('withdraw',{id:sun.dataset.id, name:state.me}); return; }
   const stk=e.target.closest&&e.target.closest('[data-action="swaptake"]');
   if(stk){ swapDo('claim',{id:stk.dataset.id, name:state.me}); return; }
   const sok=e.target.closest&&e.target.closest('[data-action="swapok"]');
@@ -4244,7 +4274,9 @@ document.getElementById('content').addEventListener('click',e=>{
   const gt=e.target.closest&&e.target.closest('[data-action="gotab"]');
   if(gt){ state.tab=gt.dataset.tab; setActiveTab(); renderContent(); window.scrollTo(0,0); return; }
   const pubBtn=e.target.closest&&e.target.closest('[data-action="publish"]');
-  if(pubBtn){ if(isAdmin()) publishPlan(pubBtn.dataset.on==='1'); return; }
+  if(pubBtn){ if(!isAdmin()) return; const on=pubBtn.dataset.on==='1';
+    if(on && !_pubArm && pqMissing(modelById()).length){ _pubArm=true; renderContent(); setTimeout(function(){ if(_pubArm){ _pubArm=false; renderContent(); } },8000); return; }
+    _pubArm=false; publishPlan(on); return; }
   if(e.target.dataset.action==='copynudge'){ const t=nudgeText(); try{ navigator.clipboard.writeText(t).then(function(){ _homeMsg='Copied. Paste it in Discord.'; renderContent(); },function(){ _homeMsg=t; renderContent(); }); }catch(err){ _homeMsg=t; renderContent(); } return; }
   if(e.target.dataset.action==='gotoavail'){ state.tab='availability'; setActiveTab(); renderContent(); return; }
   const wz=e.target.closest&&e.target.closest('[data-action="wizstep"]');
