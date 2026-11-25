@@ -334,11 +334,17 @@ function edr_ir_seasons_from($data, $classes = array()) {
         $scheds = isset($s['schedules']) && is_array($s['schedules']) ? $s['schedules'] : array();
         foreach ($scheds as $wk) {
             $rtd = isset($wk['race_time_descriptors']) && is_array($wk['race_time_descriptors']) ? $wk['race_time_descriptors'] : array();
-            $times = array();
+            $times = array(); $sessMin = 0;
             foreach ($rtd as $d) {
-                if (!empty($d['session_times']) && is_array($d['session_times'])) { $times = $d['session_times']; break; }
+                if (!empty($d['session_times']) && is_array($d['session_times'])) { $times = $d['session_times']; $sessMin = intval($d['session_minutes'] ?? 0); break; }
             }
             if (!$times) continue;
+            /* 3.0.5: session_times are when the iRacing SESSION opens (practice). The green flag comes
+               after practice + qualifying + warm-up and the grid: session_minutes - race_time_limit
+               (992 Cup: 768 - 720 = 48 min; practice 30 + qualifying 15 + ~3 to grid and roll). */
+            $raceLim = intval($wk['race_time_limit'] ?? 0);
+            $prMin = intval($wk['practice_length'] ?? 0); $qMin = intval($wk['qualify_length'] ?? 0); $wuMin = intval($wk['warmup_length'] ?? 0);
+            $preMin = ($sessMin > $raceLim && $raceLim > 0) ? ($sessMin - $raceLim) : ($prMin + $qMin + $wuMin);
             $tr = isset($wk['track']) && is_array($wk['track']) ? $wk['track'] : array();
             $out[] = array(
                 'season_id'  => isset($s['season_id']) ? intval($s['season_id']) : 0,
@@ -350,6 +356,10 @@ function edr_ir_seasons_from($data, $classes = array()) {
                 'sessions'   => array_values($times),
                 'weather'    => isset($wk['weather']) ? $wk['weather'] : null,
                 'cars'       => $seasonCars,
+                'pre_min'      => $preMin,
+                'practice_min' => $prMin,
+                'qualify_min'  => (!empty($wk['qual_attached']) ? $qMin : 0),
+                'warmup_min'   => $wuMin,
             );
             // no break: seasons like Creventic carry several rounds (Mugello, Spa, …) —
             // emit every week that has session_times so each round is matchable

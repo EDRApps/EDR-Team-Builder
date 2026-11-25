@@ -567,6 +567,24 @@ function autoApplyTiming(){  // auto-apply official session times to the selecte
     if(applyIrTiming(ev, se)){ applyEventTiming(ev); var _mv=avRebase(state.evsel,_avb); state.stintAssign={}; state.stintWin={}; state.stintSig=''; applyAvailToDrivers(); save(); avPushRebased(state.evsel,_mv); setSetupMsg('Auto-applied official session times from "'+se.name+'".'+avMovedNote(_mv)); renderContent(); }
   }catch(e){}
 }
+/* 3.0.5: races whose iRacing times were applied before 3.0.5 have no pre-race minutes, so their
+   stints started when the session OPENED (practice) instead of at the green flag. Fill them in once,
+   from the same iRacing round, without touching the start times, availability or stint assignments
+   (the stint plan simply moves to the green flag; nobody changes seats). Admin browsers only. */
+function autoApplyPre(){
+  try{
+    if(!state.evsel || !IR_SEASONS.length || !isAdmin()) return;
+    var ev=calEvent(state.evsel); if(!ev) return;
+    var t=state.evTiming&&state.evTiming[state.evsel]; if(!t || t.src==='calendar' || t.preMin!=null) return;
+    var se=irMatchFor(ev); if(!se || se.pre_min==null) return;
+    t.preMin=Math.max(0,+se.pre_min||0); t.practiceMin=+se.practice_min||0; t.qualifyMin=+se.qualify_min||0;
+    var offs=Object.values(t.offsets||{}).map(Number), maxOff=offs.length?Math.max.apply(null,offs):0;
+    t.winMin=Math.max(+t.winMin||0, maxOff+t.preMin+(+t.raceMin||state.stint.race||0));
+    var _r=state.stint.race; applyEventTiming(ev); if(_r>0) state.stint.race=_r;
+    applyAvailToDrivers(); save(); renderContent();
+    setStatus('Stints now start at the green flag: '+t.preMin+' min after the session opens (practice and qualifying first).');
+  }catch(e){}
+}
 function autoApplyWeather(){  // auto-pull: match the selected event to an iRacing season and apply its weather (manual override wins)
   try{
     if(!state.evsel || !IR_SEASONS.length) return;
@@ -577,7 +595,7 @@ function autoApplyWeather(){  // auto-pull: match the selected event to an iRaci
     if(se && se.weather){ applyIrWeather(ev, se); save(); if(state.tab==='stints') renderContent(); }
   }catch(e){}
 }
-var _selectEvent0=selectEvent; selectEvent=function(k){ _selectEvent0(k); autoApplyTiming(); autoApplyWeather(); };   // picking an event auto-applies its iRacing session times + weather
+var _selectEvent0=selectEvent; selectEvent=function(k){ _selectEvent0(k); autoApplyTiming(); autoApplyPre(); autoApplyWeather(); };   // picking an event auto-applies its iRacing session times + weather
 function syncIrEvents(){  // F1: pull whatever endurance events the proxy exposes and merge into the calendar
   _evSyncMsg='Syncing iRacing…'; renderContent();
   loadIracing().then(function(){
@@ -605,7 +623,7 @@ function syncIrEvents(){  // F1: pull whatever endurance events the proxy expose
       if(existing[evKey(ev)]){ have++; return; }
       fresh.push(ev); if(se.weather) applyIrWeather(ev, se); added++;
     });
-    state.irEvents=fresh; save(); autoApplyTiming(); autoApplyWeather();
+    state.irEvents=fresh; save(); autoApplyTiming(); autoApplyPre(); autoApplyWeather();
     _evSyncMsg = IR_STATUS ? IR_STATUS : ('Synced: added '+added+' iRacing event'+(added===1?'':'s')+(have?', '+have+' already on the calendar':'')+'.');
     renderContent();
   }).catch(function(){ _evSyncMsg='iRacing unavailable right now.'; renderContent(); });
@@ -835,7 +853,7 @@ async function bootSetup(){
        the stored post) — landing on it via #weekly used to show the pre-pull version until
        something else forced a render */
     if(state.tab==='setup'||state.tab==='weekly') renderContent();
-    loadIracing().then(function(){ autoApplyTiming(); autoApplyWeather(); if(state.tab==='setup') renderContent(); });
+    loadIracing().then(function(){ autoApplyTiming(); autoApplyPre(); autoApplyWeather(); if(state.tab==='setup') renderContent(); });
   }
 }
 

@@ -461,9 +461,21 @@ function applyIrTiming(ev, sea){
   const maxOff=Math.max.apply(null,Object.values(offsets));
   // availability window spans the first start to the last candidate race end (we have exact
   // times here, so don't pad to calendar days); respect a larger hand-typed winMin if set
-  const winMin=Math.max(maxOff+raceMin, ev.winMin||0);
-  state.evTiming[evKey(ev)]={winStart:new Date(winStart).toISOString(), raceMin:raceMin, offsets:offsets, labels:labels, winMin:winMin, src:sea.name||'iRacing'};
+  const preMin=Math.max(0,+sea.pre_min||0);   // 3.0.5: practice + qualifying + grid before the green flag
+  const winMin=Math.max(maxOff+preMin+raceMin, ev.winMin||0);
+  state.evTiming[evKey(ev)]={winStart:new Date(winStart).toISOString(), raceMin:raceMin, offsets:offsets, labels:labels, winMin:winMin, src:sea.name||'iRacing',
+    preMin:preMin, practiceMin:+sea.practice_min||0, qualifyMin:+sea.qualify_min||0};
   return true;
+}
+/* 3.0.5: minutes from the iRacing session opening (the start-time buttons) to the green flag.
+   Stints, coverage, confirmations, voice channels and race day all run from greenOff(window). */
+let RACE_PRE=0, PRE_PRACTICE=0, PRE_QUALIFY=0;
+function greenOff(w){ return ((typeof START_OFFSETS!=='undefined'&&START_OFFSETS[w])||0)+RACE_PRE; }
+function preRaceLine(w){
+  if(!RACE_PRE) return '';
+  const o=(START_OFFSETS[w]||0), p=PRE_PRACTICE, q=PRE_QUALIFY;
+  const hm=function(m){ return fmtClock(m).split(' ').slice(1).join(' '); };
+  return (p?'Practice '+hm(o)+'–'+hm(o+p)+' · ':'')+(q?'Qualifying '+hm(o+p)+'–'+hm(o+p+q)+' · ':'')+'Green flag about '+hm(o+RACE_PRE);
 }
 function applyEventTiming(ev0){
   const ovr=state.evTiming&&state.evTiming[evKey(ev0)];
@@ -471,6 +483,7 @@ function applyEventTiming(ev0){
   /* block size is per event (admin setting): 2h suits a 24h enduro but is far too coarse for a
      3h sprint, where it can swallow the whole race in two ticks */
   AV_BLOCK = avBlockOk(ev.avBlock) ? ev.avBlock : 120;
+  RACE_PRE = Math.max(0, +ev.preMin||0); PRE_PRACTICE=+ev.practiceMin||0; PRE_QUALIFY=+ev.qualifyMin||0;
   WIN_START_MS = ev.winStart ? Date.parse(ev.winStart) : Date.parse(ev.s+'T00:00:00+10:00');
   const days=Math.round((Date.parse(ev.e+'T00:00:00Z')-Date.parse(ev.s+'T00:00:00Z'))/86400000)+1;
   EV_WIN_MIN = ev.winMin || days*1440;
@@ -563,7 +576,7 @@ function slotsToAvail(slots){
   }
   const total=windows.reduce((a,w)=>a+(w[1]-w[0]),0);
   const race=Math.max(30,state.stint.race);
-  const starts=Object.keys(START_OFFSETS).filter(k=>windows.some(w=>w[0]<=START_OFFSETS[k]&&w[1]>=START_OFFSETS[k]+race)).map(Number);
+  const starts=Object.keys(START_OFFSETS).filter(k=>windows.some(w=>w[0]<=greenOff(k)&&w[1]>=greenOff(k)+race)).map(Number);
   return {hours:Math.round(total/6)/10, pct:EV_WIN_MIN?Math.round(total/EV_WIN_MIN*100):0, starts, windows};
 }
 /* ---- driver identity housekeeping -----------------------------------------------------
@@ -760,7 +773,7 @@ function stintCars(byId){
   Object.keys(state.teams||{}).forEach(function(cls){ ['pro','casual'].forEach(function(tier){
     ((state.teams[cls]||{})[tier]||[]).forEach(function(team,ti){
       const members=team.map(function(id){ return byId[id]; }).filter(Boolean); if(!members.length) return;
-      const key=cls+'|'+tier+'|'+ti, win=state.stintWin[key]||state.stint.window, off=START_OFFSETS[win]||0, times=blockTimes(off,len,race);
+      const key=cls+'|'+tier+'|'+ti, win=state.stintWin[key]||state.stint.window, off=greenOff(win), times=blockTimes(off,len,race);
       let arr=state.stintAssign[key];
       if(!arr||arr.length!==times.length) arr=state.stintsLocked?Array(times.length).fill(null):autoPlan(team,byId,times);
       out.push({cls:cls, tier:tier, ti:ti, key:key, team:team, members:members, win:win, off:off, times:times, arr:arr,
@@ -1088,7 +1101,8 @@ function renderWizard(byId){
         +'<div class="head" style="color:#fff;font-size:22px;font-weight:700;margin:4px 0 2px">'+esc(carLabel(c.cls,c.tier,c.ti)||(tierL+' '+(c.ti+1)))+'</div>'
         +(carName?'<div class="meta">'+esc(carName)+'</div>':'')
         +'<div class="wiz-order" style="margin-top:12px">'+members.map(function(m){ return '<span'+(m.id===r.me.id?' class="me"':'')+'>'+esc(m.name.split(' ')[0])+'</span>'; }).join('')+'</div>'
-        +(START_LABELS[win]?'<div class="meta" style="margin-top:12px">Race start · '+esc(START_LABELS[win])+'</div>':'')
+        +(START_LABELS[win]?'<div class="meta" style="margin-top:12px">'+(RACE_PRE?'Session opens · ':'Race start · ')+esc(START_LABELS[win])+'</div>':'')
+        +(RACE_PRE?'<div class="meta" style="margin-top:4px">'+esc(preRaceLine(win))+'</div>':'')
         +'</div>';
       const mine=driverStints(car,r.me.id);
       h+='<div class="wiz-label" style="margin-top:22px">You drive '+mine.length+' stint'+(mine.length===1?'':'s')+'</div>';
@@ -2868,10 +2882,13 @@ function blockTimes(off,len,race){ const n=Math.ceil(race/len),t=[]; for(let i=0
 /* ---- weather (F7): maps a stint's clock offset to sim conditions for the event ---- */
 function weatherAt(absMin, raceStartOff, winNo, absEnd){
   let w=state.evWeather&&state.evWeather[state.evsel]; if(!w) return null;
-  const off=(raceStartOff!=null)?raceStartOff:(START_OFFSETS[state.stint.window]||0);
+  const off=(raceStartOff!=null)?raceStartOff:greenOff(state.stint.window);
   const elapsed=Math.max(0, absMin-off);                     // real minutes since this car's green flag
   const mult=(+w.mult)||1;                                   // sim minutes per real minute (day/night rollover)
-  const winAdd=(w.todOffsets&&winNo!=null&&isFinite(w.todOffsets[winNo-1]))?+w.todOffsets[winNo-1]:0;   // each start window is its own session with its own sim clock
+  /* 3.0.5: simulated_time_offsets are per SESSION TYPE (qualifying, race), not per start time: the
+     992 Cup's [40, 65] = qualifying at 10:40 and the race at 11:05 in-game, for every start. The
+     last entry is the race. (Before, start #1 got +40, #2 +65 and the others +0.) */
+  const winAdd=(w.raceSimOff!=null&&isFinite(w.raceSimOff))?+w.raceSimOff:((Array.isArray(w.todOffsets)&&w.todOffsets.length&&isFinite(w.todOffsets[w.todOffsets.length-1]))?+w.todOffsets[w.todOffsets.length-1]:0);
   const todMin=((((+w.startTod||0) + winAdd + elapsed*mult)%1440)+1440)%1440;
   const night = todMin<6*60 || todMin>=19*60;
   let wet = !!w.wet || (w.wetFrom!=null && w.wetFrom!=='' && elapsed>=(+w.wetFrom));
@@ -2898,7 +2915,7 @@ function weatherAt(absMin, raceStartOff, winNo, absEnd){
 function carBestWindow(memberIds, byId, len, race){   // window with fewest uncovered blocks for this car
   let best=null;
   Object.keys(START_OFFSETS).forEach(w=>{
-    const times=blockTimes(START_OFFSETS[w],len,race);
+    const times=blockTimes(greenOff(w),len,race);
     const gaps=times.filter(t=>!memberIds.some(id=>{const m=byId[id];return m&&driverFree(m,t.s,t.e);})).length;
     if(!best || gaps<best.gaps) best={w:+w,gaps};
   });
@@ -2939,7 +2956,7 @@ function windowSummary(byId, len, race){
   const teamsList=allTeams();
   const allIds=[...new Set(teamsList.reduce((a,t)=>a.concat(t),[]))];
   return Object.keys(START_OFFSETS).map(w=>{
-    const off=START_OFFSETS[w], times=blockTimes(off,len,race);
+    const off=greenOff(w), times=blockTimes(off,len,race);
     const free=allIds.filter(id=>{const m=byId[id]; return m&&driverFree(m,off,off+race);}).length;
     let covered=0;
     teamsList.forEach(team=>{ const mem=team.map(id=>byId[id]).filter(Boolean); if(times.every(t=>mem.some(m=>driverFree(m,t.s,t.e)))) covered++; });
@@ -3029,7 +3046,7 @@ function renderStints(byId){
         const mem=new Set(members.map(m=>m.id));
         const key=cls+'|'+tier+'|'+ti;
         const win=state.stintWin[key]||state.stint.window;
-        const off=START_OFFSETS[win]||0;
+        const off=greenOff(win);
         const times=blockTimes(off,len,race);
         if(!state.stintsLocked && (!state.stintAssign[key] || state.stintAssign[key].length!==times.length)) state.stintAssign[key]=autoPlan(team,byId,times);
         else if(!state.stintAssign[key]) state.stintAssign[key]=Array(times.length).fill(null);  // locked + new car -> empty, fill by hand
@@ -3050,6 +3067,7 @@ function renderStints(byId){
         html+='<div class="stintcar"><div style="display:flex;align-items:center;gap:10px;margin-bottom:12px;flex-wrap:wrap"><span class="swatch" style="background:'+col+'"></span><span class="head" style="letter-spacing:.04em;color:#fff;font-size:15px">'+(_renaming===key
           ? esc(cls)+' · <input class="avfree" data-action="renamesave" data-key="'+key+'" value="'+esc(carLabel(cls,tier,ti)||'')+'" placeholder="'+label[0]+(ti+1)+'" style="font-size:13px;padding:3px 7px;width:150px">'
           : esc(cls)+' · '+(carLabel(cls,tier,ti)?esc(carLabel(cls,tier,ti))+' <span class="meta" style="font-size:11px">'+label[0]+(ti+1)+'</span>':label[0]+(ti+1))+(isAdmin()?' <span class="iconbtn" data-action="renamecar" data-key="'+key+'" title="rename this car" style="cursor:pointer;font-size:12px;opacity:.6">✎</span>':''))+'</span>'+winTabs+badge+(fp.anyCfg?'<span class="meta" style="color:var(--dim)">⛽ '+fp.totLaps+' laps · '+fp.totFuel+'L · '+fp.pits+' stop'+(fp.pits===1?'':'s')+(fp.lostSec?' ('+fmtLost(fp.lostSec)+' lost)':'')+'</span>':'')+'</div>';
+        if(RACE_PRE) html+='<div class="meta" style="margin:-4px 0 10px;font-size:11px">'+esc(preRaceLine(win))+'. Stints run from the green flag.</div>';
         if(isAdmin()&&carName){ const bc=(state.fuelCfg.byCar||{})[carName]||{}; const def=resolveFuel(carName);
           html+='<div class="carfuel"><span class="meta" style="font-size:10px;text-transform:uppercase;letter-spacing:.05em;color:var(--yellow)">'+esc(carName)+'</span>'
             +'<label>tank <input type="number" min="0" step="1" value="'+(bc.tankL||'')+'" placeholder="'+(def.tankL||'—')+'" data-action="cartank" data-car="'+esc(carName)+'">L</label>'
@@ -3276,7 +3294,7 @@ function renderRaceDay(byId){
     const T=rdTimes(c), cur=T.find(function(t){ return now>=t.s&&now<t.e; }), first=T[0], lastT=T[T.length-1];
     const team=c.team.map(String), name=function(i){ const id=c.arr[i], m=(id!=null&&team.indexOf(String(id))>=0)?byId[id]:null; return m?m.name.split(' ')[0]:'nobody yet'; };
     let body='';
-    if(now<first.s) body='<div class="rd-big">Starts in '+fmtLeft(first.s-now)+'</div><div class="meta">'+esc(name(0))+' starts at '+fmtHM(first.s)+'.</div>';
+    if(now<first.s) body='<div class="rd-big">Green flag in '+fmtLeft(first.s-now)+'</div><div class="meta">'+esc(name(0))+' starts at about '+fmtHM(first.s)+'.'+(RACE_PRE?' '+esc(preRaceLine(c.win))+'.':'')+'</div>';
     else if(now>=lastT.e) body='<div class="rd-big">Finished</div><div class="meta">Last stint ended at '+fmtHM(lastT.e)+'.</div>';
     else if(cur){
       const nx=T[cur.i+1], pct=Math.round((now-cur.s)/(cur.e-cur.s)*100);
@@ -4360,6 +4378,24 @@ function autoApplyTiming(){  // auto-apply official session times to the selecte
     if(applyIrTiming(ev, se)){ applyEventTiming(ev); var _mv=avRebase(state.evsel,_avb); state.stintAssign={}; state.stintWin={}; state.stintSig=''; applyAvailToDrivers(); save(); avPushRebased(state.evsel,_mv); setSetupMsg('Auto-applied official session times from "'+se.name+'".'+avMovedNote(_mv)); renderContent(); }
   }catch(e){}
 }
+/* 3.0.5: races whose iRacing times were applied before 3.0.5 have no pre-race minutes, so their
+   stints started when the session OPENED (practice) instead of at the green flag. Fill them in once,
+   from the same iRacing round, without touching the start times, availability or stint assignments
+   (the stint plan simply moves to the green flag; nobody changes seats). Admin browsers only. */
+function autoApplyPre(){
+  try{
+    if(!state.evsel || !IR_SEASONS.length || !isAdmin()) return;
+    var ev=calEvent(state.evsel); if(!ev) return;
+    var t=state.evTiming&&state.evTiming[state.evsel]; if(!t || t.src==='calendar' || t.preMin!=null) return;
+    var se=irMatchFor(ev); if(!se || se.pre_min==null) return;
+    t.preMin=Math.max(0,+se.pre_min||0); t.practiceMin=+se.practice_min||0; t.qualifyMin=+se.qualify_min||0;
+    var offs=Object.values(t.offsets||{}).map(Number), maxOff=offs.length?Math.max.apply(null,offs):0;
+    t.winMin=Math.max(+t.winMin||0, maxOff+t.preMin+(+t.raceMin||state.stint.race||0));
+    var _r=state.stint.race; applyEventTiming(ev); if(_r>0) state.stint.race=_r;
+    applyAvailToDrivers(); save(); renderContent();
+    setStatus('Stints now start at the green flag: '+t.preMin+' min after the session opens (practice and qualifying first).');
+  }catch(e){}
+}
 function autoApplyWeather(){  // auto-pull: match the selected event to an iRacing season and apply its weather (manual override wins)
   try{
     if(!state.evsel || !IR_SEASONS.length) return;
@@ -4370,7 +4406,7 @@ function autoApplyWeather(){  // auto-pull: match the selected event to an iRaci
     if(se && se.weather){ applyIrWeather(ev, se); save(); if(state.tab==='stints') renderContent(); }
   }catch(e){}
 }
-var _selectEvent0=selectEvent; selectEvent=function(k){ _selectEvent0(k); autoApplyTiming(); autoApplyWeather(); };   // picking an event auto-applies its iRacing session times + weather
+var _selectEvent0=selectEvent; selectEvent=function(k){ _selectEvent0(k); autoApplyTiming(); autoApplyPre(); autoApplyWeather(); };   // picking an event auto-applies its iRacing session times + weather
 function syncIrEvents(){  // F1: pull whatever endurance events the proxy exposes and merge into the calendar
   _evSyncMsg='Syncing iRacing…'; renderContent();
   loadIracing().then(function(){
@@ -4398,7 +4434,7 @@ function syncIrEvents(){  // F1: pull whatever endurance events the proxy expose
       if(existing[evKey(ev)]){ have++; return; }
       fresh.push(ev); if(se.weather) applyIrWeather(ev, se); added++;
     });
-    state.irEvents=fresh; save(); autoApplyTiming(); autoApplyWeather();
+    state.irEvents=fresh; save(); autoApplyTiming(); autoApplyPre(); autoApplyWeather();
     _evSyncMsg = IR_STATUS ? IR_STATUS : ('Synced: added '+added+' iRacing event'+(added===1?'':'s')+(have?', '+have+' already on the calendar':'')+'.');
     renderContent();
   }).catch(function(){ _evSyncMsg='iRacing unavailable right now.'; renderContent(); });
@@ -4628,7 +4664,7 @@ async function bootSetup(){
        the stored post) — landing on it via #weekly used to show the pre-pull version until
        something else forced a render */
     if(state.tab==='setup'||state.tab==='weekly') renderContent();
-    loadIracing().then(function(){ autoApplyTiming(); autoApplyWeather(); if(state.tab==='setup') renderContent(); });
+    loadIracing().then(function(){ autoApplyTiming(); autoApplyPre(); autoApplyWeather(); if(state.tab==='setup') renderContent(); });
   }
 }
 
