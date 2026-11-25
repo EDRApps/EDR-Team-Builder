@@ -213,7 +213,17 @@
   .winbtn.best{border-color:var(--green)}
   .winbtn.sel{border-color:var(--yellow);background:rgba(240,240,0,.07);box-shadow:0 0 0 1px var(--yellow)}
   .stintcar{background:var(--panel);border:1px solid var(--lineSoft);border-radius:var(--rxl);padding:16px;margin-bottom:18px;box-shadow:var(--shadow);animation:up .4s both}
-  .stintwrap{overflow-x:auto;padding-bottom:4px}
+  .stintwrap{overflow-x:auto;padding-bottom:6px}
+  /* the timeline scrolls sideways when the stints don't fit; macOS hides scrollbars until you scroll,
+     so a mouse user never knew there was more. Styled = always visible in Chrome/Safari/Edge. */
+  .stintwrap::-webkit-scrollbar{height:12px}
+  .stintwrap::-webkit-scrollbar-track{background:#1b1b2e;border-radius:6px}
+  .stintwrap::-webkit-scrollbar-thumb{background:var(--yellow);border-radius:6px;border:3px solid #1b1b2e}
+  @supports not selector(::-webkit-scrollbar){.stintwrap{scrollbar-color:var(--yellow) #1b1b2e}}
+  .sgnav{display:none;gap:6px;align-items:center;margin:0 0 10px}
+  .stintcar.ovf .sgnav{display:flex}
+  .sgnav button{font-size:15px;line-height:1;padding:5px 12px;min-width:38px}
+  .sgnav button:disabled{opacity:.3;cursor:default}
   .stintgrid{display:grid;gap:5px;min-width:max-content;align-items:stretch}
   .sg-corner{position:sticky;left:0;z-index:2;background:var(--panel);font-size:10px;color:var(--dim);text-transform:uppercase;letter-spacing:.06em;display:flex;align-items:flex-end;padding:0 8px 3px}
   .sg-time{text-align:center;color:var(--dim);font-size:9.5px;padding:2px 4px;white-space:nowrap}
@@ -3167,6 +3177,7 @@ function renderStints(byId){
             +'<label>per lap <input type="number" min="0" step="0.1" value="'+(bc.fuelPerLap||'')+'" placeholder="'+(def.fuelPerLap||'—')+'" data-action="carfuel" data-car="'+esc(carName)+'">L</label>'
             +'<span class="meta" style="font-size:10px">blank = global default</span></div>';
         }
+        html+='<div class="sgnav"><button class="btn btn-ghost avfree" data-sgscroll="-1" title="earlier stints">&lsaquo;</button><button class="btn btn-ghost avfree" data-sgscroll="1" title="later stints">&rsaquo;</button><span class="meta" style="font-size:10px">More stints to the right. Use the arrows, the yellow scrollbar, or Shift + scroll wheel.</span></div>';
         html+='<div class="stintwrap" data-key="'+key+'"><div class="stintgrid" style="grid-template-columns:150px repeat('+times.length+',minmax(84px,1fr))">';
         html+='<div class="sg-corner">stint →</div>';
         times.forEach((t,i)=>{ const wx=weatherAt(t.s,off,win); html+='<div class="sg-time"><b>'+(i+1)+'</b>'+fmtClock(t.s)+(wx?'<div style="font-size:9px;color:'+(wx.wet?'#6ea8ff':wx.night?'var(--dim)':'var(--amber)')+'">'+wx.icon+' '+wx.label+'</div>':'')+'</div>'; });
@@ -3208,7 +3219,24 @@ function renderContent(){
   const _sx={}; el.querySelectorAll('.stintwrap[data-key]').forEach(w=>{ if(w.scrollLeft) _sx[w.dataset.key]=w.scrollLeft; });   // keep horizontal scroll across re-renders
   el.innerHTML = state.tab==='weekly' ? renderWeekly() : state.tab==='event' ? renderEventTab() : state.tab==='availability' ? renderAvail() : state.tab==='teams' ? renderTeams(byId) : state.tab==='stints' ? renderStints(byId) : state.tab==='instructions' ? renderInstructions() : renderDrivers(model);
   if(Object.keys(_sx).length) el.querySelectorAll('.stintwrap[data-key]').forEach(w=>{ const v=_sx[w.dataset.key]; if(v!=null) w.scrollLeft=v; });
+  sgOverflow();
 }
+// stint timelines wider than the screen: show the arrow row and grey out the end you're at
+function sgOverflow(){
+  document.querySelectorAll('#content .stintcar').forEach(c=>{
+    const w=c.querySelector('.stintwrap'); if(!w) return;
+    const o=w.scrollWidth>w.clientWidth+2; c.classList.toggle('ovf',o); if(!o) return;
+    const a=c.querySelectorAll('[data-sgscroll]'); if(a.length<2) return;
+    a[0].disabled=w.scrollLeft<=1; a[1].disabled=w.scrollLeft+w.clientWidth>=w.scrollWidth-1;
+  });
+}
+window.addEventListener('resize',sgOverflow);
+document.addEventListener('scroll',e=>{ const t=e.target; if(t&&t.classList&&t.classList.contains('stintwrap')) sgOverflow(); },true);
+document.addEventListener('click',e=>{
+  const b=e.target.closest&&e.target.closest('[data-sgscroll]'); if(!b) return;
+  const w=b.closest('.stintcar')&&b.closest('.stintcar').querySelector('.stintwrap'); if(!w) return;
+  w.scrollBy({left:(+b.dataset.sgscroll)*Math.max(200,Math.round(w.clientWidth*0.7)),behavior:'smooth'});
+});
 
 function setStatus(t){ const s=document.getElementById('status'); s.textContent=t; if(t) setTimeout(()=>{if(s.textContent===t)s.textContent='';},3000); }
 
@@ -3706,7 +3734,10 @@ _stintContent.addEventListener('pointerdown',e=>{
   _ghost.style.cssText='position:fixed;left:0;top:0;z-index:99999;pointer-events:none;background:var(--yellow);color:#0a0a0a;font-family:Prompt,sans-serif;font-weight:700;font-size:12px;padding:5px 12px;border-radius:999px;box-shadow:0 4px 14px rgba(0,0,0,.4)';
   document.body.appendChild(_ghost); _ghostAt(e.clientX,e.clientY);
 });
-document.addEventListener('pointermove',e=>{ if(_pd) _ghostAt(e.clientX,e.clientY); });
+function _pdEnd(){ if(_ghost){ _ghost.remove(); _ghost=null; } _pd=null; }
+document.addEventListener('pointermove',e=>{ if(!_pd) return; if(e.pointerType==='mouse'&&e.buttons===0){ _pdEnd(); return; } _ghostAt(e.clientX,e.clientY); });
+document.addEventListener('pointercancel',_pdEnd);
+window.addEventListener('blur',_pdEnd);
 document.addEventListener('pointerup',e=>{
   if(_pd){
     const el=document.elementFromPoint(e.clientX,e.clientY);

@@ -396,14 +396,19 @@ function paceAgeLabel_(at){
   if(hrs<24) return 'refreshed '+hrs+' hour'+(hrs===1?'':'s')+' ago';
   var d=Math.round(hrs/24); return 'refreshed '+d+' day'+(d===1?'':'s')+' ago';
 }
+/* PHP hands an EMPTY object back as [] — and a JS array silently drops string keys when it is
+   serialised, so per-car start times, car names, per-car fuel and exclusions picked after that
+   lived only on the screen that set them and were never saved (992 Cup, 25 Nov 2026). Every
+   keyed map that comes off the server goes through this. */
+function _asMap(v){ return (v && typeof v==='object' && !Array.isArray(v)) ? v : {}; }
 function _adoptPlan(p, keepEvsel){
   var _localEv=keepEvsel?state.evsel:null;
-  state.drivers=p.drivers; state.w=p.w||state.w; state.proPct=(typeof p.proPct==='number')?p.proPct:state.proPct; state.teams=p.teams||{};
-  state.stint=Object.assign(state.stint,p.stint||{}); state.stintAssign=p.stintAssign||{}; state.stintWin=p.stintWin||{}; state.stintSig=p.stintSig||'';
-  if(p.overrides)overrides=p.overrides; if(p.meta)IMPORT_META=p.meta; if(p.winStart)WIN_START_MS=p.winStart;
+  state.drivers=p.drivers; state.w=p.w||state.w; state.proPct=(typeof p.proPct==='number')?p.proPct:state.proPct; state.teams=_asMap(p.teams);
+  state.stint=Object.assign(state.stint,p.stint||{}); state.stintAssign=_asMap(p.stintAssign); state.stintWin=_asMap(p.stintWin); state.stintSig=p.stintSig||'';
+  if(p.overrides)overrides=_asMap(p.overrides); if(p.meta)IMPORT_META=p.meta; if(p.winStart)WIN_START_MS=p.winStart;
   if(p.startOffsets&&Object.keys(p.startOffsets).length)START_OFFSETS=p.startOffsets; if(p.startLabels&&Object.keys(p.startLabels).length)START_LABELS=p.startLabels;
-  if(p.evsel)state.evsel=p.evsel; if(p.evWinMin)EV_WIN_MIN=p.evWinMin; if(p.evTiming)state.evTiming=p.evTiming; state.teamsLocked=!!p.teamsLocked; state.stintsLocked=!!p.stintsLocked;
-  state.teamNames=p.teamNames||{}; if(p.fuelCfg)state.fuelCfg=p.fuelCfg; state.customEvents=p.customEvents||[]; state.irEvents=p.irEvents||[]; state.evWeather=p.evWeather||{}; state.swapNote=p.swapNote||''; state.excluded=p.excluded||{};
+  if(p.evsel)state.evsel=p.evsel; if(p.evWinMin)EV_WIN_MIN=p.evWinMin; if(p.evTiming)state.evTiming=_asMap(p.evTiming); state.teamsLocked=!!p.teamsLocked; state.stintsLocked=!!p.stintsLocked;
+  state.teamNames=_asMap(p.teamNames); if(p.fuelCfg){ state.fuelCfg=_asMap(p.fuelCfg); state.fuelCfg.byCar=_asMap(state.fuelCfg.byCar); state.fuelCfg.byClass=_asMap(state.fuelCfg.byClass); } state.customEvents=p.customEvents||[]; state.irEvents=p.irEvents||[]; state.evWeather=_asMap(p.evWeather); state.swapNote=p.swapNote||''; state.excluded=_asMap(p.excluded);
   /* a plan saved before the name-suffix fix still holds both spellings of one driver, and
      this restores state.drivers verbatim — collapse them here or the duplicate survives
      every reload until somebody happens to run an import */

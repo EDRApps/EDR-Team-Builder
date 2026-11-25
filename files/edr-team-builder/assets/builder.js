@@ -2893,6 +2893,7 @@ function renderStints(byId){
             +'<label>per lap <input type="number" min="0" step="0.1" value="'+(bc.fuelPerLap||'')+'" placeholder="'+(def.fuelPerLap||'—')+'" data-action="carfuel" data-car="'+esc(carName)+'">L</label>'
             +'<span class="meta" style="font-size:10px">blank = global default</span></div>';
         }
+        html+='<div class="sgnav"><button class="btn btn-ghost avfree" data-sgscroll="-1" title="earlier stints">&lsaquo;</button><button class="btn btn-ghost avfree" data-sgscroll="1" title="later stints">&rsaquo;</button><span class="meta" style="font-size:10px">More stints to the right. Use the arrows, the yellow scrollbar, or Shift + scroll wheel.</span></div>';
         html+='<div class="stintwrap" data-key="'+key+'"><div class="stintgrid" style="grid-template-columns:150px repeat('+times.length+',minmax(84px,1fr))">';
         html+='<div class="sg-corner">stint →</div>';
         times.forEach((t,i)=>{ const wx=weatherAt(t.s,off,win); html+='<div class="sg-time"><b>'+(i+1)+'</b>'+fmtClock(t.s)+(wx?'<div style="font-size:9px;color:'+(wx.wet?'#6ea8ff':wx.night?'var(--dim)':'var(--amber)')+'">'+wx.icon+' '+wx.label+'</div>':'')+'</div>'; });
@@ -2934,7 +2935,24 @@ function renderContent(){
   const _sx={}; el.querySelectorAll('.stintwrap[data-key]').forEach(w=>{ if(w.scrollLeft) _sx[w.dataset.key]=w.scrollLeft; });   // keep horizontal scroll across re-renders
   el.innerHTML = state.tab==='setup' ? renderSetup() : state.tab==='weekly' ? renderWeekly() : state.tab==='event' ? renderEventTab() : state.tab==='availability' ? renderAvail() : state.tab==='teams' ? renderTeams(byId) : state.tab==='stints' ? renderStints(byId) : state.tab==='instructions' ? renderInstructions() : renderDrivers(model);
   if(Object.keys(_sx).length) el.querySelectorAll('.stintwrap[data-key]').forEach(w=>{ const v=_sx[w.dataset.key]; if(v!=null) w.scrollLeft=v; });
+  sgOverflow();
 }
+// stint timelines wider than the screen: show the arrow row and grey out the end you're at
+function sgOverflow(){
+  document.querySelectorAll('#content .stintcar').forEach(c=>{
+    const w=c.querySelector('.stintwrap'); if(!w) return;
+    const o=w.scrollWidth>w.clientWidth+2; c.classList.toggle('ovf',o); if(!o) return;
+    const a=c.querySelectorAll('[data-sgscroll]'); if(a.length<2) return;
+    a[0].disabled=w.scrollLeft<=1; a[1].disabled=w.scrollLeft+w.clientWidth>=w.scrollWidth-1;
+  });
+}
+window.addEventListener('resize',sgOverflow);
+document.addEventListener('scroll',e=>{ const t=e.target; if(t&&t.classList&&t.classList.contains('stintwrap')) sgOverflow(); },true);
+document.addEventListener('click',e=>{
+  const b=e.target.closest&&e.target.closest('[data-sgscroll]'); if(!b) return;
+  const w=b.closest('.stintcar')&&b.closest('.stintcar').querySelector('.stintwrap'); if(!w) return;
+  w.scrollBy({left:(+b.dataset.sgscroll)*Math.max(200,Math.round(w.clientWidth*0.7)),behavior:'smooth'});
+});
 
 function setStatus(t){ const s=document.getElementById('status'); s.textContent=t; if(t) setTimeout(()=>{if(s.textContent===t)s.textContent='';},3000); }
 
@@ -3432,7 +3450,10 @@ _stintContent.addEventListener('pointerdown',e=>{
   _ghost.style.cssText='position:fixed;left:0;top:0;z-index:99999;pointer-events:none;background:var(--yellow);color:#0a0a0a;font-family:Prompt,sans-serif;font-weight:700;font-size:12px;padding:5px 12px;border-radius:999px;box-shadow:0 4px 14px rgba(0,0,0,.4)';
   document.body.appendChild(_ghost); _ghostAt(e.clientX,e.clientY);
 });
-document.addEventListener('pointermove',e=>{ if(_pd) _ghostAt(e.clientX,e.clientY); });
+function _pdEnd(){ if(_ghost){ _ghost.remove(); _ghost=null; } _pd=null; }
+document.addEventListener('pointermove',e=>{ if(!_pd) return; if(e.pointerType==='mouse'&&e.buttons===0){ _pdEnd(); return; } _ghostAt(e.clientX,e.clientY); });
+document.addEventListener('pointercancel',_pdEnd);
+window.addEventListener('blur',_pdEnd);
 document.addEventListener('pointerup',e=>{
   if(_pd){
     const el=document.elementFromPoint(e.clientX,e.clientY);
@@ -3721,14 +3742,19 @@ function paceAgeLabel_(at){
   if(hrs<24) return 'refreshed '+hrs+' hour'+(hrs===1?'':'s')+' ago';
   var d=Math.round(hrs/24); return 'refreshed '+d+' day'+(d===1?'':'s')+' ago';
 }
+/* PHP hands an EMPTY object back as [] — and a JS array silently drops string keys when it is
+   serialised, so per-car start times, car names, per-car fuel and exclusions picked after that
+   lived only on the screen that set them and were never saved (992 Cup, 25 Nov 2026). Every
+   keyed map that comes off the server goes through this. */
+function _asMap(v){ return (v && typeof v==='object' && !Array.isArray(v)) ? v : {}; }
 function _adoptPlan(p, keepEvsel){
   var _localEv=keepEvsel?state.evsel:null;
-  state.drivers=p.drivers; state.w=p.w||state.w; state.proPct=(typeof p.proPct==='number')?p.proPct:state.proPct; state.teams=p.teams||{};
-  state.stint=Object.assign(state.stint,p.stint||{}); state.stintAssign=p.stintAssign||{}; state.stintWin=p.stintWin||{}; state.stintSig=p.stintSig||'';
-  if(p.overrides)overrides=p.overrides; if(p.meta)IMPORT_META=p.meta; if(p.winStart)WIN_START_MS=p.winStart;
+  state.drivers=p.drivers; state.w=p.w||state.w; state.proPct=(typeof p.proPct==='number')?p.proPct:state.proPct; state.teams=_asMap(p.teams);
+  state.stint=Object.assign(state.stint,p.stint||{}); state.stintAssign=_asMap(p.stintAssign); state.stintWin=_asMap(p.stintWin); state.stintSig=p.stintSig||'';
+  if(p.overrides)overrides=_asMap(p.overrides); if(p.meta)IMPORT_META=p.meta; if(p.winStart)WIN_START_MS=p.winStart;
   if(p.startOffsets&&Object.keys(p.startOffsets).length)START_OFFSETS=p.startOffsets; if(p.startLabels&&Object.keys(p.startLabels).length)START_LABELS=p.startLabels;
-  if(p.evsel)state.evsel=p.evsel; if(p.evWinMin)EV_WIN_MIN=p.evWinMin; if(p.evTiming)state.evTiming=p.evTiming; state.teamsLocked=!!p.teamsLocked; state.stintsLocked=!!p.stintsLocked;
-  state.teamNames=p.teamNames||{}; if(p.fuelCfg)state.fuelCfg=p.fuelCfg; state.customEvents=p.customEvents||[]; state.irEvents=p.irEvents||[]; state.evWeather=p.evWeather||{}; state.swapNote=p.swapNote||''; state.excluded=p.excluded||{};
+  if(p.evsel)state.evsel=p.evsel; if(p.evWinMin)EV_WIN_MIN=p.evWinMin; if(p.evTiming)state.evTiming=_asMap(p.evTiming); state.teamsLocked=!!p.teamsLocked; state.stintsLocked=!!p.stintsLocked;
+  state.teamNames=_asMap(p.teamNames); if(p.fuelCfg){ state.fuelCfg=_asMap(p.fuelCfg); state.fuelCfg.byCar=_asMap(state.fuelCfg.byCar); state.fuelCfg.byClass=_asMap(state.fuelCfg.byClass); } state.customEvents=p.customEvents||[]; state.irEvents=p.irEvents||[]; state.evWeather=_asMap(p.evWeather); state.swapNote=p.swapNote||''; state.excluded=_asMap(p.excluded);
   /* a plan saved before the name-suffix fix still holds both spellings of one driver, and
      this restores state.drivers verbatim — collapse them here or the duplicate survives
      every reload until somebody happens to run an import */

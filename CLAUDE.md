@@ -353,6 +353,12 @@ Render gotchas, all hit in practice:
 
 ## Conventions & gotchas
 
+- **PHP returns an empty object as `[]`.** A JS array silently drops string keys on
+  `JSON.stringify`, so any keyed map adopted from `/plan` must go through `_asMap()` in
+  `_adoptPlan` (2.6.6). Before that, per-car start times, car names, per-car fuel and exclusions
+  showed on the admin's screen but never reached the server (992 Cup, 25 Nov 2026). When a
+  setting "doesn't stick" for other people, look for `[]` in the live `/plan` JSON first.
+
 - **Timezone:** the user is in **Brisbane (UTC+10, no DST)**. Garage 61 `startTime` is UTC —
   convert (+10h) before grouping laps by "today"/session day.
 - **Credentials are never committed** (`.gitignore` blocks `.env`, `*.token`, `*.key`, `secrets.*`).

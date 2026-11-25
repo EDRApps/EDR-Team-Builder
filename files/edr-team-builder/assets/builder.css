@@ -207,7 +207,17 @@
   .winbtn.best{border-color:var(--green)}
   .winbtn.sel{border-color:var(--yellow);background:rgba(240,240,0,.07);box-shadow:0 0 0 1px var(--yellow)}
   .stintcar{background:var(--panel);border:1px solid var(--lineSoft);border-radius:var(--rxl);padding:16px;margin-bottom:18px;box-shadow:var(--shadow);animation:up .4s both}
-  .stintwrap{overflow-x:auto;padding-bottom:4px}
+  .stintwrap{overflow-x:auto;padding-bottom:6px}
+  /* the timeline scrolls sideways when the stints don't fit; macOS hides scrollbars until you scroll,
+     so a mouse user never knew there was more. Styled = always visible in Chrome/Safari/Edge. */
+  .stintwrap::-webkit-scrollbar{height:12px}
+  .stintwrap::-webkit-scrollbar-track{background:#1b1b2e;border-radius:6px}
+  .stintwrap::-webkit-scrollbar-thumb{background:var(--yellow);border-radius:6px;border:3px solid #1b1b2e}
+  @supports not selector(::-webkit-scrollbar){.stintwrap{scrollbar-color:var(--yellow) #1b1b2e}}
+  .sgnav{display:none;gap:6px;align-items:center;margin:0 0 10px}
+  .stintcar.ovf .sgnav{display:flex}
+  .sgnav button{font-size:15px;line-height:1;padding:5px 12px;min-width:38px}
+  .sgnav button:disabled{opacity:.3;cursor:default}
   .stintgrid{display:grid;gap:5px;min-width:max-content;align-items:stretch}
   .sg-corner{position:sticky;left:0;z-index:2;background:var(--panel);font-size:10px;color:var(--dim);text-transform:uppercase;letter-spacing:.06em;display:flex;align-items:flex-end;padding:0 8px 3px}
   .sg-time{text-align:center;color:var(--dim);font-size:9.5px;padding:2px 4px;white-space:nowrap}
