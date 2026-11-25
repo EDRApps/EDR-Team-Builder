@@ -130,6 +130,12 @@ Details in the plugin's [CLAUDE.md](files/edr-team-builder/CLAUDE.md).
   (default 20) when tyres change. Team rule `fuelCfg.tyreEvery` (second/every/driver/none), per car
   `tyrePlan[car].rule`, per stop `tyrePlan[car].stops[n]` (click a stop in the fuel row). Times are whole
   minutes; publishing freezes `stintLens[car] = {t:[[s,e]..], st:[stops..]}`.
+- 3.1.0 **pit stop cards** (tank mode): a "Pit stops" row right under Driving (`pitRowHtml`) replaces the
+  fuel row. One card per stop: Stop n + clock time, "Driver change → next driver", ⛽ Full tank / Splash X L,
+  a Same tyres | New tyres switch (`data-action="tyreset"`, admin + unlocked only; drivers see plain text),
+  seconds in the pits; the last stint ends "🏁 To the flag". Stops carry `dt` (minutes into the stint),
+  `fuel` (litres in: full tank, or laps to the flag + 1 spare) and `splash`. A final splash defaults to
+  same tyres. Picking the value the rule would give anyway deletes the per-stop override.
 
 ## Team Builder workflow & roles (v2.4)
 

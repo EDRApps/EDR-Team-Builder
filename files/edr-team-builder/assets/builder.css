@@ -224,6 +224,26 @@
   .sumpre{white-space:pre-wrap;font-size:12px;background:#101020;border-radius:8px;padding:10px;margin-top:10px;color:var(--body)}
   .sg-time.pre{color:var(--yellow)} .sg-time.pre b{color:var(--yellow)}
   .sg-block.pre{border-style:dashed}
+  .pitlabel{flex-direction:column;align-items:flex-start;justify-content:center;gap:1px;font-family:Prompt;font-weight:600;color:#fff;text-transform:uppercase;font-size:11px;letter-spacing:.05em}
+  .pitlabel .meta{text-transform:none;letter-spacing:0;font-weight:400;font-family:inherit;font-size:10px}
+  .pitcell{display:flex;flex-direction:column;gap:5px;padding:2px 0}
+  .pitnone{font-size:10px;color:var(--dim);text-align:center;padding:8px 0}
+  .pitstop{border:1px solid #2a2a3e;border-radius:10px;background:#141422;padding:6px 7px;display:flex;flex-direction:column;gap:4px;font-size:11px;color:var(--body)}
+  .pitstop.ty{border-color:#35507e;background:#131c2e}
+  .pitstop.chg{border-left:3px solid var(--yellow)}
+  .ps-top{display:flex;justify-content:space-between;align-items:baseline;gap:6px}
+  .ps-top b{color:#fff;font-family:'Prompt',sans-serif;font-size:11px;font-weight:600}
+  .ps-top span{color:var(--dim);font-size:10px}
+  .ps-chg{color:var(--yellow);font-size:10px;font-weight:600}
+  .ps-fuel{color:#fff} .ps-fuel.splash{color:var(--amber)}
+  .ps-ty{font-size:10.5px;color:var(--dim)} .pitstop.ty .ps-ty{color:#9cc4ff;font-weight:600}
+  .ps-sec{font-size:10px;color:var(--dim)}
+  .ps-flag{font-size:11px;color:var(--body);text-align:center;padding:4px 0 2px}
+  .tyseg{display:flex;background:#0d0d18;border:1px solid #2a2a3e;border-radius:8px;padding:2px;gap:2px}
+  .tyseg span{flex:1;text-align:center;font-size:10.5px;padding:4px 2px;border-radius:6px;color:var(--dim);cursor:pointer;user-select:none;white-space:nowrap}
+  .tyseg span:hover{color:#fff}
+  .tyseg span.on{background:#2a2a3e;color:#fff;font-weight:600;cursor:default}
+  .tyseg span.on[data-v="1"]{background:#2f6fd6}
   .stopchip{display:inline-block;margin:1px;padding:1px 5px;border-radius:6px;border:1px solid #2a2a3e;color:var(--body)}
   .stopchip.ty{border-color:#6ea8ff;color:#9cc4ff}
   .stopchip.ed{cursor:pointer} .stopchip.ed:hover{filter:brightness(1.4);border-color:var(--yellow)}
