@@ -105,6 +105,26 @@ Details in the plugin's [CLAUDE.md](files/edr-team-builder/CLAUDE.md).
 - Fuel per stint uses each driver's own Garage 61 fuel/lap (`cars[car].fuelPerLap`, median of
   clean non-pit laps) unless an admin set a per-car number.
 
+## 3.0.1–3.0.6 (25 Nov 2026)
+
+- **Fix this car** also moves stints to anyone under the 25% fair-share minimum (3.0.1).
+- Removing a driver (Drivers × or "Remove or restore drivers") only blanks THAT driver's seat and
+  stints, by ID; Import / Refresh now only merges pace (it used to renumber drivers and regenerate);
+  Auto-fill all needs two taps (3.0.2).
+- Per-stint weather from iRacing's hourly forecast (`weather.weather_url`, fetched server-side for
+  rounds >= 2 h, longest first, cached 6 h, stored as `evWeather.fc`) (3.0.3/3.0.4).
+- iRacing `session_times` are when the SESSION opens (practice). Stints start at the green flag:
+  `greenOff(w) = START_OFFSETS[w] + RACE_PRE`, `RACE_PRE = session_minutes - race_time_limit`
+  (`evTiming.preMin`; 992 Cup 48 = practice 30 + quali 15 + grid). In-game race start = simulated
+  start + the LAST `simulated_time_offsets` entry (offsets are per session type) (3.0.5).
+- Practice & qualifying driver per car (`qualiAssign`, default = stint 1 driver), shown on Stints,
+  step 4, calendar, Discord; availability blocks marked "practice"/"green" (3.0.6).
+- **Tank-based stints** (3.0.6): `stint.mode='fuel'`, `stint.tanks` 1–3. Per car
+  `carStintLen()` = round5(floor(tank / fuel-per-lap) x median lap + pit loss) x tanks, fuel per
+  lap = the car's typed number else the median of its drivers' own G61 `fuelPerLap`. A leftover
+  under half a stint joins the last one (`stintTimes`). Locking / publishing freezes lengths in
+  `stintLens`. Fixed minutes remain for sprints.
+
 ## Team Builder workflow & roles (v2.4)
 
 Tab order is the planning flow: **Instructions → Event → Availability → Drivers → Teams →

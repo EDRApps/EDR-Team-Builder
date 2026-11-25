@@ -222,6 +222,9 @@
   .rd-big{font-family:'Prompt',sans-serif;font-weight:700;font-size:24px;color:#fff;margin:2px 0 6px}
   .rd-bar{height:6px;border-radius:3px;background:#1b1b2e;overflow:hidden;margin:4px 0 6px} .rd-bar span{display:block;height:100%;background:var(--yellow)}
   .sumpre{white-space:pre-wrap;font-size:12px;background:#101020;border-radius:8px;padding:10px;margin-top:10px;color:var(--body)}
+  .qualirow{display:flex;gap:12px;flex-wrap:wrap;align-items:center;justify-content:space-between;margin:-4px 0 10px}
+  .qualiwho{font-size:12px;color:var(--body)} .qualiwho select{font-size:12px;padding:3px 6px;margin-left:4px}
+  .bmark{display:block;font-size:9px;font-weight:600;color:var(--yellow);margin-top:2px;letter-spacing:.02em}
   /* ---- race-week home (3.0) ---- */
   .hero{background:var(--panel);border:1px solid var(--lineSoft);border-radius:var(--rxl);padding:18px 20px;margin-bottom:14px}
   .hsteps{display:flex;flex-direction:column;gap:10px}
