@@ -153,6 +153,13 @@ Details in the plugin's [CLAUDE.md](files/edr-team-builder/CLAUDE.md).
   list under each car (`.pitlist`, shown only <=640px, with the Same/New tyres switch for admins; the
   `tyreset` handler accepts `.stopln` as well as `.pitstop`). On phones the grid's label column is 96px
   (`--sglab`), the grid pit row and the label meta are hidden.
+- 3.1.4: driver step 4's **Driving order** breaks every stint down stop by stop (`.wo-stops`, same
+  `stopListHtml` lines) instead of one block of hours. A stop where the same driver carries on says
+  "<name> stays in" (`same` arg / `.ps-chg.stay`), not "driver change → <same name>", on every view.
+  Start labels are built live with `startLbl(w)` (from `START_OFFSETS` + `WIN_START_MS` in the viewer's
+  timezone). The `labels`/`startLabels` saved in the plan were formatted on the admin's screen, so a Sydney
+  driver read "Session opens Sat 17:00" (Brisbane) next to "Practice 18:00" (his time). Never display
+  `START_LABELS[w]` directly; it is only `startLbl`'s fallback.
 
 ## Team Builder workflow & roles (v2.4)
 

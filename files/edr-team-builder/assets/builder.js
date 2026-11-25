@@ -65,6 +65,10 @@ const TZ_ZONES = [['auto','Auto (detected)'],['Australia/Brisbane','Brisbane'],[
 function tzZone(){ if(TZ==='auto'){ try{ return Intl.DateTimeFormat().resolvedOptions().timeZone||'UTC'; }catch(e){ return 'UTC'; } } return TZ||'Australia/Brisbane'; }
 function tzLabel(){ const m=TZ_ZONES.find(x=>x[0]===TZ); if(m&&m[0]!=='auto')return m[1]; const z=tzZone(); return (z.split('/').pop()||z).replace(/_/g,' ')+' (auto)'; }
 function setTZ(z){ TZ=z; try{ localStorage.setItem('edrTB_tz', z); }catch(e){} if(typeof START_OFFSETS!=='undefined') relabelStarts(); }
+/* 3.1.4: a start's label is always worked out now, in THIS viewer's timezone. The labels saved in the
+   plan were formatted on the admin's screen (Brisbane), so a Sydney driver read "Session opens Sat 17:00"
+   next to "Practice 18:00". START_LABELS stays only as the fallback when an offset is missing. */
+function startLbl(w){ const o=(typeof START_OFFSETS!=='undefined'&&START_OFFSETS)?START_OFFSETS[w]:null; return (o==null||!isFinite(o))?(START_LABELS[w]||''):fmtStartLabel(WIN_START_MS+o*60000); }
 function relabelStarts(){ try{ if(typeof START_OFFSETS==='undefined') return; Object.keys(START_OFFSETS).forEach(w=>{ START_LABELS[w]=fmtClock(START_OFFSETS[w]); }); }catch(e){} }
 
 function fastestCar(cars){
@@ -1147,7 +1151,7 @@ function renderWizard(byId){
         +'<div class="head" style="color:#fff;font-size:22px;font-weight:700;margin:4px 0 2px">'+esc(carLabel(c.cls,c.tier,c.ti)||(tierL+' '+(c.ti+1)))+'</div>'
         +(carName?'<div class="meta">'+esc(carName)+'</div>':'')
         +'<div class="wiz-order" style="margin-top:12px">'+members.map(function(m){ return '<span'+(m.id===r.me.id?' class="me"':'')+'>'+esc(m.name.split(' ')[0])+'</span>'; }).join('')+'</div>'
-        +(START_LABELS[win]?'<div class="meta" style="margin-top:12px">'+(RACE_PRE?'Session opens · ':'Race start · ')+esc(START_LABELS[win])+'</div>':'')
+        +(startLbl(win)?'<div class="meta" style="margin-top:12px">'+(RACE_PRE?'Session opens · ':'Race start · ')+esc(startLbl(win))+'</div>':'')
         +(RACE_PRE?'<div class="meta" style="margin-top:4px">'+esc(preRaceLine(win))+'</div>':'')
         +'</div>';
       const mine=driverStints(car,r.me.id);
@@ -1166,7 +1170,7 @@ function renderWizard(byId){
         h+='<div class="wiz-stint"><span class="no">'+(i+1)+'</span><span style="flex:1"><div class="when">'+fmtClock(t.s)+' – '+fmtClock(t.e).split(' ').slice(1).join(' ')+'</div>'
           +(free?'':'<div class="meta" style="color:var(--red)">You said you\'re not free then. Release it below or tell the admins.</div>')
           +(rel?'<div class="meta" style="color:var(--amber)">Released'+(rel.st==='claimed'?': '+esc(rel.to.split(' ')[0])+' will take it once an admin approves':', waiting for someone to take it')+'.</div>':'')
-          +(Array.isArray(t.stops)?'<div class="wiz-stops">'+stopListHtml(t, (function(){ const nid=arr[i+1]; return (nid!=null&&car.team.map(String).indexOf(String(nid))>=0&&byId[nid])?byId[nid].name.split(' ')[0]:null; })(), i===times.length-1)+'</div>':'')+'</span>'
+          +(Array.isArray(t.stops)?'<div class="wiz-stops">'+stopListHtml(t, (function(){ const nid=arr[i+1]; return (nid!=null&&car.team.map(String).indexOf(String(nid))>=0&&byId[nid])?byId[nid].name.split(' ')[0]:null; })(), i===times.length-1, null, arr[i+1]!=null&&String(arr[i+1])===String(arr[i]))+'</div>':'')+'</span>'
           +(wx?'<span class="meta" style="color:'+(wx.wet?'#6ea8ff':wx.night?'var(--dim)':'var(--amber)')+'">'+wx.icon+' '+wx.label+'</span>':'')
           +(rel?'':'<button class="btn btn-ghost avfree" data-action="swaprel" data-key="'+esc(car.key)+'" data-n="'+i+'" style="font-size:10px;padding:4px 10px;margin-left:8px">Release</button>')+'</div>'; });
       if(mine.length) h+=renderConfirmCard(car,mine,byId);
@@ -1176,7 +1180,10 @@ function renderWizard(byId){
         takeable.forEach(function(x){ const t=times[x.n]; h+='<div class="wiz-stint"><span class="no">'+(x.n+1)+'</span><span style="flex:1"><div class="when">'+fmtClock(t.s)+' – '+fmtClock(t.e).split(' ').slice(1).join(' ')+'</div><div class="meta">Released by '+esc(x.from.split(' ')[0])+'</div></span><button class="btn btn-amber avfree" data-action="swaptake" data-id="'+esc(x.id)+'" style="font-size:10px;padding:5px 12px">Take it</button></div>'; }); }
       if(_swapMsg) h+='<div class="meta" style="margin-top:8px">'+esc(_swapMsg)+'</div>';
       h+='<div class="wiz-label" style="margin-top:22px">Driving order</div><div class="wiz-orderlist">'
-        +arr.map(function(id,i){ const m=(id!=null&&car.team.map(String).indexOf(String(id))>=0)?byId[id]:null, t=times[i]; return '<div'+(m&&m.id===r.me.id?' class="me"':'')+'><span class="no">'+(i+1)+'</span><span class="t">'+fmtClock(t.s)+' – '+fmtClock(t.e).split(' ').slice(1).join(' ')+'</span><span class="d">'+(m?esc(m.name.split(' ')[0]):'—')+'</span></div>'; }).join('')+'</div>';
+        +arr.map(function(id,i){ const inCar=function(x){ return (x!=null&&car.team.map(String).indexOf(String(x))>=0)?byId[x]:null; }, m=inCar(id), nx=inCar(arr[i+1]), t=times[i], me=!!(m&&m.id===r.me.id);
+          /* 3.1.4: each stint broken down stop by stop, so drivers see every fuel stop and tyre change, not just a block of hours */
+          return '<div'+(me?' class="me"':'')+'><span class="no">'+(i+1)+'</span><span class="t">'+fmtClock(t.s)+' – '+fmtClock(t.e).split(' ').slice(1).join(' ')+'</span><span class="d">'+(m?esc(m.name.split(' ')[0]):'—')+'</span></div>'
+            +(Array.isArray(t.stops)?'<div class="wo-stops'+(me?' me':'')+'">'+stopListHtml(t, nx?nx.name.split(' ')[0]:null, i===times.length-1, null, !!(m&&nx&&String(m.id)===String(nx.id)))+'</div>':''); }).join('')+'</div>';
       const ics=icsLink();
       if(ics) h+='<div style="margin-top:16px;display:flex;gap:8px;flex-wrap:wrap"><a class="btn btn-ghost avfree" href="'+esc(ics.replace(/^https?:/,'webcal:'))+'" style="text-decoration:none;font-size:11px;padding:7px 14px">Add my stints to my calendar</a><a class="meta avfree" href="'+esc(ics)+'" style="align-self:center">or download</a></div><div class="meta" style="font-size:10px;margin-top:4px">Your calendar updates itself when your stints change.</div>';
     }
@@ -3014,7 +3021,7 @@ function pitRowHtml(key, times, arr, byId, nPre){
       const fuel=x.fuel?(x.splash?'Splash '+x.fuel+' L':'Full tank'):'Refuel', sec=Math.round(stopSec(x.tyres));
       h+='<div class="pitstop'+(x.tyres?' ty':'')+(x.change?' chg':'')+(x.splash?' sp':'')+'">'
         +'<div class="ps-top"><b>Stop '+x.n+'</b>'+(at?'<span>'+at+'</span>':'')+'</div>'
-        +(x.change?'<div class="ps-chg">Driver change'+(nxt?' → '+esc(nxt.name.split(' ')[0]):'')+'</div>':'')
+        +(x.change?((nxt&&arr[bi]!=null&&String(arr[bi])===String(arr[bi+1]))?'<div class="ps-chg stay">'+esc(nxt.name.split(' ')[0])+' stays in</div>':'<div class="ps-chg">Driver change'+(nxt?' → '+esc(nxt.name.split(' ')[0]):'')+'</div>'):'')
         +'<div class="ps-fuel'+(x.splash?' splash':'')+'">⛽ '+fuel+'</div>'
         +(ed?'<div class="tyseg" role="group" aria-label="Tyres at stop '+x.n+'">'
             +'<span class="'+(x.tyres?'':'on')+'" data-action="tyreset" data-key="'+esc(key)+'" data-n="'+x.n+'" data-v="0" title="keep the same tyres at stop '+x.n+'">Same tyres</span>'
@@ -3028,14 +3035,14 @@ function pitRowHtml(key, times, arr, byId, nPre){
   return h;
 }
 /* 3.1.3: stops as plain lines, readable on a phone (driver step 4 and the list under each car) */
-function stopListHtml(t, nxtName, last, key){
+function stopListHtml(t, nxtName, last, key, same){
   if(!Array.isArray(t.stops)) return '';
   const ed=!!key&&isAdmin()&&!state.stintsLocked;   /* admins can flip tyres from the phone list too */
   const hhmm=function(m){ return fmtClock(m).split(' ').slice(1).join(' '); }; let h='';
   t.stops.forEach(function(x){
     const at=(x.dt!=null)?hhmm(t.s+x.dt):'', fuel=x.fuel?(x.splash?'splash '+x.fuel+' L':'full tank'):'refuel';
-    h+='<div class="stopln'+(x.change?' chg':'')+(x.tyres?' ty':'')+(x.splash?' sp':'')+'"><span class="sl-at">'+esc(at)+'</span><span class="sl-what">Stop '+x.n
-      +(x.change?' · <b>driver change'+(nxtName?' → '+esc(nxtName):'')+'</b>':'')
+    h+='<div class="stopln'+(x.change&&!(same&&nxtName)?' chg':'')+(x.tyres?' ty':'')+(x.splash?' sp':'')+'"><span class="sl-at">'+esc(at)+'</span><span class="sl-what">Stop '+x.n
+      +(x.change?(same&&nxtName?' · <b class="stay">'+esc(nxtName)+' stays in</b>':' · <b>driver change'+(nxtName?' → '+esc(nxtName):'')+'</b>'):'')
       +' · ⛽ '+esc(fuel)+' · '+(ed
         ?'<span class="tyseg" role="group" aria-label="Tyres at stop '+x.n+'"><span class="'+(x.tyres?'':'on')+'" data-action="tyreset" data-key="'+esc(key)+'" data-n="'+x.n+'" data-v="0">Same tyres</span><span class="'+(x.tyres?'on':'')+'" data-action="tyreset" data-key="'+esc(key)+'" data-n="'+x.n+'" data-v="1">New tyres</span></span>'
         :'<span class="sl-ty">'+(x.tyres?'new tyres':'same tyres')+'</span>')+' · '+Math.round(stopSec(x.tyres))+' s</span></div>';
@@ -3201,7 +3208,7 @@ function renderStints(byId){
   if(!state.stintsLocked && state.stintSig!==sig){ state.stintAssign={}; state.stintSig=sig; }  // block/race length changed -> fresh auto-plan; team moves do NOT wipe manual stints (moved-out drivers render as gaps)
   let html='<div class="importbox" style="display:flex;gap:18px;flex-wrap:wrap;align-items:flex-end">';
   html+='<div class="ctl"><label>DEFAULT START (LOCAL · UTC)</label><select data-action="stintwin">'+
-    Object.keys(START_OFFSETS).map(Number).map(w=>'<option value="'+w+'"'+(w===state.stint.window?' selected':'')+'>#'+w+' · '+START_LABELS[w]+'</option>').join('')+'</select></div>';
+    Object.keys(START_OFFSETS).map(Number).map(w=>'<option value="'+w+'"'+(w===state.stint.window?' selected':'')+'>#'+w+' · '+startLbl(w)+'</option>').join('')+'</select></div>';
   const _sm=stintMode(), _tk=+state.stint.tanks||2;
   html+='<div class="ctl"><label>STINT LENGTH</label><select data-action="stintmode">'
     +[['fuel1','1 tank per driver'],['fuel2','2 tanks per driver'],['fuel3','3 tanks per driver'],['min','Fixed minutes']].map(function(o){ const on=(o[0]==='min')?_sm==='min':(_sm==='fuel'&&('fuel'+_tk)===o[0]); return '<option value="'+o[0]+'"'+(on?' selected':'')+'>'+o[1]+'</option>'; }).join('')+'</select></div>';
@@ -3276,7 +3283,7 @@ function renderStints(byId){
         const best=carBestWindow(team,byId,clen,race,key);
         const winTabs='<span style="display:inline-flex;gap:5px;flex-wrap:wrap;align-items:center"><span class="meta" style="font-size:9px;text-transform:uppercase;letter-spacing:.06em">start</span>'+Object.keys(START_OFFSETS).map(Number).map(w=>{
           const on=w===win, isBest=best&&best.w===w;
-          return '<button class="btn '+(on?'btn-amber':'btn-ghost')+'" data-action="carwin" data-key="'+key+'" data-win="'+w+'" title="start '+START_LABELS[w]+(isBest?' · best coverage for this car':'')+'" style="font-size:10px;padding:5px 10px">'+START_LABELS[w]+(isBest?' <span style="color:'+(on?'#0a0a0a':'var(--green)')+'">●</span>':'')+'</button>';
+          return '<button class="btn '+(on?'btn-amber':'btn-ghost')+'" data-action="carwin" data-key="'+key+'" data-win="'+w+'" title="start '+startLbl(w)+(isBest?' · best coverage for this car':'')+'" style="font-size:10px;padding:5px 10px">'+startLbl(w)+(isBest?' <span style="color:'+(on?'#0a0a0a':'var(--green)')+'">●</span>':'')+'</button>';
         }).join('')+'</span>';
         html+='<div class="stintcar"><div style="display:flex;align-items:center;gap:10px;margin-bottom:12px;flex-wrap:wrap"><span class="swatch" style="background:'+col+'"></span><span class="head" style="letter-spacing:.04em;color:#fff;font-size:15px">'+(_renaming===key
           ? esc(cls)+' · <input class="avfree" data-action="renamesave" data-key="'+key+'" value="'+esc(carLabel(cls,tier,ti)||'')+'" placeholder="'+label[0]+(ti+1)+'" style="font-size:13px;padding:3px 7px;width:150px">'
@@ -3360,7 +3367,7 @@ function renderStints(byId){
         if(_tankUI) html+='<div class="pitlist"><div class="pl-title">Pit stops, stint by stint</div>'+times.map(function(t,i){
             const id=arr[i], m=(id!=null&&mem.has(id))?byId[id]:null, nid=arr[i+1], nx=(nid!=null&&mem.has(nid))?byId[nid]:null;
             return '<div class="pl-stint"><div class="pl-head"><b>'+(i+1)+'</b> '+esc(fmtClock(t.s))+' – '+esc(fmtClock(t.e).split(' ').slice(1).join(' '))+' · '+(m?esc(m.name.split(' ')[0]):'nobody yet')+'</div>'
-              +stopListHtml(t, nx?nx.name.split(' ')[0]:null, i===times.length-1, key)+'</div>'; }).join('')+'</div>';
+              +stopListHtml(t, nx?nx.name.split(' ')[0]:null, i===times.length-1, key, !!(m&&nx&&String(id)===String(nid)))+'</div>'; }).join('')+'</div>';
         html+='<div class="meta" style="margin-top:10px">Lanes: <span style="color:var(--green)">green = available</span> · striped = not free · solid = driving that stint. Click a lane cell to assign, drag blocks to swap, or drag names from the bank.</div></div>';
       });
     });
@@ -3487,7 +3494,7 @@ function renderHome(byId){
   if(!state.evsel) return '<div class="hero"><div class="meta">No race selected yet.</div>'+hbtn('Pick a race','gotab',' data-tab="event"',true)+'</div>';
   const ev=calEvent(state.evsel)||{n:state.evsel.split('|')[0]}, H=raceHealth(byId);
   const tm=(state.evTiming||{})[state.evsel]||{}, nStarts=Object.keys(START_OFFSETS||{}).length;
-  const firstStart=START_LABELS[Object.keys(START_OFFSETS||{})[0]]||'';
+  const firstStart=startLbl(Object.keys(START_OFFSETS||{})[0])||'';
   let h='<div class="hero"><div class="meta" style="text-transform:uppercase;letter-spacing:.08em;color:var(--yellow)">Race week</div>'
     +'<div class="head" style="font-size:22px;color:#fff;margin:4px 0">'+esc(ev.n)+'</div>'
     +'<div class="meta">'+(ev.track?esc(ev.track)+' · ':'')+(ev.s?fmtDates(ev.s,ev.e):'')+(ev.dur?' · '+ev.dur+'h race':'')+'</div></div>';
