@@ -254,6 +254,17 @@
   .pl-head{color:#fff;font-size:13px;font-weight:600;margin-bottom:4px} .pl-head b{color:var(--yellow);margin-right:4px}
   .stopln .tyseg{display:inline-flex;vertical-align:middle;margin:2px 0}
   /* phones: the list under each car carries the stops, so the tall grid row goes; names beat the meta */
+  .carpick{display:none}
+  @media (max-width:640px){
+    .carpick{display:flex;flex-wrap:wrap;gap:6px;padding:4px 0;margin-bottom:12px}
+    .stintcar:not(.cur){display:none}
+    /* 3.1.6: thumb-sized targets (most were 22-26 px tall) and dropdowns that stay on screen */
+    .btn{min-height:40px} button:not(.blockcell):not(.tab){min-height:36px}
+    .quickbtn{min-height:36px;padding:8px 12px} .iconbtn{min-width:36px;height:36px}
+    .tyseg span{padding:9px 6px} .wiz-link{display:inline-block;padding:6px 2px}
+    select{min-height:38px;max-width:100%} .chip[data-bankchip]{padding:8px 10px}
+    #rolebar{flex-wrap:wrap;justify-content:flex-end;max-width:calc(100vw - 30px)} #rolebar select{max-width:150px}
+  }
   @media (max-width:640px){ .pitlist{display:block} .stintgrid{--sglab:96px}
     .stintgrid .pitlabel,.stintgrid .pitcell{display:none} .stintgrid .sg-label .meta{display:none} }
   .tyseg{display:flex;background:#0d0d18;border:1px solid #2a2a3e;border-radius:8px;padding:2px;gap:2px}

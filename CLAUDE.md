@@ -170,6 +170,18 @@ Details in the plugin's [CLAUDE.md](files/edr-team-builder/CLAUDE.md).
   card shows "You released stint N" instead of "confirmed" while a release is open. Seen/confirm stamps
   gain `ts` (epoch); `relTime()` takes epoch ms, or reads a `current_time('mysql')` string as site time
   via `site_off` (it used to read it as the viewer's local time: "just now" for 2-3 h old submissions).
+- 3.1.6: phones get thumb-sized targets (`.btn` 40 px, other buttons 36, selects 38 and kept on screen,
+  header `#rolebar` wraps), Stints shows **one car at a time** with a `.carpick` row (`_phoneCar`,
+  `.stintcar.cur`; desktop unchanged), the timezone picker adds Sydney/Melbourne/Hobart, Adelaide, Perth,
+  Auckland, and step 4 lists the car's drivers in driving order with the timezone on "Driving order".
+- **Smoke test (3.1.6)**: `tests/smoke/` opens the built bundle in headless Chrome (puppeteer-core):
+  admin desktop + phone (every tab), driver phone in a Sydney clock (steps 2-4, then the Full planner),
+  and fails on any script error, "undefined"/"NaN" text, phone overflow, or Stints showing the wrong
+  number of cars. Data comes from the live site's public GETs (`fetch-fixtures.sh` into the gitignored
+  `fixtures/`), never committed: **the repo is public**. CI (`ci.yml`) and the release job run it, so a
+  failing smoke test blocks a release. Locally: `bash tests/smoke/fetch-fixtures.sh && npm i --no-save
+  --prefix tests/smoke puppeteer-core@23 && node tests/smoke/run.mjs` (finds Chrome on macOS). Run it
+  before asking to ship. It catches 3.0.7's blank Availability tab (verified by re-breaking it).
 
 ## Team Builder workflow & roles (v2.4)
 

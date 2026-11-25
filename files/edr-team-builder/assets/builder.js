@@ -61,7 +61,7 @@ let state = { drivers:[], w:{pace:50,clean:30,prep:20}, proPct:40, tab:'event', 
 /* Per-user timezone (F10) is device-local, never in the shared plan. Auto-detect, override persisted in edrTB_tz. */
 let TZ = 'auto';   // default: auto-detect the viewer's zone; picker override persists per device
 try{ TZ = localStorage.getItem('edrTB_tz') || 'auto'; }catch(e){}
-const TZ_ZONES = [['auto','Auto (detected)'],['Australia/Brisbane','Brisbane'],['Europe/London','London'],['Europe/Berlin','Berlin / Amsterdam'],['Europe/Helsinki','Helsinki'],['America/New_York','US East'],['America/Los_Angeles','US West'],['UTC','UTC']];
+const TZ_ZONES = [['auto','Auto (detected)'],['Australia/Brisbane','Brisbane'],['Australia/Sydney','Sydney / Melbourne / Hobart'],['Australia/Adelaide','Adelaide'],['Australia/Perth','Perth'],['Pacific/Auckland','Auckland'],['Europe/London','London'],['Europe/Berlin','Berlin / Amsterdam'],['Europe/Helsinki','Helsinki'],['America/New_York','US East'],['America/Los_Angeles','US West'],['UTC','UTC']];
 function tzZone(){ if(TZ==='auto'){ try{ return Intl.DateTimeFormat().resolvedOptions().timeZone||'UTC'; }catch(e){ return 'UTC'; } } return TZ||'Australia/Brisbane'; }
 function tzLabel(){ const m=TZ_ZONES.find(x=>x[0]===TZ); if(m&&m[0]!=='auto')return m[1]; const z=tzZone(); return (z.split('/').pop()||z).replace(/_/g,' ')+' (auto)'; }
 function setTZ(z){ TZ=z; try{ localStorage.setItem('edrTB_tz', z); }catch(e){} if(typeof START_OFFSETS!=='undefined') relabelStarts(); }
@@ -1155,7 +1155,7 @@ function renderWizard(byId){
       h+='<div class="wiz-card"><div class="wiz-eyebrow" style="font-size:11px">'+esc(c.cls)+' · '+tierL+'</div>'
         +'<div class="head" style="color:#fff;font-size:22px;font-weight:700;margin:4px 0 2px">'+esc(carLabel(c.cls,c.tier,c.ti)||(tierL+' '+(c.ti+1)))+'</div>'
         +(carName?'<div class="meta">'+esc(carName)+'</div>':'')
-        +'<div class="wiz-order" style="margin-top:12px">'+members.map(function(m){ return '<span'+(m.id===r.me.id?' class="me"':'')+'>'+esc(m.name.split(' ')[0])+'</span>'; }).join('')+'</div>'
+        +'<div class="wiz-order" style="margin-top:12px">'+members.slice().sort(function(a,b){ const fa=arr.indexOf(a.id), fb=arr.indexOf(b.id); return (fa<0?999:fa)-(fb<0?999:fb); }).map(function(m){ return '<span'+(m.id===r.me.id?' class="me"':'')+'>'+esc(m.name.split(' ')[0])+'</span>'; }).join('')+'</div>'
         +(startLbl(win)?'<div class="meta" style="margin-top:12px">'+(RACE_PRE?'Session opens · ':'Race start · ')+esc(startLbl(win))+'</div>':'')
         +(RACE_PRE?'<div class="meta" style="margin-top:4px">'+esc(preRaceLine(win))+'</div>':'')
         +'</div>';
@@ -1187,7 +1187,7 @@ function renderWizard(byId){
       if(takeable.length){ h+='<div class="wiz-label" style="margin-top:22px">Stints you can take</div>';
         takeable.forEach(function(x){ const t=times[x.n]; h+='<div class="wiz-stint"><span class="no">'+(x.n+1)+'</span><span style="flex:1"><div class="when">'+fmtClock(t.s)+' – '+fmtClock(t.e).split(' ').slice(1).join(' ')+'</div><div class="meta">Released by '+esc(x.from.split(' ')[0])+'</div></span><button class="btn btn-amber avfree" data-action="swaptake" data-id="'+esc(x.id)+'" style="font-size:10px;padding:5px 12px">Take it</button></div>'; }); }
       if(_swapMsg) h+='<div class="meta" style="margin-top:8px">'+esc(_swapMsg)+'</div>';
-      h+='<div class="wiz-label" style="margin-top:22px">Driving order</div><div class="wiz-orderlist">'
+      h+='<div class="wiz-label" style="margin-top:22px">Driving order · '+esc(tzLabel())+' time</div><div class="wiz-orderlist">'
         +arr.map(function(id,i){ const inCar=function(x){ return (x!=null&&car.team.map(String).indexOf(String(x))>=0)?byId[x]:null; }, m=inCar(id), nx=inCar(arr[i+1]), t=times[i], me=!!(m&&m.id===r.me.id);
           /* 3.1.4: each stint broken down stop by stop, so drivers see every fuel stop and tyre change, not just a block of hours */
           return '<div'+(me?' class="me"':'')+'><span class="no">'+(i+1)+'</span><span class="t">'+fmtClock(t.s)+' – '+fmtClock(t.e).split(' ').slice(1).join(' ')+'</span><span class="d">'+(m?esc(m.name.split(' ')[0]):'—')+'</span></div>'
@@ -3269,6 +3269,11 @@ function renderStints(byId){
   });
   html+='<span class="chip" data-bankchip data-driver="" style="cursor:grab;user-select:none;touch-action:none;color:var(--red);margin-left:8px">✕ empty</span></div></div>';
   const PALETTE=['#6ea8ff','#5fd38a','#ffb454','#d78cff','#4fd1c5','#ff8fa3','#c8e05a','#9aa3c0'];
+  /* 3.1.6: on a phone the Stints tab shows one car at a time (it ran to ~6,000 px with every car);
+     the picker and the .cur rule are phone-only CSS, desktop still shows every car. */
+  const _cars=stintCars(byId);
+  if(!_cars.some(function(c){ return c.key===_phoneCar; })){ const mine=state.me&&_cars.find(function(c){ return c.members.some(function(m){ return m.name===state.me; }); }); _phoneCar=(mine||_cars[0]||{}).key||''; }
+  if(_cars.length>1) html+='<div class="carpick">'+_cars.map(function(c){ return '<button class="btn '+(c.key===_phoneCar?'btn-amber':'btn-ghost')+' avfree" data-action="carpick" data-key="'+esc(c.key)+'">'+esc((classes.length>1?c.cls+' ':'')+c.label)+'</button>'; }).join('')+'</div>';
   classes.forEach(cls=>{
     [['pro','PRO','var(--gold)'],['casual','CASUAL','var(--steel)']].forEach(([tier,label,col])=>{
       const list=(state.teams[cls]&&state.teams[cls][tier])||[];
@@ -3298,7 +3303,7 @@ function renderStints(byId){
           const on=w===win, isBest=best&&best.w===w;
           return '<button class="btn '+(on?'btn-amber':'btn-ghost')+'" data-action="carwin" data-key="'+key+'" data-win="'+w+'" title="start '+startLbl(w)+(isBest?' · best coverage for this car':'')+'" style="font-size:10px;padding:5px 10px">'+startLbl(w)+(isBest?' <span style="color:'+(on?'#0a0a0a':'var(--green)')+'">●</span>':'')+'</button>';
         }).join('')+'</span>';
-        html+='<div class="stintcar"><div style="display:flex;align-items:center;gap:10px;margin-bottom:12px;flex-wrap:wrap"><span class="swatch" style="background:'+col+'"></span><span class="head" style="letter-spacing:.04em;color:#fff;font-size:15px">'+(_renaming===key
+        html+='<div class="stintcar'+(key===_phoneCar?' cur':'')+'" data-key="'+esc(key)+'"><div style="display:flex;align-items:center;gap:10px;margin-bottom:12px;flex-wrap:wrap"><span class="swatch" style="background:'+col+'"></span><span class="head" style="letter-spacing:.04em;color:#fff;font-size:15px">'+(_renaming===key
           ? esc(cls)+' · <input class="avfree" data-action="renamesave" data-key="'+key+'" value="'+esc(carLabel(cls,tier,ti)||'')+'" placeholder="'+label[0]+(ti+1)+'" style="font-size:13px;padding:3px 7px;width:150px">'
           : esc(cls)+' · '+(carLabel(cls,tier,ti)?esc(carLabel(cls,tier,ti))+' <span class="meta" style="font-size:11px">'+label[0]+(ti+1)+'</span>':label[0]+(ti+1))+(isAdmin()?' <span class="iconbtn" data-action="renamecar" data-key="'+key+'" title="rename this car" style="cursor:pointer;font-size:12px;opacity:.6">✎</span>':''))+'</span>'+winTabs+badge+(fp.anyCfg?'<span class="meta" style="color:var(--dim)">⛽ '+fp.totLaps+' laps · '+fp.totFuel+'L · '+fp.pits+' stop'+(fp.pits===1?'':'s')+(fp.tyreStops?', '+fp.tyreStops+' with tyres':'')+(fp.lostSec?' ('+fmtLost(fp.lostSec)+' lost)':'')+'</span>':'')+'</div>';
         if(stintMode()==='fuel'&&isAdmin()){ const cr=objOr(objOr(state.tyrePlan)[key]);
@@ -3388,7 +3393,7 @@ function renderStints(byId){
   if(_autoHtml) html+='<details class="autobox"'+(_autoOpen?' open':'')+'><summary data-action="autotoggle">Race-day automation: Discord reminders, voice channels, weather</summary><div style="margin-top:12px">'+_autoHtml+'</div></details>';
   return html;
 }
-let _autoOpen=false, _resetArm=false;
+let _autoOpen=false, _resetArm=false, _phoneCar='';
 /* 3.0 "Fix": fill a car's empty and clashing stints with a driver from that car who is free for
    it, least-used first, skipping anyone it would put over 4 h in 6 h. Stints it cannot fill stay
    as they are for a hand decision. */
@@ -3882,6 +3887,8 @@ document.getElementById('content').addEventListener('click',e=>{
     _relArm='';
     if(car&&car.times[n]){ const t=car.times[n];
     swapDo('release',{name:state.me, key:car.key, car:car.label, n:n, s:WIN_START_MS+t.s*60000, e:WIN_START_MS+t.e*60000}); } return; }
+  const cpk=e.target.closest&&e.target.closest('[data-action="carpick"]');
+  if(cpk){ _phoneCar=cpk.dataset.key; renderContent(); const pk=document.querySelector('.carpick'); if(pk) pk.scrollIntoView({block:'start'}); return; }
   const sun=e.target.closest&&e.target.closest('[data-action="swapundo"]');
   if(sun){ swapDo('withdraw',{id:sun.dataset.id, name:state.me}); return; }
   const stk=e.target.closest&&e.target.closest('[data-action="swaptake"]');

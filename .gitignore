@@ -26,3 +26,8 @@ __pycache__/
 
 # Local working backup
 *.glenbak
+
+# smoke test: live data fetched at test time (public repo) and its npm install
+tests/smoke/fixtures/
+tests/smoke/node_modules/
+tests/smoke/package-lock.json

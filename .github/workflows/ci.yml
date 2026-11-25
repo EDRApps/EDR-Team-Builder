@@ -11,6 +11,7 @@ on:
       - 'files/edr-team-builder/**'
       - 'Admin Folder/**'          # the uploadable zip is version-checked below
       - '.github/workflows/**'
+      - 'tests/**'
   pull_request:
   workflow_dispatch:
 
@@ -64,6 +65,15 @@ jobs:
             echo "::error::$zip is v$zip_ver but the source is v$src_ver — run files/edr-team-builder/build/package_plugin.py and commit the result"
             exit 1
           fi
+
+      # 3.1.6: open the built bundle in headless Chrome (admin + driver, desktop + phone, Brisbane +
+      # Sydney clocks) on the live site's public data and fail on any script error. Would have
+      # caught 3.0.7's blank Availability tab. Data is fetched now, never committed (public repo).
+      - name: Smoke test the bundle in Chrome
+        run: |
+          bash tests/smoke/fetch-fixtures.sh
+          npm i --no-save --silent --prefix tests/smoke puppeteer-core@23
+          CHROME_PATH="$(command -v google-chrome || command -v chromium)" node tests/smoke/run.mjs
 
       - name: Lint PHP
         run: |

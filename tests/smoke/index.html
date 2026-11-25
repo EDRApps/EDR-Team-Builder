@@ -1,0 +1,54 @@
+<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<!-- Smoke-test page: the real built plugin bundle on top of a fetch stub that serves the live site's
+     public data from fixtures/ (fetched at test time, never committed: the repo is public).
+     ?driver=1 = driver mode, &irid=<iRacing id> = this device already identified. Writes are recorded
+     in window.__posts and never leave the page. -->
+<link rel="stylesheet" href="/files/edr-team-builder/assets/builder.css"></head><body style="background:#111;margin:0">
+<div id="edr-tb-app"></div>
+<script>
+(function(){
+  var q=new URLSearchParams(location.search);
+  window.EDR_TB={root:'/api/',nonce:'x',can_edit:!q.get('driver'),remind_hook:q.get('hook')||'no',site_off:'46800'};
+  window.__posts=[]; window.__errs=[];
+  window.addEventListener('error',function(e){ window.__errs.push(String(e.message)); });
+  var ce=console.error; console.error=function(){ window.__errs.push([].slice.call(arguments).join(' ')); ce.apply(console,arguments); };
+  try{ localStorage.clear(); if(q.get('irid')) localStorage.setItem('edrTB_irid',q.get('irid')); }catch(e){}
+  var real=window.fetch.bind(window), snap={}, rev=1, avrev=1;
+  function j(o,st){ return Promise.resolve(new Response(JSON.stringify(o),{status:st||200,headers:{'Content-Type':'application/json'}})); }
+  function load(n){ return snap[n]?Promise.resolve(snap[n]):real('/tests/smoke/fixtures/'+n+'.json').then(function(r){ return r.ok?r.json():{}; }).then(function(x){ return (snap[n]=x); }); }
+  window.fetch=function(url,opt){
+    url=String(url); if(url.indexOf('/api/')<0) return real(url,opt);
+    var path=url.split('/api/')[1].split('?')[0], m=(opt&&opt.method)||'GET';
+    if(m==='POST'){ var b={}; try{ b=JSON.parse(opt.body||'{}'); }catch(e){} window.__posts.push({path:path,body:b});
+      if(path==='plan'){ return load('plan').then(function(p){ p.plan=b.plan||b; rev++; return j({ok:true,rev:rev}); }); }
+      if(path==='avail'){ avrev++; return j({ok:true,locked:[],seen:{at:'2026-01-01 00:00:00',ts:Math.floor(Date.now()/1000),n:(b.slots||[]).length}}); }
+      if(path==='swap'){ return j({ok:true,message:'ok',swaps:[]}); }
+      return j({ok:true}); }
+    if(path==='rev') return j({plan:rev,avail:avrev,paceAt:0,paceErr:'',pacePending:false});
+    if(path==='plan') return load('plan').then(function(p){ return j(Object.assign({},p,{rev:rev})); });
+    if(['avail','roster','pace','iracing'].indexOf(path)>=0) return load(path).then(function(x){ return j(x); });
+    return j({});
+  };
+})();
+</script>
+<script src="/files/edr-team-builder/assets/builder.js"></script>
+<script>
+/* Visit every tab and report: errors thrown while rendering it, "undefined"/"NaN" text, and
+   (on a phone) anything that sticks out past the right edge of the screen. */
+window.__crawl=async function(){
+  var sleep=function(ms){ return new Promise(function(r){ setTimeout(r,ms); }); }, out=[], app=document.getElementById('edr-tb-app');
+  var names=[].slice.call(app.querySelectorAll('.tabs button')).filter(function(b){ return b.offsetParent; }).map(function(b){ return b.textContent.trim().replace(/\s*✓$/,''); });
+  for(var k=0;k<names.length;k++){
+    var nm=names[k], b=[].slice.call(app.querySelectorAll('.tabs button')).find(function(x){ return x.textContent.trim().replace(/\s*✓$/,'')===nm; });
+    window.__errs.length=0; b.click(); await sleep(500);
+    var txt=app.innerText, W=document.documentElement.clientWidth;
+    var bad=(txt.match(/[^\n]{0,30}\b(undefined|NaN|\[object Object\])\b[^\n]{0,30}/g)||[]).slice(0,3);
+    var over=[].slice.call(app.querySelectorAll('*')).filter(function(e){ if(!e.offsetParent) return false; var r=e.getBoundingClientRect(); if(r.right<=W+1) return false;
+      for(var p=e.parentElement;p&&p!==app;p=p.parentElement){ if(/(auto|scroll|hidden)/.test(getComputedStyle(p).overflowX)) return false; } return true; })
+      .slice(0,3).map(function(e){ return e.tagName.toLowerCase()+'.'+String(e.className).split(' ')[0]; });
+    out.push({tab:nm, errs:window.__errs.slice(0,3), bad:bad, over:over, h:app.scrollHeight});
+  }
+  return out;
+};
+</script>
+</body></html>

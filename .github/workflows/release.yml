@@ -54,6 +54,15 @@ jobs:
       - name: Parse-check the generated bundle
         run: node --check files/edr-team-builder/assets/builder.js
 
+      # 3.1.6: open the built bundle in headless Chrome (admin + driver, desktop + phone, Brisbane +
+      # Sydney clocks) on the live site's public data and fail on any script error. Would have
+      # caught 3.0.7's blank Availability tab. Data is fetched now, never committed (public repo).
+      - name: Smoke test the bundle in Chrome
+        run: |
+          bash tests/smoke/fetch-fixtures.sh
+          npm i --no-save --silent --prefix tests/smoke puppeteer-core@23
+          CHROME_PATH="$(command -v google-chrome || command -v chromium)" node tests/smoke/run.mjs
+
       - name: Package plugin zip
         env:
           EDR_ZIP: ${{ github.workspace }}/edr-team-builder-${{ steps.ver.outputs.v }}.zip
