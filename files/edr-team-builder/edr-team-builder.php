@@ -2,7 +2,7 @@
 /**
  * Plugin Name: EDR Team Builder
  * Description: Endurotech Racing endurance team + stint planner. Pulls Garage 61 pace and official iRacing session times, collects driver availability in-house, and builds Pro/Casual teams and stint rotations. Add the [edr_team_builder] shortcode to a page.
- * Version: 3.0.3
+ * Version: 3.0.4
  * Author: Endurotech Racing
  * License: GPL-2.0-or-later
  */
@@ -11,7 +11,7 @@ if (!defined('ABSPATH')) exit; // no direct access
 
 define('EDR_TB_DIR', plugin_dir_path(__FILE__));
 define('EDR_TB_URL', plugin_dir_url(__FILE__));
-define('EDR_TB_VER', '3.0.3');
+define('EDR_TB_VER', '3.0.4');
 
 require_once EDR_TB_DIR . 'includes/garage61.php';
 require_once EDR_TB_DIR . 'includes/iracing.php';
@@ -345,8 +345,13 @@ add_action('rest_api_init', function () {
  */
 function edr_tb_attach_forecasts($seasons) {
     if (!is_array($seasons)) return $seasons;
-    $budget = 12;
-    foreach ($seasons as $i => $se) {
+    $budget = 30;
+    // longest races first: iRacing lists ~380 seasons and a flat cap ran out on the short
+    // "endurance" series before reaching a 12 h special like the 992 Cup (3.0.4)
+    $order = array_keys($seasons);
+    usort($order, function ($a, $b) use ($seasons) { return intval($seasons[$b]['race_min'] ?? 0) - intval($seasons[$a]['race_min'] ?? 0); });
+    foreach ($order as $i) {
+        $se = $seasons[$i];
         $w = isset($se['weather']) && is_array($se['weather']) ? $se['weather'] : null;
         if (!$w || empty($w['weather_url']) || intval($se['race_min'] ?? 0) < 120) continue;
         $url = (string) $w['weather_url'];
