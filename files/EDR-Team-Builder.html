@@ -247,6 +247,19 @@
   .ps-ty{font-size:10.5px;color:var(--dim)} .pitstop.ty .ps-ty{color:#9cc4ff;font-weight:600}
   .ps-sec{font-size:10px;color:var(--dim)}
   .ps-flag{font-size:11px;color:var(--body);text-align:center;padding:4px 0 2px}
+  .stopln{display:flex;gap:10px;font-size:12px;color:var(--body);padding:3px 0;line-height:1.4}
+  .stopln .sl-at{color:#fff;font-weight:600;min-width:42px;flex:0 0 auto}
+  .stopln .sl-what{flex:1;min-width:0;white-space:normal}
+  .stopln.chg b{color:var(--yellow)} .stopln.ty .sl-ty{color:#9cc4ff;font-weight:600}
+  .wiz-stops{margin-top:8px;padding-top:6px;border-top:1px solid var(--line)}
+  .pitlist{display:none}
+  .pl-title{font-family:'Prompt',sans-serif;font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--dim);margin:14px 0 8px}
+  .pl-stint{border:1px solid #2a2a3e;border-left:3px solid var(--yellow);border-radius:10px;padding:8px 10px;margin-bottom:6px;background:#141422}
+  .pl-head{color:#fff;font-size:13px;font-weight:600;margin-bottom:4px} .pl-head b{color:var(--yellow);margin-right:4px}
+  .stopln .tyseg{display:inline-flex;vertical-align:middle;margin:2px 0}
+  /* phones: the list under each car carries the stops, so the tall grid row goes; names beat the meta */
+  @media (max-width:640px){ .pitlist{display:block} .stintgrid{--sglab:96px}
+    .stintgrid .pitlabel,.stintgrid .pitcell{display:none} .stintgrid .sg-label .meta{display:none} }
   .tyseg{display:flex;background:#0d0d18;border:1px solid #2a2a3e;border-radius:8px;padding:2px;gap:2px}
   .tyseg span{flex:1;text-align:center;font-size:10.5px;padding:4px 2px;border-radius:6px;color:var(--dim);cursor:pointer;user-select:none;white-space:nowrap}
   .tyseg span:hover{color:#fff}
@@ -1495,6 +1508,7 @@ function renderWizard(byId){
         +'</div>';
       const mine=driverStints(car,r.me.id);
       h+='<div class="wiz-label" style="margin-top:22px">You drive '+mine.length+' stint'+(mine.length===1?'':'s')+'</div>';
+      if(mine.length) h+='<div class="meta" style="margin:-4px 0 10px">Times are your time: '+esc(tzLabel())+'. “in-game” is the time of day inside iRacing.</div>';
       const sw=swapsFor(state.evsel);
       if(RACE_PRE){ const pl=preList(car), mine=pl.filter(function(x){ return x.id!=null && String(x.id)===String(r.me.id); });
         if(mine.length) h+='<div class="wiz-card" style="border-left:4px solid var(--yellow);margin-top:18px"><div class="wiz-eyebrow" style="font-size:11px">Before the race</div>'
@@ -1507,7 +1521,8 @@ function renderWizard(byId){
         const rel=sw.find(function(x){ return x.key===car.key&&x.n===i&&(x.st==='open'||x.st==='claimed'); });
         h+='<div class="wiz-stint"><span class="no">'+(i+1)+'</span><span style="flex:1"><div class="when">'+fmtClock(t.s)+' – '+fmtClock(t.e).split(' ').slice(1).join(' ')+'</div>'
           +(free?'':'<div class="meta" style="color:var(--red)">You said you\'re not free then. Release it below or tell the admins.</div>')
-          +(rel?'<div class="meta" style="color:var(--amber)">Released'+(rel.st==='claimed'?': '+esc(rel.to.split(' ')[0])+' will take it once an admin approves':', waiting for someone to take it')+'.</div>':'')+'</span>'
+          +(rel?'<div class="meta" style="color:var(--amber)">Released'+(rel.st==='claimed'?': '+esc(rel.to.split(' ')[0])+' will take it once an admin approves':', waiting for someone to take it')+'.</div>':'')
+          +(Array.isArray(t.stops)?'<div class="wiz-stops">'+stopListHtml(t, (function(){ const nid=arr[i+1]; return (nid!=null&&car.team.map(String).indexOf(String(nid))>=0&&byId[nid])?byId[nid].name.split(' ')[0]:null; })(), i===times.length-1)+'</div>':'')+'</span>'
           +(wx?'<span class="meta" style="color:'+(wx.wet?'#6ea8ff':wx.night?'var(--dim)':'var(--amber)')+'">'+wx.icon+' '+wx.label+'</span>':'')
           +(rel?'':'<button class="btn btn-ghost avfree" data-action="swaprel" data-key="'+esc(car.key)+'" data-n="'+i+'" style="font-size:10px;padding:4px 10px;margin-left:8px">Release</button>')+'</div>'; });
       if(mine.length) h+=renderConfirmCard(car,mine,byId);
@@ -3368,6 +3383,22 @@ function pitRowHtml(key, times, arr, byId, nPre){
   });
   return h;
 }
+/* 3.1.3: stops as plain lines, readable on a phone (driver step 4 and the list under each car) */
+function stopListHtml(t, nxtName, last, key){
+  if(!Array.isArray(t.stops)) return '';
+  const ed=!!key&&isAdmin()&&!state.stintsLocked;   /* admins can flip tyres from the phone list too */
+  const hhmm=function(m){ return fmtClock(m).split(' ').slice(1).join(' '); }; let h='';
+  t.stops.forEach(function(x){
+    const at=(x.dt!=null)?hhmm(t.s+x.dt):'', fuel=x.fuel?(x.splash?'splash '+x.fuel+' L':'full tank'):'refuel';
+    h+='<div class="stopln'+(x.change?' chg':'')+(x.tyres?' ty':'')+(x.splash?' sp':'')+'"><span class="sl-at">'+esc(at)+'</span><span class="sl-what">Stop '+x.n
+      +(x.change?' · <b>driver change'+(nxtName?' → '+esc(nxtName):'')+'</b>':'')
+      +' · ⛽ '+esc(fuel)+' · '+(ed
+        ?'<span class="tyseg" role="group" aria-label="Tyres at stop '+x.n+'"><span class="'+(x.tyres?'':'on')+'" data-action="tyreset" data-key="'+esc(key)+'" data-n="'+x.n+'" data-v="0">Same tyres</span><span class="'+(x.tyres?'on':'')+'" data-action="tyreset" data-key="'+esc(key)+'" data-n="'+x.n+'" data-v="1">New tyres</span></span>'
+        :'<span class="sl-ty">'+(x.tyres?'new tyres':'same tyres')+'</span>')+' · '+Math.round(stopSec(x.tyres))+' s</span></div>';
+  });
+  if(last) h+='<div class="stopln flag"><span class="sl-at"></span><span class="sl-what">🏁 To the flag</span></div>';
+  return h;
+}
 function stopSec(tyres){ return ((state.fuelCfg&&+state.fuelCfg.pitLossSec)||60)+(tyres?tyreSec():0); }
 /* a car's stints in tank mode, stop by stop: each driver stint = `tanks` tanks; every tank but the
    last of the race ends in a stop (the last one of a stint is the driver change); each stop costs its
@@ -3439,7 +3470,8 @@ function weatherAt(absMin, raceStartOff, winNo, absEnd){
       w=Object.assign({},w,{tempC:Math.round(hit[0][3])}); }
   }
   const icon = wet?'🌧':(night?'🌙':'☀');
-  let label = wet?(clk+' wet'):(night?(clk+' night'):(clk+(w.tempC!=null&&w.tempC!==''?' '+w.tempC+'°':'')));
+  /* 3.1.3: this clock is the time of day INSIDE iRacing, not the viewer's clock, so say so */
+  let label = 'in-game '+(wet?(clk+' wet'):(night?(clk+' night'):(clk+(w.tempC!=null&&w.tempC!==''?' '+w.tempC+'°':''))));
   if(pct!=null&&pct>0) label+=' · '+pct+'%';   // rain probability, so "wet" vs "1% chance" is unambiguous
   return { todMin, night, wet, rainPct:pct, tempC:w.tempC, clk, icon, label };
 }
@@ -3541,14 +3573,14 @@ function renderStints(byId){
   }
   html+='<button class="btn btn-ghost" data-action="stintreset" style="align-self:center'+(_resetArm?';color:var(--red);border-color:var(--red)':'')+'">'+(_resetArm?'Tap again: replan every car':'Auto-fill all')+'</button>';
   if(isAdmin()) html+='<button class="btn '+(state.stintsLocked?'btn-amber':'btn-ghost')+'" data-action="stintlock" style="align-self:center">'+(state.stintsLocked?'🔒 Stints locked':'🔓 Lock stints')+'</button>';
-  html+='<div class="meta" style="align-self:center;max-width:360px"><b style="color:#fff">Each car can run a different session.</b> Pick its start below (or set a default for all). Clock = '+tzLabel()+'. Drag blocks or bank names, or click a driver\'s lane to hand them that stint.</div>';
+  html+='<div class="meta" style="align-self:center;max-width:360px"><b style="color:#fff">Each car can run a different session.</b> Pick its start below (or set a default for all). Stint times are real time, '+tzLabel()+'. The small ☀/🌙 line under each is the in-game time of day. Drag blocks or bank names, or click a driver\'s lane to hand them that stint.</div>';
   html+='</div>';
   let wxHtml='';   /* 3.0: weather, reminders and voice channels fold away under the grids */
   if(isAdmin()){
     const w=(state.evWeather&&state.evWeather[state.evsel])||{};
     const tod=(w.startTod!=null&&w.startTod!=='')?((('0'+Math.floor(w.startTod/60)).slice(-2))+':'+(('0'+(w.startTod%60)).slice(-2))):'';
     wxHtml+='<div class="importbox" style="display:flex;gap:14px;flex-wrap:wrap;align-items:flex-end;margin-bottom:14px"><div class="meta" style="width:100%;text-transform:uppercase;letter-spacing:.04em;margin-bottom:2px">Event weather — '+(w.src==='iracing'?'<span style="color:var(--green)">pulled from iRacing automatically</span>':(w.src==='manual'?'manual override':'auto-pulls from iRacing on the site'))+' · drivers see day/night and wet per stint</div>'
-      +'<div class="ctl"><label>START (local, HH:MM)</label><input type="time" value="'+tod+'" data-action="wxstart" style="padding:6px"></div>'
+      +'<div class="ctl"><label title="Time of day inside iRacing when the session opens (not your clock)">IN-GAME TIME AT SESSION OPEN</label><input type="time" value="'+tod+'" data-action="wxstart" style="padding:6px"></div>'
       +'<div class="ctl"><label>TEMP (°C)</label><input type="number" step="1" value="'+(w.tempC!=null?w.tempC:'')+'" placeholder="—" data-action="wxtemp" style="width:74px;padding:6px"></div>'
       +'<div class="ctl"><label>SIM MULT</label><input type="number" step="0.5" min="1" value="'+(w.mult||'')+'" placeholder="1" data-action="wxmult" style="width:74px;padding:6px"></div>'
       +'<div class="ctl"><label>TURNS WET AT (min)</label><input type="number" step="10" value="'+(w.wetFrom!=null?w.wetFrom:'')+'" placeholder="dry" data-action="wxwetfrom" style="width:90px;padding:6px"></div>'
@@ -3636,10 +3668,10 @@ function renderStints(byId){
           if(_ps.length) html+='<div class="carwarn" style="border:0;padding:0;margin:0 0 10px;display:flex;gap:10px;align-items:center;flex-wrap:wrap"><span>'+_ps.map(esc).join(' · ')+'</span>'
             +((_c.gaps.length||_c.conflicts.length||_c.underFair.length)&&!state.stintsLocked?'<button class="btn btn-ghost" data-action="fixcar" data-key="'+esc(key)+'" style="font-size:10px;padding:4px 10px">Fix this car</button>':'')+'</div>'; }
         const _pc={key:key, team:team, win:win}, _pl=preList(_pc), _tankUI=stintMode()==='fuel'&&times.some(function(t){ return t.stops; });
-        html+='<div class="stintwrap" data-key="'+key+'"><div class="stintgrid" style="grid-template-columns:150px '+(_pl.length?'repeat('+_pl.length+',minmax(76px,.8fr)) ':'')+'repeat('+times.length+',minmax('+(_tankUI?'150px':'84px')+',1fr))">';
+        html+='<div class="stintwrap" data-key="'+key+'"><div class="stintgrid" style="grid-template-columns:var(--sglab,150px) '+(_pl.length?'repeat('+_pl.length+',minmax(76px,.8fr)) ':'')+'repeat('+times.length+',minmax('+(_tankUI?'150px':'84px')+',1fr))">';
         html+='<div class="sg-corner">stint →</div>';
         _pl.forEach(function(x){ html+='<div class="sg-time pre"><b>'+x.short+'</b>'+esc(x.label)+'<div style="font-size:9px">'+esc(fmtClock(x.s).split(' ').slice(1).join(' '))+'–'+esc(fmtClock(x.e).split(' ').slice(1).join(' '))+'</div></div>'; });
-        times.forEach((t,i)=>{ const wx=weatherAt(t.s,off,win,t.e); html+='<div class="sg-time"><b>'+(i+1)+'</b>'+fmtClock(t.s)+(wx?'<div style="font-size:9px;color:'+(wx.wet?'#6ea8ff':wx.night?'var(--dim)':'var(--amber)')+'">'+wx.icon+' '+wx.label+'</div>':'')+'</div>'; });
+        times.forEach((t,i)=>{ const wx=weatherAt(t.s,off,win,t.e); html+='<div class="sg-time"><b>'+(i+1)+'</b>'+fmtClock(t.s)+(wx?'<div style="font-size:9px;white-space:normal;color:'+(wx.wet?'#6ea8ff':wx.night?'var(--dim)':'var(--amber)')+'">'+wx.icon+' '+wx.label+'</div>':'')+'</div>'; });
         html+='<div class="sg-label" style="font-family:Prompt;font-weight:600;color:#fff;text-transform:uppercase;font-size:11px;letter-spacing:.05em">Driving</div>';
         _pl.forEach(function(x){ const m=x.id!=null?byId[x.id]:null, free=m?driverFree(m,x.s,x.e):false;
           html+='<div class="sg-block pre'+(m?(free?'':' conflict'):' empty')+'" data-stintcell data-pre="'+x.k+'" data-key="'+key+'" data-driver="'+(m?x.id:'')+'" style="--dc:'+(m?colr[x.id]:'transparent')+'" title="'+esc(x.label)+(m?(free?' · '+esc(m.name):' · NOT available then'):' · drag a driver here or click their lane')+'">'+(m?esc(m.name.split(' ')[0])+(free?'':' <span class="warn">!</span>'):'+')+'</div>'; });
@@ -3681,6 +3713,10 @@ function renderStints(byId){
             html+='<div style="font-size:9px;color:var(--dim);text-align:center;padding:3px 2px;border-top:1px solid #1a1a1a;line-height:1.4" title="'+esc(tip)+'">'+txt+'</div>'; });
         }
         html+='</div></div>';
+        if(_tankUI) html+='<div class="pitlist"><div class="pl-title">Pit stops, stint by stint</div>'+times.map(function(t,i){
+            const id=arr[i], m=(id!=null&&mem.has(id))?byId[id]:null, nid=arr[i+1], nx=(nid!=null&&mem.has(nid))?byId[nid]:null;
+            return '<div class="pl-stint"><div class="pl-head"><b>'+(i+1)+'</b> '+esc(fmtClock(t.s))+' – '+esc(fmtClock(t.e).split(' ').slice(1).join(' '))+' · '+(m?esc(m.name.split(' ')[0]):'nobody yet')+'</div>'
+              +stopListHtml(t, nx?nx.name.split(' ')[0]:null, i===times.length-1, key)+'</div>'; }).join('')+'</div>';
         html+='<div class="meta" style="margin-top:10px">Lanes: <span style="color:var(--green)">green = available</span> · striped = not free · solid = driving that stint. Click a lane cell to assign, drag blocks to swap, or drag names from the bank.</div></div>';
       });
     });
@@ -4180,7 +4216,7 @@ document.getElementById('content').addEventListener('click',e=>{
   const tz=e.target.closest&&e.target.closest('[data-action="tyreset"]');
   if(tz){ if(!isAdmin()||state.stintsLocked) return; const k=tz.dataset.key, n=+tz.dataset.n, v=tz.dataset.v==='1'; state.tyrePlan=objOr(state.tyrePlan); const p=(state.tyrePlan[k]=objOr(state.tyrePlan[k])); p.stops=objOr(p.stops);
     if(tz.classList.contains('on')) return;
-    const r=carTyreRule(k), ps=tz.closest('.pitstop'), chg=!!(ps&&ps.classList.contains('chg')), def=!(ps&&ps.classList.contains('sp'))&&(r==='every'||(r==='second'&&n%2===0)||(r==='driver'&&chg));
+    const r=carTyreRule(k), ps=tz.closest('.pitstop,.stopln'), chg=!!(ps&&ps.classList.contains('chg')), def=!(ps&&ps.classList.contains('sp'))&&(r==='every'||(r==='second'&&n%2===0)||(r==='driver'&&chg));
     if(v===def) delete p.stops[n]; else p.stops[n]=v; save(); renderContent(); setStatus('Stop '+n+': '+(v?'new tyres':'same tyres')+'. Stint times updated.'); return; }
   const tt=e.target.closest&&e.target.closest('[data-action="tyretoggle"]');
   if(tt){ if(!isAdmin()||state.stintsLocked) return; const k=tt.dataset.key, n=+tt.dataset.n; state.tyrePlan=objOr(state.tyrePlan); const p=(state.tyrePlan[k]=objOr(state.tyrePlan[k])); p.stops=objOr(p.stops);

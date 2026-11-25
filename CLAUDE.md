@@ -146,6 +146,13 @@ Details in the plugin's [CLAUDE.md](files/edr-team-builder/CLAUDE.md).
   `renderMyBlocks` still called it, so the Availability tab and driver step 3 threw a ReferenceError and
   rendered blank for anyone with a block grid on screen. Restored. When removing a helper, grep the HTML
   for its callers first; `node --check` does not catch an undefined function.
+- 3.1.3 **two clocks + stops on phones**: every clock is real time in the viewer's timezone EXCEPT the
+  weather line (`weatherAt().label`), now prefixed "in-game"; the weather box field is "In-game time at
+  session open" (`startTod`, was mislabelled "START (local)"). `stopListHtml(t,nxtName,last,key)` renders a
+  stint's stops as plain lines: under each stint in driver step 4, and as a "Pit stops, stint by stint"
+  list under each car (`.pitlist`, shown only <=640px, with the Same/New tyres switch for admins; the
+  `tyreset` handler accepts `.stopln` as well as `.pitstop`). On phones the grid's label column is 96px
+  (`--sglab`), the grid pit row and the label meta are hidden.
 
 ## Team Builder workflow & roles (v2.4)
 

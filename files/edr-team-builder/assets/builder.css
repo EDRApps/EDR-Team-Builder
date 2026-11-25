@@ -241,6 +241,19 @@
   .ps-ty{font-size:10.5px;color:var(--dim)} .pitstop.ty .ps-ty{color:#9cc4ff;font-weight:600}
   .ps-sec{font-size:10px;color:var(--dim)}
   .ps-flag{font-size:11px;color:var(--body);text-align:center;padding:4px 0 2px}
+  .stopln{display:flex;gap:10px;font-size:12px;color:var(--body);padding:3px 0;line-height:1.4}
+  .stopln .sl-at{color:#fff;font-weight:600;min-width:42px;flex:0 0 auto}
+  .stopln .sl-what{flex:1;min-width:0;white-space:normal}
+  .stopln.chg b{color:var(--yellow)} .stopln.ty .sl-ty{color:#9cc4ff;font-weight:600}
+  .wiz-stops{margin-top:8px;padding-top:6px;border-top:1px solid var(--line)}
+  .pitlist{display:none}
+  .pl-title{font-family:'Prompt',sans-serif;font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--dim);margin:14px 0 8px}
+  .pl-stint{border:1px solid #2a2a3e;border-left:3px solid var(--yellow);border-radius:10px;padding:8px 10px;margin-bottom:6px;background:#141422}
+  .pl-head{color:#fff;font-size:13px;font-weight:600;margin-bottom:4px} .pl-head b{color:var(--yellow);margin-right:4px}
+  .stopln .tyseg{display:inline-flex;vertical-align:middle;margin:2px 0}
+  /* phones: the list under each car carries the stops, so the tall grid row goes; names beat the meta */
+  @media (max-width:640px){ .pitlist{display:block} .stintgrid{--sglab:96px}
+    .stintgrid .pitlabel,.stintgrid .pitcell{display:none} .stintgrid .sg-label .meta{display:none} }
   .tyseg{display:flex;background:#0d0d18;border:1px solid #2a2a3e;border-radius:8px;padding:2px;gap:2px}
   .tyseg span{flex:1;text-align:center;font-size:10.5px;padding:4px 2px;border-radius:6px;color:var(--dim);cursor:pointer;user-select:none;white-space:nowrap}
   .tyseg span:hover{color:#fff}
