@@ -2,7 +2,7 @@
 /**
  * Plugin Name: EDR Team Builder
  * Description: Endurotech Racing endurance team + stint planner. Pulls Garage 61 pace and official iRacing session times, collects driver availability in-house, and builds Pro/Casual teams and stint rotations. Add the [edr_team_builder] shortcode to a page.
- * Version: 3.0.6
+ * Version: 3.0.7
  * Author: Endurotech Racing
  * License: GPL-2.0-or-later
  */
@@ -11,7 +11,7 @@ if (!defined('ABSPATH')) exit; // no direct access
 
 define('EDR_TB_DIR', plugin_dir_path(__FILE__));
 define('EDR_TB_URL', plugin_dir_url(__FILE__));
-define('EDR_TB_VER', '3.0.6');
+define('EDR_TB_VER', '3.0.7');
 
 require_once EDR_TB_DIR . 'includes/garage61.php';
 require_once EDR_TB_DIR . 'includes/iracing.php';
@@ -1753,16 +1753,18 @@ function edr_tb_rest_ics(WP_REST_Request $req) {
             foreach ((array) ($c['drivers'] ?? array()) as $name => $d) {
                 if (edr_tb_ics_key($name) !== $want) continue;
                 $evName = (string) ($c['name'] ?? explode('|', $ev)[0]);
-                if (!empty($d['quali'][0]) && !empty($d['quali'][1])) {   // 3.0.6
-                    $qs = intval($d['quali'][0]) / 1000; $qe = intval($d['quali'][1]) / 1000;
+                $pre = !empty($d['pre']) ? (array) $d['pre'] : (!empty($d['quali'][0]) ? array(array('l' => 'Practice & qualifying', 's' => $d['quali'][0], 'e' => $d['quali'][1])) : array());
+                foreach ($pre as $pi => $p) {   // 3.0.7: practice / qualifying, each its own event
+                    $qs = intval($p['s'] ?? 0) / 1000; $qe = intval($p['e'] ?? 0) / 1000; if (!$qs || !$qe) continue;
+                    $lbl = (string) ($p['l'] ?? 'Practice');
                     $lines[] = 'BEGIN:VEVENT';
-                    $lines[] = 'UID:' . md5($ev . '|' . $name . '|quali') . '@edr-team-builder';
+                    $lines[] = 'UID:' . md5($ev . '|' . $name . '|pre|' . $lbl) . '@edr-team-builder';
                     $lines[] = 'DTSTAMP:' . gmdate('Ymd\\THis\\Z');
                     $lines[] = 'DTSTART:' . gmdate('Ymd\\THis\\Z', $qs);
                     $lines[] = 'DTEND:' . gmdate('Ymd\\THis\\Z', $qe);
-                    $lines[] = 'SUMMARY:' . edr_tb_ics_esc('EDR · ' . $evName . ' · ' . ($d['car'] ?? '') . ' · practice & qualifying');
+                    $lines[] = 'SUMMARY:' . edr_tb_ics_esc('EDR · ' . $evName . ' · ' . ($d['car'] ?? '') . ' · ' . strtolower($lbl));
                     if ($url) $lines[] = 'URL:' . $url . '#stints';
-                    $lines[] = 'BEGIN:VALARM'; $lines[] = 'TRIGGER:-PT30M'; $lines[] = 'ACTION:DISPLAY'; $lines[] = 'DESCRIPTION:' . edr_tb_ics_esc('Practice and qualifying in 30 minutes'); $lines[] = 'END:VALARM';
+                    $lines[] = 'BEGIN:VALARM'; $lines[] = 'TRIGGER:-PT30M'; $lines[] = 'ACTION:DISPLAY'; $lines[] = 'DESCRIPTION:' . edr_tb_ics_esc($lbl . ' in 30 minutes'); $lines[] = 'END:VALARM';
                     $lines[] = 'END:VEVENT';
                 }
                 foreach ((array) ($d['times'] ?? array()) as $k => $t) {
@@ -1834,8 +1836,12 @@ function edr_tb_confirm_text($stage, $plan) {
         } else {
             $lines[] = '⏳ **' . $evName . '** is 2 days away.';
             $q = array();
-            foreach ((array) ($plan['channels']['cars'] ?? array()) as $car) if (!empty($car['quali']['d'])) $q[] = $car['name'] . ' ' . $car['quali']['d'];
-            if ($q) $lines[] = 'Practice & qualifying: ' . implode(', ', $q) . ' (in the car when the session opens).';
+            foreach ((array) ($plan['channels']['cars'] ?? array()) as $car) {
+                $bits = array();
+                foreach ((array) ($car['pre'] ?? array()) as $p) if (!empty($p['d'])) $bits[] = strtolower((string) ($p['l'] ?? '')) . ' ' . $p['d'];
+                if ($bits) $q[] = $car['name'] . ': ' . implode(', ', $bits);
+            }
+            if ($q) $lines[] = 'Before the race · ' . implode(' · ', $q) . '.';
             if ($c['pending']) $lines[] = 'Still waiting on: ' . implode(', ', $c['pending']) . ' — please confirm your stints.' . $link;
             if ($cant)         $lines[] = '✗ Can\'t make one: ' . implode(', ', $cant) . ' — admins, these need a swap.';
         }
@@ -1977,9 +1983,11 @@ function edr_tb_vc_text($car, $ch) {
     $lines = array('🏁 **' . ($ch['name'] ?? 'Endurance race') . '** — **' . ($car['name'] ?? 'Car') . '**'
         . (!empty($car['cls']) ? ' (' . $car['cls'] . ')' : ''));
     if (!empty($car['drivers'])) $lines[] = 'Drivers: ' . implode(', ', (array) $car['drivers']);
-    if (!empty($car['quali']['s'])) {   // 3.0.6: who is in the car for practice + qualifying, and when
-        $lines[] = 'Practice & qualifying: ' . ((string) ($car['quali']['d'] ?? '') !== '' ? '**' . $car['quali']['d'] . '**' : 'nobody yet')
-            . ' · ' . $t($car['quali']['s'], 't') . '–' . $t($car['quali']['e'], 't');
+    // 3.0.7: practice and qualifying are separate blocks, each with its own driver
+    $pre = !empty($car['pre']) ? (array) $car['pre'] : (!empty($car['quali']['s']) ? array(array('l' => 'Practice & qualifying') + (array) $car['quali']) : array());
+    foreach ($pre as $p) {
+        if (empty($p['s'])) continue;
+        $lines[] = ($p['l'] ?? 'Practice') . ': ' . ((string) ($p['d'] ?? '') !== '' ? '**' . $p['d'] . '**' : 'nobody yet') . ' · ' . $t($p['s'], 't') . '–' . $t($p['e'], 't');
     }
     if ($stints) $lines[] = 'Race start (green flag) ' . $t($stints[0]['s'], 'F');
     $lines[] = '';

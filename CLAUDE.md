@@ -117,7 +117,7 @@ Details in the plugin's [CLAUDE.md](files/edr-team-builder/CLAUDE.md).
   `greenOff(w) = START_OFFSETS[w] + RACE_PRE`, `RACE_PRE = session_minutes - race_time_limit`
   (`evTiming.preMin`; 992 Cup 48 = practice 30 + quali 15 + grid). In-game race start = simulated
   start + the LAST `simulated_time_offsets` entry (offsets are per session type) (3.0.5).
-- Practice & qualifying driver per car (`qualiAssign`, default = stint 1 driver), shown on Stints,
+- Practice and qualifying are separate P and Q blocks before stint 1 (3.0.7; `qualiAssign[car] = {p, q}` driver ids, no default, no fuel), shown on Stints,
   step 4, calendar, Discord; availability blocks marked "practice"/"green" (3.0.6).
 - **Tank-based stints** (3.0.6): `stint.mode='fuel'`, `stint.tanks` 1–3. Per car
   `carStintLen()` = round5(floor(tank / fuel-per-lap) x median lap + pit loss) x tanks, fuel per

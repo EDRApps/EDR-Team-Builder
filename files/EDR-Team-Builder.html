@@ -228,6 +228,8 @@
   .rd-big{font-family:'Prompt',sans-serif;font-weight:700;font-size:24px;color:#fff;margin:2px 0 6px}
   .rd-bar{height:6px;border-radius:3px;background:#1b1b2e;overflow:hidden;margin:4px 0 6px} .rd-bar span{display:block;height:100%;background:var(--yellow)}
   .sumpre{white-space:pre-wrap;font-size:12px;background:#101020;border-radius:8px;padding:10px;margin-top:10px;color:var(--body)}
+  .sg-time.pre{color:var(--yellow)} .sg-time.pre b{color:var(--yellow)}
+  .sg-block.pre{border-style:dashed}
   .qualirow{display:flex;gap:12px;flex-wrap:wrap;align-items:center;justify-content:space-between;margin:-4px 0 10px}
   .qualiwho{font-size:12px;color:var(--body)} .qualiwho select{font-size:12px;padding:3px 6px;margin-left:4px}
   .bmark{display:block;font-size:9px;font-weight:600;color:var(--yellow);margin-top:2px;letter-spacing:.02em}
@@ -787,26 +789,30 @@ function applyIrTiming(ev, sea){
    Stints, coverage, confirmations, voice channels and race day all run from greenOff(window). */
 let RACE_PRE=0, PRE_PRACTICE=0, PRE_QUALIFY=0;
 function greenOff(w){ return ((typeof START_OFFSETS!=='undefined'&&START_OFFSETS[w])||0)+RACE_PRE; }
-/* 3.0.6: practice + qualifying need a driver in the car from the moment the session opens until the
-   green flag. Per car, state.qualiAssign[carKey] = driver id; unset = whoever drives stint 1. */
-function qualiOf(c){
-  const team=c.team.map(String), set=(state.qualiAssign||{})[c.key];
-  if(set!=null && team.indexOf(String(set))>=0) return {id:set, auto:false};
-  const first=c.arr&&c.arr[0];
-  return (first!=null && team.indexOf(String(first))>=0) ? {id:first, auto:true} : {id:null, auto:true};
+/* 3.0.7: practice and qualifying are their own blocks in front of stint 1, each with its own
+   driver (not tied to whoever starts the race) and no fuel. state.qualiAssign[carKey] =
+   {p: driverId, q: driverId}; an older single number counts for both. Unset = nobody yet. */
+function preSlots(c){
+  if(!RACE_PRE) return [];
+  const o=(START_OFFSETS[c.win]||0), p=PRE_PRACTICE, q=PRE_QUALIFY, out=[];
+  if(p) out.push({k:'p', label:'Practice', short:'P', s:o, e:o+p});
+  if(q) out.push({k:'q', label:'Qualifying', short:'Q', s:o+p, e:o+p+q});
+  if(!out.length) out.push({k:'p', label:'Practice & qualifying', short:'P/Q', s:o, e:o+RACE_PRE});
+  return out;
 }
-/* availability picker: say which block holds the session opening (practice) and the green flag,
-   for the start slots the plan actually uses, so a driver ticking that block knows what it covers */
-function blockMarks(i){
-  if(!RACE_PRE||typeof START_OFFSETS==='undefined') return '';
-  const s=i*AV_BLOCK, e=s+AV_BLOCK, used={};
-  used[state.stint.window]=1; Object.keys(objOr(state.stintWin)).forEach(function(k){ used[state.stintWin[k]]=1; });
-  const hm=function(m){ return fmtClock(m).split(' ').slice(1).join(' '); }, out=[];
-  Object.keys(used).forEach(function(w){ const o=START_OFFSETS[w]; if(o==null) return;
-    if(o>=s&&o<e) out.push('practice '+hm(o)); if(o+RACE_PRE>=s&&o+RACE_PRE<e) out.push('green '+hm(o+RACE_PRE)); });
-  return out.join(' · ');
+function preWho(c,k){
+  const v=objOr(state.qualiAssign)[c.key]!==undefined?state.qualiAssign[c.key]:null; if(v==null) return null;
+  const id=(typeof v==='object')?v[k]:v;
+  return (id!=null && c.team.map(String).indexOf(String(id))>=0)?id:null;
 }
-function qualiSpan(c){ const o=(START_OFFSETS[c.win]||0); return {s:o, e:o+RACE_PRE}; }
+function setPreWho(key,k,id){
+  state.qualiAssign=objOr(state.qualiAssign); let v=state.qualiAssign[key];
+  if(v==null||typeof v!=='object') v=(v==null)?{}:{p:v,q:v};
+  if(id==null) delete v[k]; else v[k]=id;
+  if(Object.keys(v).length) state.qualiAssign[key]=v; else delete state.qualiAssign[key];
+}
+/* one list per car: [{k, label, s, e, id}] */
+function preList(c){ return preSlots(c).map(function(x){ return Object.assign({}, x, {id:preWho(c,x.k)}); }); }
 function preRaceLine(w){
   if(!RACE_PRE) return '';
   const o=(START_OFFSETS[w]||0), p=PRE_PRACTICE, q=PRE_QUALIFY;
@@ -940,7 +946,9 @@ function excludeDriver(name){
   Object.keys(state.stintAssign||{}).forEach(function(k){
     if(Array.isArray(state.stintAssign[k])) state.stintAssign[k]=state.stintAssign[k].map(function(x){ return (x!=null&&gone[String(x)])?null:x; });
   });
-  Object.keys(objOr(state.qualiAssign)).forEach(function(k){ if(gone[String(state.qualiAssign[k])]) delete state.qualiAssign[k]; });
+  Object.keys(objOr(state.qualiAssign)).forEach(function(k){ const v=state.qualiAssign[k];
+    if(v!=null&&typeof v==='object'){ ['p','q'].forEach(function(x){ if(gone[String(v[x])]) delete v[x]; }); if(!Object.keys(v).length) delete state.qualiAssign[k]; }
+    else if(gone[String(v)]) delete state.qualiAssign[k]; });
   applyAvailToDrivers(); save(); renderContent();
 }
 function restoreDriver(key){
@@ -1132,8 +1140,9 @@ function confirmPlan(byId){
     c.members.forEach(function(m){ const mine=driverStints(c,m.id); if(!mine.length) return;
       drivers[m.name]={sig:stintSig(c,mine), car:c.label, key:c.key, stints:mine.map(function(i){ return i+1; }),
         times:mine.map(function(i){ return [WIN_START_MS+c.times[i].s*60000, WIN_START_MS+c.times[i].e*60000]; })}; });
-    if(RACE_PRE){ const q=qualiOf(c), qs=qualiSpan(c), qm=q.id!=null?c.members.find(function(m){ return String(m.id)===String(q.id); }):null;
-      if(qm){ const d=drivers[qm.name]||(drivers[qm.name]={sig:'', car:c.label, key:c.key, stints:[], times:[]}); d.quali=[WIN_START_MS+qs.s*60000, WIN_START_MS+qs.e*60000]; } }
+    preList(c).forEach(function(x){ const m=x.id!=null?c.members.find(function(mm){ return String(mm.id)===String(x.id); }):null; if(!m) return;
+      const d=drivers[m.name]||(drivers[m.name]={sig:'', car:c.label, key:c.key, stints:[], times:[]});
+      (d.pre=d.pre||[]).push({l:x.label, s:WIN_START_MS+x.s*60000, e:WIN_START_MS+x.e*60000}); });
   });
   const _ev=calEvent(state.evsel);
   return {ev:state.evsel, name:_ev?_ev.n:state.evsel.split('|')[0], start:start||0, drivers:drivers};
@@ -1179,9 +1188,9 @@ function channelPlan(byId){
   return {ev:state.evsel, name:ev?ev.n:state.evsel.split('|')[0], swap:(state.swapNote||'').trim(),
     cars:stintCars(byId).map(function(c){
       const mem={}; c.members.forEach(function(m){ mem[m.id]=m; });
-      const _q=RACE_PRE?qualiOf(c):{id:null}, _qs=qualiSpan(c), _qm=_q.id!=null?mem[_q.id]:null;
+
       return {key:c.key, name:(multi?c.cls+' ':'')+c.label, cls:c.cls, drivers:c.members.map(function(m){ return m.name.split(' ')[0]; }),
-        quali:RACE_PRE?{d:_qm?_qm.name.split(' ')[0]:'', s:WIN_START_MS+_qs.s*60000, e:WIN_START_MS+_qs.e*60000}:null,
+        pre:preList(c).map(function(x){ const m=x.id!=null?mem[x.id]:null; return {l:x.label, d:m?m.name.split(' ')[0]:'', s:WIN_START_MS+x.s*60000, e:WIN_START_MS+x.e*60000}; }),
         stints:c.times.map(function(t,i){ const m=mem[c.arr[i]], wx=weatherAt(t.s,c.off,c.win,t.e);
           return {n:i+1, s:WIN_START_MS+t.s*60000, e:WIN_START_MS+t.e*60000, d:m?m.name.split(' ')[0]:'', wx:wx?wx.icon:''}; })};
     })};
@@ -1449,11 +1458,12 @@ function renderWizard(byId){
       const mine=driverStints(car,r.me.id);
       h+='<div class="wiz-label" style="margin-top:22px">You drive '+mine.length+' stint'+(mine.length===1?'':'s')+'</div>';
       const sw=swapsFor(state.evsel);
-      if(RACE_PRE){ const q=qualiOf(car), qs=qualiSpan(car);
-        if(q.id!=null && String(q.id)===String(r.me.id)) h+='<div class="wiz-card" style="border-left:4px solid var(--yellow);margin-top:18px"><div class="wiz-eyebrow" style="font-size:11px">You do practice and qualifying</div>'
-          +'<div class="head" style="color:#fff;font-size:18px;margin:6px 0 2px">Be in the car by '+esc(fmtClock(qs.s))+'</div>'
-          +'<div class="meta">'+esc(preRaceLine(car.win))+'.</div></div>';
-        else if(q.id!=null){ const qm=byId[q.id]; h+='<div class="meta" style="margin-top:14px">Practice and qualifying: <b style="color:#fff">'+esc(qm?qm.name.split(' ')[0]:'')+'</b> · '+esc(preRaceLine(car.win))+'.</div>'; } }
+      if(RACE_PRE){ const pl=preList(car), mine=pl.filter(function(x){ return x.id!=null && String(x.id)===String(r.me.id); });
+        if(mine.length) h+='<div class="wiz-card" style="border-left:4px solid var(--yellow);margin-top:18px"><div class="wiz-eyebrow" style="font-size:11px">Before the race</div>'
+          +mine.map(function(x){ return '<div class="head" style="color:#fff;font-size:17px;margin:6px 0 0">'+esc(x.label)+' · '+esc(fmtClock(x.s))+'–'+esc(fmtClock(x.e).split(' ').slice(1).join(' '))+'</div>'; }).join('')
+          +'<div class="meta" style="margin-top:6px">Be in the car by '+esc(fmtClock(mine[0].s))+'. Green flag about '+esc(fmtClock(greenOff(car.win)).split(' ').slice(1).join(' '))+'.</div></div>';
+        const others=pl.filter(function(x){ return x.id!=null && String(x.id)!==String(r.me.id); });
+        if(others.length) h+='<div class="meta" style="margin-top:14px">'+others.map(function(x){ const m=byId[x.id]; return esc(x.label)+': <b style="color:#fff">'+esc(m?m.name.split(' ')[0]:'')+'</b>'; }).join(' · ')+'</div>'; }
       if(!mine.length) h+='<p class="wiz-lead" style="font-size:15px">You\'re not driving a stint yet: you back up '+esc(carLabel(c.cls,c.tier,c.ti)||(tierL+' '+(c.ti+1)))+'. If someone in the car can\'t make theirs, you\'re first in line. iRacing needs every declared driver to drive at least 25% of an equal share, so if you stay at none the admins will either give you a stint or take you off the entry.</p>';
       mine.forEach(function(i){ const t=times[i], wx=weatherAt(t.s,off,win,t.e), free=driverFree(r.me,t.s,t.e);
         const rel=sw.find(function(x){ return x.key===car.key&&x.n===i&&(x.st==='open'||x.st==='claimed'); });
@@ -3455,12 +3465,7 @@ function renderStints(byId){
         if(stintMode()==='fuel'){ const f=carFuelInfo(team,byId);
           html+='<div class="meta" style="margin:-4px 0 8px;font-size:11px">'+(f?'1 tank ≈ '+f.laps+' laps ('+f.tank+' L at '+(Math.round(f.fpl*100)/100)+' L/lap from '+esc(f.src)+') × '+fmtLap(f.lap)+' + '+Math.round(f.pit*60)+' s pit ≈ '+fmtMins(f.tankMin)+' · driver stint '+fmtMins(clen)+(state.stintsLocked&&+objOr(state.stintLens)[key]>0?' (as published)':'')
             :'<span style="color:var(--amber)">Set the tank size and fuel per lap for this car to size stints by fuel; using '+fmtMins(clen)+' for now.</span>')+'</div>'; }
-        if(RACE_PRE){ const q=qualiOf({key:key, team:team, arr:arr}), qm=q.id!=null?byId[q.id]:null, o=(START_OFFSETS[win]||0), qFree=qm?driverFree(qm,o,o+RACE_PRE):false;
-          html+='<div class="qualirow"><span class="meta" style="font-size:11px">'+esc(preRaceLine(win))+'. Stints run from the green flag.</span><span class="qualiwho">Practice &amp; qualifying: '
-            +(isAdmin()&&!state.stintsLocked?'<select data-action="qualiset" data-key="'+esc(key)+'"><option value="">'+(qm&&q.auto?esc(qm.name.split(' ')[0])+' (stint 1 driver)':'stint 1 driver')+'</option>'
-              +members.map(function(m){ return '<option value="'+m.id+'"'+(!q.auto&&String(q.id)===String(m.id)?' selected':'')+'>'+esc(m.name)+(driverFree(m,o,o+RACE_PRE)?'':' (not free)')+'</option>'; }).join('')+'</select>'
-              :'<b>'+(qm?esc(qm.name.split(' ')[0]):'nobody yet')+'</b>')
-            +(qm&&!qFree?' <span style="color:var(--red)">not free then</span>':'')+'</span></div>'; }
+        if(RACE_PRE) html+='<div class="meta" style="margin:-4px 0 10px;font-size:11px">'+esc(preRaceLine(win))+'. Practice and qualifying are the P and Q blocks; stints (and fuel) start at the green flag.</div>';
         if(isAdmin()&&carName){ const bc=(state.fuelCfg.byCar||{})[carName]||{}; const def=resolveFuel(carName);
           html+='<div class="carfuel"><span class="meta" style="font-size:10px;text-transform:uppercase;letter-spacing:.05em;color:var(--yellow)">'+esc(carName)+'</span>'
             +'<label>tank <input type="number" min="0" step="1" value="'+(bc.tankL||'')+'" placeholder="'+(def.tankL||'—')+'" data-action="cartank" data-car="'+esc(carName)+'">L</label>'
@@ -3471,10 +3476,14 @@ function renderStints(byId){
         { const _c=_SH&&_SH.cars.find(function(x){ return x.key===key; }), _ps=_c?carProblems(_c):[];
           if(_ps.length) html+='<div class="carwarn" style="border:0;padding:0;margin:0 0 10px;display:flex;gap:10px;align-items:center;flex-wrap:wrap"><span>'+_ps.map(esc).join(' · ')+'</span>'
             +((_c.gaps.length||_c.conflicts.length||_c.underFair.length)&&!state.stintsLocked?'<button class="btn btn-ghost" data-action="fixcar" data-key="'+esc(key)+'" style="font-size:10px;padding:4px 10px">Fix this car</button>':'')+'</div>'; }
-        html+='<div class="stintwrap" data-key="'+key+'"><div class="stintgrid" style="grid-template-columns:150px repeat('+times.length+',minmax(84px,1fr))">';
+        const _pc={key:key, team:team, win:win}, _pl=preList(_pc);
+        html+='<div class="stintwrap" data-key="'+key+'"><div class="stintgrid" style="grid-template-columns:150px '+(_pl.length?'repeat('+_pl.length+',minmax(76px,.8fr)) ':'')+'repeat('+times.length+',minmax(84px,1fr))">';
         html+='<div class="sg-corner">stint →</div>';
+        _pl.forEach(function(x){ html+='<div class="sg-time pre"><b>'+x.short+'</b>'+esc(x.label)+'<div style="font-size:9px">'+esc(fmtClock(x.s).split(' ').slice(1).join(' '))+'–'+esc(fmtClock(x.e).split(' ').slice(1).join(' '))+'</div></div>'; });
         times.forEach((t,i)=>{ const wx=weatherAt(t.s,off,win,t.e); html+='<div class="sg-time"><b>'+(i+1)+'</b>'+fmtClock(t.s)+(wx?'<div style="font-size:9px;color:'+(wx.wet?'#6ea8ff':wx.night?'var(--dim)':'var(--amber)')+'">'+wx.icon+' '+wx.label+'</div>':'')+'</div>'; });
         html+='<div class="sg-label" style="font-family:Prompt;font-weight:600;color:#fff;text-transform:uppercase;font-size:11px;letter-spacing:.05em">Driving</div>';
+        _pl.forEach(function(x){ const m=x.id!=null?byId[x.id]:null, free=m?driverFree(m,x.s,x.e):false;
+          html+='<div class="sg-block pre'+(m?(free?'':' conflict'):' empty')+'" data-stintcell data-pre="'+x.k+'" data-key="'+key+'" data-driver="'+(m?x.id:'')+'" style="--dc:'+(m?colr[x.id]:'transparent')+'" title="'+esc(x.label)+(m?(free?' · '+esc(m.name):' · NOT available then'):' · drag a driver here or click their lane')+'">'+(m?esc(m.name.split(' ')[0])+(free?'':' <span class="warn">!</span>'):'+')+'</div>'; });
         arr.forEach((id,i)=>{
           const t=times[i], m=(id!=null&&mem.has(id))?byId[id]:null;
           const free=m?driverFree(m,t.s,t.e):false;
@@ -3483,6 +3492,8 @@ function renderStints(byId){
         members.forEach(m=>{
           const _mine=driverStints({arr:arr},m.id);   // ✓ / ✗ / ⏳ = their stint confirmation
           html+='<div class="sg-label"><span class="sg-dot" style="background:'+colr[m.id]+'"></span><span style="overflow:hidden;text-overflow:ellipsis">'+esc(m.name.split(' ')[0])+'</span>'+(_cfOpen&&_mine.length?cfIcon(confirmState(m.name,stintSig({key:key,win:win,times:times},_mine)).st):'')+'<span class="meta">'+(count[m.id]||0)+'× · '+availBadge(m)+'</span></div>';
+          _pl.forEach(function(x){ const free=driverFree(m,x.s,x.e), on=x.id!=null&&String(x.id)===String(m.id);
+            html+='<div class="sg-lane '+(on?'driving':free?'free':'busy')+'" data-lanecell data-pre="'+x.k+'" data-key="'+key+'" data-driver="'+m.id+'" style="--dc:'+colr[m.id]+'" title="'+esc(m.name.split(' ')[0])+' · '+esc(x.label)+' · '+(free?'available':'not available')+(on?' · click to clear':' · click to assign')+'"></div>'; });
           times.forEach((t,i)=>{
             const free=driverFree(m,t.s,t.e), driving=arr[i]===m.id;
             html+='<div class="sg-lane '+(driving?'driving':free?'free':'busy')+(free&&!driverSure(m,t.s,t.e)?' maybe':'')+'" data-lanecell data-key="'+key+'" data-block="'+i+'" data-driver="'+m.id+'" style="--dc:'+colr[m.id]+'" title="'+esc(m.name.split(' ')[0])+' · stint '+(i+1)+' · '+(free?'available':'not available')+(driving?' · driving, click to clear':' · click to assign')+'"></div>';
@@ -3490,6 +3501,7 @@ function renderStints(byId){
         });
         if(fp.anyCfg){
           html+='<div class="sg-label" style="color:var(--dim);font-size:10px;text-transform:uppercase;letter-spacing:.04em">Fuel / laps</div>';
+          _pl.forEach(function(){ html+='<div style="border-top:1px solid #1a1a1a"></div>'; });
           fp.perBlock.forEach(b=>{ html+='<div style="font-size:9px;color:var(--dim);text-align:center;padding:3px 2px;border-top:1px solid #1a1a1a" title="'+b.laps+' laps · '+b.fuel+'L this stint'+(b.pit?' · pit stop':'')+'">'+(b.laps?b.laps+' · '+b.fuel+'L':'—')+(b.pit?'<br><span style="color:var(--amber)">⛽ pit</span>':'')+'</div>'; });
         }
         html+='</div></div>';
@@ -3576,9 +3588,8 @@ function raceHealth(byId){
     const fairMin=c.members.length?tot*FAIR_SHARE/c.members.length:0;
     const underFair=c.members.filter(function(m){ return per[m.id]<fairMin; });
     const lowAvail=c.members.filter(function(m){ return m.avail && m.avail.pct!=null && m.avail.pct<35; });
-    const q=RACE_PRE?qualiOf(c):{id:null}, qs=qualiSpan(c), qm=q.id!=null?byId[q.id]:null;
-    const qualiBad=!!RACE_PRE && (!qm || !driverFree(qm,qs.s,qs.e));
-    return Object.assign({}, c, {gaps:gaps, conflicts:conflicts, underFair:underFair, lowAvail:lowAvail, rest:restWarnings(c), mins:per, fairMin:fairMin, quali:qm, qualiBad:qualiBad});
+    const preBad=preList(c).filter(function(x){ const m=x.id!=null?byId[x.id]:null; return !m || !driverFree(m,x.s,x.e); }).map(function(x){ const m=x.id!=null?byId[x.id]:null; return x.label+(m?': '+m.name.split(' ')[0]+' not free':': nobody yet'); });
+    return Object.assign({}, c, {gaps:gaps, conflicts:conflicts, underFair:underFair, lowAvail:lowAvail, rest:restWarnings(c), mins:per, fairMin:fairMin, preBad:preBad});
   });
   return {pool:pool, unplaced:unplaced, cars:cars};
 }
@@ -3588,7 +3599,7 @@ function carProblems(c){
   if(c.conflicts.length) p.push(c.conflicts.length+' conflict'+(c.conflicts.length>1?'s':''));
   if(c.underFair.length) p.push(c.underFair.map(function(m){ return m.name.split(' ')[0]; }).join(', ')+' under the 25% fair-share rule');
   if(c.rest.length) p.push(c.rest.map(function(m){ return m.name.split(' ')[0]; }).join(', ')+' over 4 h in 6 h');
-  if(c.qualiBad) p.push(c.quali?c.quali.name.split(' ')[0]+' is not free for practice and qualifying':'nobody for practice and qualifying');
+  if(c.preBad&&c.preBad.length) p.push(c.preBad.join(', '));
   return p;
 }
 /* who on the roster has not given times for the selected race */
@@ -3691,8 +3702,8 @@ function renderRaceDay(byId){
     const T=rdTimes(c), cur=T.find(function(t){ return now>=t.s&&now<t.e; }), first=T[0], lastT=T[T.length-1];
     const team=c.team.map(String), name=function(i){ const id=c.arr[i], m=(id!=null&&team.indexOf(String(id))>=0)?byId[id]:null; return m?m.name.split(' ')[0]:'nobody yet'; };
     let body='';
-    const _q=RACE_PRE?qualiOf(c):{id:null}, _qn=(_q.id!=null&&byId[_q.id])?byId[_q.id].name.split(' ')[0]:'';
-    if(now<first.s) body='<div class="rd-big">Green flag in '+fmtLeft(first.s-now)+'</div><div class="meta">'+(_qn?'<b style="color:#fff">'+esc(_qn)+'</b> does practice and qualifying. ':'')+esc(name(0))+' starts the race at about '+fmtHM(first.s)+'.'+(RACE_PRE?' '+esc(preRaceLine(c.win))+'.':'')+'</div>';
+    const _qn=preList(c).filter(function(x){ return x.id!=null&&byId[x.id]; }).map(function(x){ return x.label+' '+byId[x.id].name.split(' ')[0]; }).join(', ');
+    if(now<first.s) body='<div class="rd-big">Green flag in '+fmtLeft(first.s-now)+'</div><div class="meta">'+(_qn?'<b style="color:#fff">'+esc(_qn)+'</b>. ':'')+esc(name(0))+' starts the race at about '+fmtHM(first.s)+'.'+(RACE_PRE?' '+esc(preRaceLine(c.win))+'.':'')+'</div>';
     else if(now>=lastT.e) body='<div class="rd-big">Finished</div><div class="meta">Last stint ended at '+fmtHM(lastT.e)+'.</div>';
     else if(cur){
       const nx=T[cur.i+1], pct=Math.round((now-cur.s)/(cur.e-cur.s)*100);
@@ -3900,7 +3911,7 @@ document.getElementById('content').addEventListener('change',e=>{
     if(a==='cartank'){ if(v>0)bc.tankL=v; else delete bc.tankL; } else { if(v>0)bc.fuelPerLap=v; else delete bc.fuelPerLap; }
     if(!Object.keys(bc).length) delete state.fuelCfg.byCar[car];
     save(); renderContent(); }
-  else if(a==='qualiset'){ if(!isAdmin()) return; const k=e.target.dataset.key, v=e.target.value; state.qualiAssign=objOr(state.qualiAssign); if(v==='') delete state.qualiAssign[k]; else state.qualiAssign[k]=+v; save(); renderContent(); setStatus('Practice and qualifying driver saved.'); }
+  else if(a==='qualiset_unused'){ if(!isAdmin()) return; const k=e.target.dataset.key, v=e.target.value; state.qualiAssign=objOr(state.qualiAssign); if(v==='') delete state.qualiAssign[k]; else state.qualiAssign[k]=+v; save(); renderContent(); setStatus('Practice and qualifying driver saved.'); }
   else if(a==='wxstart'||a==='wxtemp'||a==='wxmult'||a==='wxwetfrom'||a==='wxwet'||a==='wxrain'){ const W=(state.evWeather[state.evsel]=state.evWeather[state.evsel]||{src:'manual'});
     if(a==='wxstart'){ const v=e.target.value; if(v){ const p=v.split(':'); W.startTod=(+p[0])*60+(+p[1]); } else delete W.startTod; }
     else if(a==='wxtemp'){ W.tempC=e.target.value===''?null:(+e.target.value); }
@@ -4169,6 +4180,8 @@ document.getElementById('content').addEventListener('click',e=>{
   if(cwBtn){ if(!isAdmin()) return; if(state.stintsLocked){ setStatus('Stints are locked — unlock to change the start window.'); return; }
     state.stintWin[cwBtn.dataset.key]=+cwBtn.dataset.win; save(); renderContent(); return; }   // re-times the SAME stint plan — assignments are kept, conflicts recompute
   const lane=e.target.closest&&e.target.closest('[data-lanecell]');
+  if(lane&&lane.dataset.pre){ if(!isAdmin()) return; const k=lane.dataset.key, d=+lane.dataset.driver, cur=(objOr(state.qualiAssign)[k]); const now=(cur!=null&&typeof cur==='object')?cur[lane.dataset.pre]:cur;
+    setPreWho(k, lane.dataset.pre, (now!=null&&String(now)===String(d))?null:d); save(); renderContent(); return; }
   if(lane){ const k=lane.dataset.key,b=+lane.dataset.block,d=+lane.dataset.driver,a=state.stintAssign[k]; if(a){ a[b]=(a[b]===d)?null:d; save(); renderContent(); } return; }
   if(e.target.dataset.action==='carlock'){ if(!isAdmin())return; const d=state.drivers.find(x=>x.id==e.target.dataset.id);
     if(d){
@@ -4314,6 +4327,7 @@ _stintContent.addEventListener('pointerdown',e=>{
   const chip=e.target.closest&&e.target.closest('[data-bankchip]');
   const cell=e.target.closest&&e.target.closest('[data-stintcell]');
   if(chip){ _pd={kind:'bank',driver:chip.dataset.driver}; }
+  else if(cell&&cell.dataset.pre){ if(cell.dataset.driver==='') return; _pd={kind:'bank',driver:cell.dataset.driver}; }
   else if(cell){ if(cell.dataset.driver==='') return; _pd={kind:'cell',key:cell.dataset.key,block:+cell.dataset.block,driver:cell.dataset.driver}; }
   else return;
   e.preventDefault();
@@ -4330,7 +4344,11 @@ document.addEventListener('pointerup',e=>{
   if(_pd){
     const el=document.elementFromPoint(e.clientX,e.clientY);
     const cell=el&&el.closest&&el.closest('[data-stintcell]');
-    if(cell){ const k=cell.dataset.key,b=+cell.dataset.block,a=state.stintAssign[k];
+    if(cell&&cell.dataset.pre){ const k=cell.dataset.key, kp=k.split('|'), roster=state.teams[kp[0]]&&state.teams[kp[0]][kp[1]]&&state.teams[kp[0]][kp[1]][+kp[2]];
+      if(_pd.driver===''){ setPreWho(k,cell.dataset.pre,null); save(); renderContent(); }
+      else if(roster&&roster.map(String).indexOf(String(_pd.driver))>=0){ setPreWho(k,cell.dataset.pre,+_pd.driver); save(); renderContent(); }
+      else setStatus('Only a driver in that car can do its practice or qualifying.'); }
+    else if(cell){ const k=cell.dataset.key,b=+cell.dataset.block,a=state.stintAssign[k];
       if(a){
         if(_pd.kind==='bank'){ a[b]=_pd.driver===''?null:(+_pd.driver); save(); renderContent(); }
         else if(k===_pd.key){ const tmp=a[b]; a[b]=a[_pd.block]; a[_pd.block]=tmp; save(); renderContent(); }
