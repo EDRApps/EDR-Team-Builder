@@ -136,6 +136,12 @@ Details in the plugin's [CLAUDE.md](files/edr-team-builder/CLAUDE.md).
   seconds in the pits; the last stint ends "🏁 To the flag". Stops carry `dt` (minutes into the stint),
   `fuel` (litres in: full tank, or laps to the flag + 1 spare) and `splash`. A final splash defaults to
   same tyres. Picking the value the rule would give anyway deletes the per-stop override.
+- 3.1.1 **automatic fuel per car**: `carFuelInfo(team,byId,key)` uses a number typed for that team car
+  (`tyrePlan[key].fpl`), else the old per-model `fuelCfg.byCar[model].fuelPerLap`, else Garage 61
+  (`carG61Fuel`: drivers' own clean-lap `cars[model].fuelPerLap`, mean weighted by stints driven in
+  `stintAssign[key]`, equal weights when none), else the default. `_fuelEq[key]` falls back to equal
+  weights when the weighted figure would change the stint count (no flip-flop). Admin box per car: "Leave
+  blank to use Garage 61 (x.xx)", per-driver breakdown, "Use Garage 61" clears the car and model numbers.
 
 ## Team Builder workflow & roles (v2.4)
 

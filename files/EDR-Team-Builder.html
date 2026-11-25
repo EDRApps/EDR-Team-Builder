@@ -163,6 +163,8 @@
   .carfuel{display:flex;gap:12px;align-items:center;flex-wrap:wrap;margin:-2px 0 12px;padding:7px 12px;background:var(--panel2);border:1px solid var(--lineSoft);border-radius:var(--rmd)}
   .carfuel label{display:flex;align-items:center;gap:5px;font-size:11px;color:var(--dim)}
   .carfuel input{width:64px;padding:5px;font-size:11px}
+  .cf-note{font-size:11px;color:var(--dim)} .cf-note.mine{color:var(--amber)}
+  .cf-brk{flex-basis:100%;font-size:10px;color:var(--dim)}
   /* ---- availability matrix ---- */
   .avmatrix{border-collapse:collapse;font-size:12px;min-width:100%}
   .avmatrix th,.avmatrix td{padding:7px 9px;text-align:center;border:1px solid var(--lineSoft);white-space:nowrap}
@@ -3267,21 +3269,38 @@ function applyIrWeather(ev, se){  // map an iRacing schedule weather{} onto stat
    (and lapsing confirmations). Published plans keep the lengths they were published with. */
 function stintMode(){ return state.stint.mode==='fuel'?'fuel':'min'; }
 function _med(a){ a=a.filter(function(x){ return x>0; }).sort(function(x,y){ return x-y; }); return a.length?(a.length%2?a[(a.length-1)/2]:(a[a.length/2-1]+a[a.length/2])/2):0; }
-function carFuelInfo(team, byId){
+/* 3.1.1: fuel per lap for one team car. Order: a number typed for THIS car (tyrePlan[key].fpl), the old
+   per-model number (fuelCfg.byCar[model].fuelPerLap, pre-3.1.1), then Garage 61: each driver's own clean
+   laps in that car, averaged and weighted by how many stints they drive in it (everyone counts once
+   when no stints are set yet), then the default. _fuelEq[key] = equal weights: carTimes sets it when the
+   weighted figure would change the number of stints, so the plan can't flip back and forth. */
+const _fuelEq={};
+function carG61Fuel(members, car, key, eq){
+  const arr=(!eq&&key&&Array.isArray(objOr(state.stintAssign)[key]))?state.stintAssign[key]:[], cnt={};
+  arr.forEach(function(id){ if(id!=null) cnt[id]=(cnt[id]||0)+1; });
+  const parts=members.map(function(m){ return {name:m.name, fpl:+(((m.cars||{})[car]||{}).fuelPerLap)||0, n:cnt[m.id]||0}; }).filter(function(x){ return x.fpl>0; });
+  if(!parts.length) return null;
+  const byStints=parts.some(function(x){ return x.n>0; });
+  let sw=0, sf=0; parts.forEach(function(x){ const w=byStints?x.n:1; sw+=w; sf+=w*x.fpl; });
+  return {fpl:Math.round(sf/sw*1000)/1000, parts:parts, byStints:byStints};
+}
+function carFuelInfo(team, byId, key){
   const members=(team||[]).map(function(id){ return byId[id]; }).filter(Boolean); if(!members.length) return null;
   const cc={}; members.forEach(function(m){ if(m._car) cc[m._car]=(cc[m._car]||0)+1; });
   const car=Object.keys(cc).sort(function(a,b){ return cc[b]-cc[a]; })[0]; if(!car) return null;
-  const def=resolveFuel(car), bc=((state.fuelCfg||{}).byCar||{})[car]||{};
-  const own=_med(members.map(function(m){ return +(((m.cars||{})[car]||{}).fuelPerLap)||0; }));
-  const fpl=+bc.fuelPerLap||own||+def.fuelPerLap, tank=+def.tankL, lap=_med(members.map(function(m){ return +m._median||0; }));
+  const def=resolveFuel(car), bc=((state.fuelCfg||{}).byCar||{})[car]||{}, mine=key?+objOr(objOr(state.tyrePlan)[key]).fpl||0:0;
+  const g61=carG61Fuel(members, car, key, key&&_fuelEq[key]), dflt=+(((state.fuelCfg||{}).byClass||{})[classOf(car)]||{}).fuelPerLap||+(state.fuelCfg||{}).fuelPerLap||0;
+  const fpl=mine||+bc.fuelPerLap||(g61&&g61.fpl)||dflt, tank=+def.tankL, lap=_med(members.map(function(m){ return +m._median||0; }));
   if(!(tank>0&&fpl>0&&lap>0)) return null;
   const laps=Math.floor(tank/fpl), pit=((state.fuelCfg&&+state.fuelCfg.pitLossSec)||60)/60;
-  return {car:car, tank:tank, fpl:fpl, lap:lap, laps:laps, pit:pit, tankMin:laps*lap/60+pit, src:+bc.fuelPerLap?'your number for this car':(own?'its drivers\' own Garage 61 laps':'the default')};
+  const how=mine?'mine':(+bc.fuelPerLap?'model':(g61?'g61':'default'));
+  return {car:car, tank:tank, fpl:fpl, lap:lap, laps:laps, pit:pit, tankMin:laps*lap/60+pit, how:how, g61:g61,
+    src:{mine:'your number for this car', model:'your number for every '+car, g61:'Garage 61'+(g61&&g61.byStints?', weighted by stints driven':''), 'default':'the default'}[how]};
 }
 function carStintLen(key, team, byId){
   if(stintMode()!=='fuel') return Math.max(10,state.stint.len);
   if(state.stintsLocked && +objOr(state.stintLens)[key]>0) return +state.stintLens[key];
-  const f=carFuelInfo(team,byId); if(!f) return Math.max(10,state.stint.len);
+  const f=carFuelInfo(team,byId,key); if(!f) return Math.max(10,state.stint.len);
   const tanks=Math.max(1,Math.min(4,+state.stint.tanks||2));
   return Math.max(10, Math.round(f.tankMin*tanks/5)*5);
 }
@@ -3369,7 +3388,10 @@ function carTimes(key, team, byId, off, race){
     if(typeof fr==='object' && Array.isArray(fr.t)) return fr.t.map(function(x,i){ return {s:off+x[0], e:off+x[1], stops:(fr.st&&fr.st[i])||[]}; });
     if(+fr>0) return stintTimes(off,+fr,race);
   }
-  if(stintMode()==='fuel'){ const f=carFuelInfo(team,byId); if(f) return fuelPlanTimes(off,f,Math.max(1,Math.min(4,+state.stint.tanks||2)),race,key); }
+  if(stintMode()==='fuel'){ _fuelEq[key]=false; const tk=Math.max(1,Math.min(4,+state.stint.tanks||2)); let f=carFuelInfo(team,byId,key);
+    if(f){ let t=fuelPlanTimes(off,f,tk,race,key); const a=objOr(state.stintAssign)[key];
+      if(f.how==='g61'&&f.g61.byStints&&Array.isArray(a)&&a.length&&a.length!==t.length){ _fuelEq[key]=true; f=carFuelInfo(team,byId,key); t=fuelPlanTimes(off,f,tk,race,key); }
+      return t; } }
   return stintTimes(off,Math.max(10,state.stint.len),race);
 }
 function freezeTimes(c){ return {t:c.times.map(function(x){ return [x.s-c.off, x.e-c.off]; }), st:c.times.map(function(x){ return x.stops||[]; })}; }
@@ -3574,11 +3596,23 @@ function renderStints(byId){
           html+='<div class="meta" style="margin:-4px 0 6px;font-size:11px">Tyres for this car: <select data-action="cartyre" data-key="'+esc(key)+'"'+(state.stintsLocked?' disabled':'')+' style="font-size:11px;padding:2px 6px">'
             +[['','Team setting ('+({second:'every 2nd stop',every:'every stop',driver:'at driver changes',none:'never'})[tyreRule()]+')'],['second','Every 2nd stop'],['every','Every stop'],['driver','At driver changes'],['none','Never']].map(function(o){ return '<option value="'+o[0]+'"'+(((cr.rule||'')===o[0])?' selected':'')+'>'+o[1]+'</option>'; }).join('')+'</select>'
             +(Object.keys(objOr(cr.stops)).length?' · '+Object.keys(cr.stops).length+' stop'+(Object.keys(cr.stops).length>1?'s':'')+' set by hand <span class="wiz-link" data-action="tyreclear" data-key="'+esc(key)+'">reset</span>':' · or pick New / Same tyres on any stop below')+'</div>'; }
-        if(stintMode()==='fuel'){ const f=carFuelInfo(team,byId);
+        if(stintMode()==='fuel'){ const f=carFuelInfo(team,byId,key);
           html+='<div class="meta" style="margin:-4px 0 8px;font-size:11px">'+(f?'1 tank ≈ '+f.laps+' laps ('+f.tank+' L at '+(Math.round(f.fpl*100)/100)+' L/lap from '+esc(f.src)+') × '+fmtLap(f.lap)+' ≈ '+fmtMins(f.laps*f.lap/60)+' · stops '+Math.round(stopSec(false))+' s, '+Math.round(stopSec(true))+' s with tyres ('+({second:'every 2nd stop',every:'every stop',driver:'at driver changes',none:'never'})[tyreRule()]+') · driver stint about '+fmtMins(clen)+(state.stintsLocked&&+objOr(state.stintLens)[key]>0?' (as published)':'')
             :'<span style="color:var(--amber)">Set the tank size and fuel per lap for this car to size stints by fuel; using '+fmtMins(clen)+' for now.</span>')+'</div>'; }
         if(RACE_PRE) html+='<div class="meta" style="margin:-4px 0 10px;font-size:11px">'+esc(preRaceLine(win))+'. Practice and qualifying are the P and Q blocks; stints (and fuel) start at the green flag.</div>';
-        if(isAdmin()&&carName){ const bc=(state.fuelCfg.byCar||{})[carName]||{}; const def=resolveFuel(carName);
+        if(isAdmin()&&carName&&stintMode()==='fuel'){ const bc=(state.fuelCfg.byCar||{})[carName]||{}, def=resolveFuel(carName), fi=carFuelInfo(team,byId,key);
+          const mine=+objOr(objOr(state.tyrePlan)[key]).fpl||0, typed=mine||+bc.fuelPerLap||0, g=fi&&fi.g61, dis=state.stintsLocked?' disabled':'';
+          const two=function(v){ return (Math.round(v*100)/100).toFixed(2); };
+          const brk=g?g.parts.map(function(x){ return esc(x.name.split(' ')[0])+' '+two(x.fpl)+(g.byStints?(x.n?' ×'+x.n:' ×0'):''); }).join(' · '):'';
+          html+='<div class="carfuel"><label>Fuel per lap <input type="number" min="0" step="0.01" value="'+(typed?two(typed):'')+'" placeholder="'+(g?two(g.fpl):'—')+'" data-action="carfpl" data-key="'+esc(key)+'" data-car="'+esc(carName)+'"'+dis+'>L</label>'
+            +(typed
+              ? '<span class="cf-note mine">'+(mine?'Your number for this car.':'Your number for every '+esc(carName)+'.')+(g?' Garage 61 says '+two(g.fpl)+'.':'')+'</span>'
+                +(state.stintsLocked?'':'<button class="btn btn-ghost" data-action="carfplauto" data-key="'+esc(key)+'" data-car="'+esc(carName)+'" style="font-size:10px;padding:4px 10px">Use Garage 61</button>')
+              : '<span class="cf-note">Leave blank to use Garage 61'+(g?' ('+two(g.fpl)+(g.byStints?', weighted by stints':', average of the drivers')+')':' (no clean laps in this car yet, using the default '+(def.fuelPerLap||'—')+')')+'</span>')
+            +'<label style="margin-left:auto">Tank <input type="number" min="0" step="1" value="'+(bc.tankL||'')+'" placeholder="'+(def.tankL||'—')+'" data-action="cartank" data-car="'+esc(carName)+'"'+dis+'>L</label>'
+            +(brk?'<div class="cf-brk">'+brk+'</div>':'')+'</div>';
+        }
+        else if(isAdmin()&&carName){ const bc=(state.fuelCfg.byCar||{})[carName]||{}; const def=resolveFuel(carName);
           html+='<div class="carfuel"><span class="meta" style="font-size:10px;text-transform:uppercase;letter-spacing:.05em;color:var(--yellow)">'+esc(carName)+'</span>'
             +'<label>tank <input type="number" min="0" step="1" value="'+(bc.tankL||'')+'" placeholder="'+(def.tankL||'—')+'" data-action="cartank" data-car="'+esc(carName)+'">L</label>'
             +'<label>per lap <input type="number" min="0" step="0.1" value="'+(bc.fuelPerLap||'')+'" placeholder="'+(def.fuelPerLap||'—')+'" data-action="carfuel" data-car="'+esc(carName)+'">L</label>'
@@ -3618,7 +3652,7 @@ function renderStints(byId){
           /* 3.0.8: in tank mode say it in race terms. Each driver change is also a full refuel, so a
              stint starts on a full tank; stops inside it = tanks needed - 1, and the last one is a
              splash when it only needs part of a tank. (Minutes mode keeps laps · litres.) */
-          const _fi=stintMode()==='fuel'?carFuelInfo(team,byId):null;
+          const _fi=stintMode()==='fuel'?carFuelInfo(team,byId,key):null;
           fp.perBlock.forEach((b,bi)=>{
             let txt, tip=b.laps+' laps · about '+Math.round(b.fuel)+' L burned in this stint';
             if(_fi&&b.laps){ const tank=_fi.tank, need=b.fuel, last=bi===fp.perBlock.length-1, tst=(times[bi]&&times[bi].stops)||null;
@@ -4038,6 +4072,8 @@ document.getElementById('content').addEventListener('change',e=>{
   else if(a==='tyresec'){ state.fuelCfg.tyreSec=Math.max(0,+e.target.value||0); save(); renderContent(); }
   else if(a==='tyreevery'){ state.fuelCfg.tyreEvery=e.target.value; save(); renderContent(); }
   else if(a==='cartyre'){ if(!isAdmin()||state.stintsLocked) return; const k=e.target.dataset.key; state.tyrePlan=objOr(state.tyrePlan); const p=(state.tyrePlan[k]=objOr(state.tyrePlan[k])); if(e.target.value) p.rule=e.target.value; else delete p.rule; save(); renderContent(); }
+  else if(a==='carfpl'){ if(!isAdmin()||state.stintsLocked) return; const k=e.target.dataset.key, v=Math.round((+e.target.value||0)*1000)/1000; state.tyrePlan=objOr(state.tyrePlan); const p=(state.tyrePlan[k]=objOr(state.tyrePlan[k]));
+    if(v>0) p.fpl=v; else { delete p.fpl; const bc=(state.fuelCfg.byCar||{})[e.target.dataset.car]; if(bc){ delete bc.fuelPerLap; if(!Object.keys(bc).length) delete state.fuelCfg.byCar[e.target.dataset.car]; } } save(); renderContent(); setStatus(v>0?'Fuel per lap '+v+' L for this car. Stints updated.':'Using Garage 61 fuel for this car. Stints updated.'); }
   else if(a==='cartank'||a==='carfuel'){ const car=e.target.dataset.car; if(!car)return; const bc=(state.fuelCfg.byCar[car]=state.fuelCfg.byCar[car]||{});
     const v=+e.target.value||0;
     if(a==='cartank'){ if(v>0)bc.tankL=v; else delete bc.tankL; } else { if(v>0)bc.fuelPerLap=v; else delete bc.fuelPerLap; }
@@ -4136,6 +4172,10 @@ document.getElementById('content').addEventListener('click',e=>{
   const tt=e.target.closest&&e.target.closest('[data-action="tyretoggle"]');
   if(tt){ if(!isAdmin()||state.stintsLocked) return; const k=tt.dataset.key, n=+tt.dataset.n; state.tyrePlan=objOr(state.tyrePlan); const p=(state.tyrePlan[k]=objOr(state.tyrePlan[k])); p.stops=objOr(p.stops);
     const now=tt.classList.contains('ty'); p.stops[n]=!now; save(); renderContent(); setStatus('Stop '+n+': '+(!now?'fuel + tyres':'fuel only')+'. Stint times updated.'); return; }
+  const fa=e.target.closest&&e.target.closest('[data-action="carfplauto"]');
+  if(fa){ if(!isAdmin()||state.stintsLocked) return; const p=objOr(objOr(state.tyrePlan)[fa.dataset.key]); delete p.fpl;
+    const bc=(state.fuelCfg.byCar||{})[fa.dataset.car]; if(bc){ delete bc.fuelPerLap; if(!Object.keys(bc).length) delete state.fuelCfg.byCar[fa.dataset.car]; }
+    save(); renderContent(); setStatus('Using Garage 61 fuel per lap. Stints updated.'); return; }
   const tc=e.target.closest&&e.target.closest('[data-action="tyreclear"]');
   if(tc){ if(!isAdmin()||state.stintsLocked) return; const p=objOr(objOr(state.tyrePlan)[tc.dataset.key]); delete p.stops; save(); renderContent(); return; }
   const fx=e.target.closest&&e.target.closest('[data-action="fixcar"]');
