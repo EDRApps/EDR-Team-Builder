@@ -814,6 +814,19 @@ function applyIrTiming(ev, sea){
    Stints, coverage, confirmations, voice channels and race day all run from greenOff(window). */
 let RACE_PRE=0, PRE_PRACTICE=0, PRE_QUALIFY=0;
 function greenOff(w){ return ((typeof START_OFFSETS!=='undefined'&&START_OFFSETS[w])||0)+RACE_PRE; }
+/* availability picker: say which block holds the session opening (practice) and the green flag,
+   for the start slots the plan actually uses, so a driver ticking that block knows what it covers.
+   3.1.2: restored — 3.0.7 deleted it while renderMyBlocks still called it, which crashed the
+   Availability tab (ReferenceError) for anyone with a block grid on screen. */
+function blockMarks(i){
+  if(!RACE_PRE||typeof START_OFFSETS==='undefined') return '';
+  const s=i*AV_BLOCK, e=s+AV_BLOCK, used={};
+  used[state.stint.window]=1; Object.keys(objOr(state.stintWin)).forEach(function(k){ used[state.stintWin[k]]=1; });
+  const hm=function(m){ return fmtClock(m).split(' ').slice(1).join(' '); }, out=[];
+  Object.keys(used).forEach(function(w){ const o=START_OFFSETS[w]; if(o==null) return;
+    if(o>=s&&o<e) out.push('practice '+hm(o)); if(o+RACE_PRE>=s&&o+RACE_PRE<e) out.push('green '+hm(o+RACE_PRE)); });
+  return out.join(' · ');
+}
 /* 3.0.7: practice and qualifying are their own blocks in front of stint 1, each with its own
    driver (not tied to whoever starts the race) and no fuel. state.qualiAssign[carKey] =
    {p: driverId, q: driverId}; an older single number counts for both. Unset = nobody yet. */

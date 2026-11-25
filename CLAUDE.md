@@ -142,6 +142,10 @@ Details in the plugin's [CLAUDE.md](files/edr-team-builder/CLAUDE.md).
   `stintAssign[key]`, equal weights when none), else the default. `_fuelEq[key]` falls back to equal
   weights when the weighted figure would change the stint count (no flip-flop). Admin box per car: "Leave
   blank to use Garage 61 (x.xx)", per-driver breakdown, "Use Garage 61" clears the car and model numbers.
+- 3.1.2 **hotfix**: 3.0.7 deleted `blockMarks()` (practice/green labels on availability blocks) while
+  `renderMyBlocks` still called it, so the Availability tab and driver step 3 threw a ReferenceError and
+  rendered blank for anyone with a block grid on screen. Restored. When removing a helper, grep the HTML
+  for its callers first; `node --check` does not catch an undefined function.
 
 ## Team Builder workflow & roles (v2.4)
 
