@@ -3184,7 +3184,19 @@ function renderStints(byId){
         if(fp.anyCfg){
           html+='<div class="sg-label" style="color:var(--dim);font-size:10px;text-transform:uppercase;letter-spacing:.04em">Fuel / laps</div>';
           _pl.forEach(function(){ html+='<div style="border-top:1px solid #1a1a1a"></div>'; });
-          fp.perBlock.forEach(b=>{ html+='<div style="font-size:9px;color:var(--dim);text-align:center;padding:3px 2px;border-top:1px solid #1a1a1a" title="'+b.laps+' laps · '+b.fuel+'L this stint'+(b.pit?' · pit stop':'')+'">'+(b.laps?b.laps+' · '+b.fuel+'L':'—')+(b.pit?'<br><span style="color:var(--amber)">⛽ pit</span>':'')+'</div>'; });
+          /* 3.0.8: in tank mode say it in race terms. Each driver change is also a full refuel, so a
+             stint starts on a full tank; stops inside it = tanks needed - 1, and the last one is a
+             splash when it only needs part of a tank. (Minutes mode keeps laps · litres.) */
+          const _fi=stintMode()==='fuel'?carFuelInfo(team,byId):null;
+          fp.perBlock.forEach((b,bi)=>{
+            let txt, tip=b.laps+' laps · about '+Math.round(b.fuel)+' L burned in this stint';
+            if(_fi&&b.laps){ const tank=_fi.tank, need=b.fuel, stops=Math.max(0,Math.ceil(need/tank-0.02)-1), lastFill=need-tank*stops, last=bi===fp.perBlock.length-1;
+              const splash=stops>0&&lastFill<tank*0.5;
+              txt=b.laps+' laps<br>'+(stops?stops+' fuel stop'+(stops>1?'s':'')+(splash?' <span style="color:var(--amber)">(last ~'+Math.round(lastFill)+' L splash)</span>':''):'no fuel stop')
+                +'<br><span style="color:var(--body)">'+(last?'to the flag':'then driver change')+'</span>';
+              tip+=' · starts on a full '+tank+' L tank'+(stops?' · '+stops+' stop'+(stops>1?'s':'')+' to refuel while you stay in':'')+(last?'':' · the driver change stop refuels to full'); }
+            else txt=(b.laps?b.laps+' · '+b.fuel+'L':'—')+(b.pit?'<br><span style="color:var(--amber)">⛽ pit</span>':'');
+            html+='<div style="font-size:9px;color:var(--dim);text-align:center;padding:3px 2px;border-top:1px solid #1a1a1a;line-height:1.4" title="'+esc(tip)+'">'+txt+'</div>'; });
         }
         html+='</div></div>';
         html+='<div class="meta" style="margin-top:10px">Lanes: <span style="color:var(--green)">green = available</span> · striped = not free · solid = driving that stint. Click a lane cell to assign, drag blocks to swap, or drag names from the bank.</div></div>';
