@@ -2,7 +2,7 @@
 /**
  * Plugin Name: EDR Team Builder
  * Description: Endurotech Racing endurance team + stint planner. Pulls Garage 61 pace and official iRacing session times, collects driver availability in-house, and builds Pro/Casual teams and stint rotations. Add the [edr_team_builder] shortcode to a page.
- * Version: 3.0.2
+ * Version: 3.0.3
  * Author: Endurotech Racing
  * License: GPL-2.0-or-later
  */
@@ -11,7 +11,7 @@ if (!defined('ABSPATH')) exit; // no direct access
 
 define('EDR_TB_DIR', plugin_dir_path(__FILE__));
 define('EDR_TB_URL', plugin_dir_url(__FILE__));
-define('EDR_TB_VER', '3.0.2');
+define('EDR_TB_VER', '3.0.3');
 
 require_once EDR_TB_DIR . 'includes/garage61.php';
 require_once EDR_TB_DIR . 'includes/iracing.php';
@@ -336,6 +336,40 @@ add_action('rest_api_init', function () {
     ));
 });
 
+/**
+ * 3.0.3: iRacing's schedule weather only carries ONE summary rain chance for the whole race (the
+ * 992 Cup's "57%" was the chance of rain at some point in 12 hours), which the builder painted on
+ * every stint. The same object links an hour-by-hour forecast (weather_url, a signed S3 JSON). For
+ * endurance-length rounds, fetch it and attach a compact copy: [[sim minutes from session start,
+ * rain chance %, rain amount, air temp C]]. Cached per forecast file for 6 hours; capped per pull.
+ */
+function edr_tb_attach_forecasts($seasons) {
+    if (!is_array($seasons)) return $seasons;
+    $budget = 12;
+    foreach ($seasons as $i => $se) {
+        $w = isset($se['weather']) && is_array($se['weather']) ? $se['weather'] : null;
+        if (!$w || empty($w['weather_url']) || intval($se['race_min'] ?? 0) < 120) continue;
+        $url = (string) $w['weather_url'];
+        $ck = 'edr_tb_fc_' . md5((string) strtok($url, '?'));
+        $fc = get_transient($ck);
+        if (!is_array($fc)) {
+            if ($budget-- <= 0) continue;
+            $res = wp_remote_get($url, array('timeout' => 20));
+            if (is_wp_error($res) || wp_remote_retrieve_response_code($res) !== 200) continue;
+            $raw = json_decode(wp_remote_retrieve_body($res), true);
+            if (!is_array($raw)) continue;
+            $fc = array();
+            foreach ($raw as $h) {
+                if (!is_array($h) || !isset($h['time_offset'])) continue;
+                $fc[] = array(intval($h['time_offset']), round(intval($h['precip_chance'] ?? 0) / 100, 1),
+                              intval($h['precip_amount'] ?? 0), round(intval($h['air_temp'] ?? 0) / 100, 1));
+            }
+            set_transient($ck, $fc, 6 * HOUR_IN_SECONDS);
+        }
+        if ($fc) $seasons[$i]['weather']['forecast'] = $fc;
+    }
+    return $seasons;
+}
 function edr_tb_rest_iracing(WP_REST_Request $req) {
     $s = edr_tb_settings();
     if (empty($s['iracing_url']) || empty($s['iracing_key'])) {
@@ -358,7 +392,7 @@ function edr_tb_rest_iracing(WP_REST_Request $req) {
         // don't cache failures (e.g. an expired proxy session) — surface and retry next time
         return rest_ensure_response(array('ok' => false, 'reason' => 'error', 'message' => $both->get_error_message(), 'seasons' => array(), 'weeks' => array()));
     }
-    $payload = array('ok' => true, 'seasons' => $both['seasons'], 'weeks' => $both['weeks']);
+    $payload = array('ok' => true, 'seasons' => edr_tb_attach_forecasts($both['seasons']), 'weeks' => $both['weeks']);
     set_transient('edr_tb_iracing', array('ver' => EDR_TB_VER, 'payload' => $payload), 12 * HOUR_IN_SECONDS);
     return rest_ensure_response($payload);
 }

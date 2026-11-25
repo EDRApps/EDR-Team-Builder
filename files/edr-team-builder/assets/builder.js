@@ -827,7 +827,7 @@ function channelPlan(byId){
     cars:stintCars(byId).map(function(c){
       const mem={}; c.members.forEach(function(m){ mem[m.id]=m; });
       return {key:c.key, name:(multi?c.cls+' ':'')+c.label, cls:c.cls, drivers:c.members.map(function(m){ return m.name.split(' ')[0]; }),
-        stints:c.times.map(function(t,i){ const m=mem[c.arr[i]], wx=weatherAt(t.s,c.off,c.win);
+        stints:c.times.map(function(t,i){ const m=mem[c.arr[i]], wx=weatherAt(t.s,c.off,c.win,t.e);
           return {n:i+1, s:WIN_START_MS+t.s*60000, e:WIN_START_MS+t.e*60000, d:m?m.name.split(' ')[0]:'', wx:wx?wx.icon:''}; })};
     })};
 }
@@ -1094,7 +1094,7 @@ function renderWizard(byId){
       h+='<div class="wiz-label" style="margin-top:22px">You drive '+mine.length+' stint'+(mine.length===1?'':'s')+'</div>';
       const sw=swapsFor(state.evsel);
       if(!mine.length) h+='<p class="wiz-lead" style="font-size:15px">You\'re not driving a stint yet: you back up '+esc(carLabel(c.cls,c.tier,c.ti)||(tierL+' '+(c.ti+1)))+'. If someone in the car can\'t make theirs, you\'re first in line. iRacing needs every declared driver to drive at least 25% of an equal share, so if you stay at none the admins will either give you a stint or take you off the entry.</p>';
-      mine.forEach(function(i){ const t=times[i], wx=weatherAt(t.s,off,win), free=driverFree(r.me,t.s,t.e);
+      mine.forEach(function(i){ const t=times[i], wx=weatherAt(t.s,off,win,t.e), free=driverFree(r.me,t.s,t.e);
         const rel=sw.find(function(x){ return x.key===car.key&&x.n===i&&(x.st==='open'||x.st==='claimed'); });
         h+='<div class="wiz-stint"><span class="no">'+(i+1)+'</span><span style="flex:1"><div class="when">'+fmtClock(t.s)+' – '+fmtClock(t.e).split(' ').slice(1).join(' ')+'</div>'
           +(free?'':'<div class="meta" style="color:var(--red)">You said you\'re not free then. Release it below or tell the admins.</div>')
@@ -2852,7 +2852,7 @@ function driverSure(d,s,e){ return !!(d.avail && d.avail.windows && d.avail.wind
 function driverFree(d,s,e){ return driverSure(d,s,e) || !!(d.avail && d.avail.maybeW && d.avail.maybeW.some(w=>w[0]<=s && w[1]>=e)); }
 /* a stint falls in the driver's own night (00:00-06:00 where they live), for the "avoid my night" preference */
 function inLocalNight(tz,s){ if(!tz) return false; try{ const h=+new Date(WIN_START_MS+s*60000).toLocaleString('en-GB',{timeZone:tz,hour:'2-digit',hour12:false}); return h>=0&&h<6; }catch(e){ return false; } }
-function isWetStint(s,e){ if(!(state.evWeather&&state.evWeather[state.evsel])) return false; if(typeof weatherAt!=='function') return false; const wx=weatherAt(s); return !!(wx&&wx.wet); }
+function isWetStint(s,e){ if(!(state.evWeather&&state.evWeather[state.evsel])) return false; if(typeof weatherAt!=='function') return false; const wx=weatherAt(s,undefined,undefined,e); return !!(wx&&wx.wet); }
 function applyIrWeather(ev, se){  // map an iRacing schedule weather{} onto state.evWeather (F7 auto-pull)
   const w=se&&se.weather; if(!w) return;
   let startTod=null; if(w.simulated_start_time){ const m=(''+w.simulated_start_time).match(/T(\d\d):(\d\d)/); if(m) startTod=(+m[1])*60+(+m[2]); }
@@ -2862,22 +2862,34 @@ function applyIrWeather(ev, se){  // map an iRacing schedule weather{} onto stat
     pct=Math.max(0,Math.min(100,Math.round(pct))); }
   // "wet" means rain is LIKELY — a 1% chance must not paint the whole race wet
   const wetBase = (pct!=null) ? pct>=50 : (((+w.precip_option)>0)||(w.forecast_options&&(+w.forecast_options.precipitation)>0));
-  state.evWeather[evKey(ev)]={ src:'iracing', startTod:(startTod!=null?startTod:720), mult:(+w.simulated_time_multiplier)||1, tempC:temp, wet:!!wetBase, rainPct:pct, todOffsets:(Array.isArray(w.simulated_time_offsets)?w.simulated_time_offsets.map(Number):null) };
+  state.evWeather[evKey(ev)]={ src:'iracing', fc:(Array.isArray(w.forecast)&&w.forecast.length?w.forecast:null), startTod:(startTod!=null?startTod:720), mult:(+w.simulated_time_multiplier)||1, tempC:temp, wet:(Array.isArray(w.forecast)&&w.forecast.length)?false:!!wetBase, rainPct:pct, todOffsets:(Array.isArray(w.simulated_time_offsets)?w.simulated_time_offsets.map(Number):null) };
 }
 function blockTimes(off,len,race){ const n=Math.ceil(race/len),t=[]; for(let i=0;i<n;i++)t.push({s:off+i*len,e:off+Math.min((i+1)*len,race)}); return t; }
 /* ---- weather (F7): maps a stint's clock offset to sim conditions for the event ---- */
-function weatherAt(absMin, raceStartOff, winNo){
-  const w=state.evWeather&&state.evWeather[state.evsel]; if(!w) return null;
+function weatherAt(absMin, raceStartOff, winNo, absEnd){
+  let w=state.evWeather&&state.evWeather[state.evsel]; if(!w) return null;
   const off=(raceStartOff!=null)?raceStartOff:(START_OFFSETS[state.stint.window]||0);
   const elapsed=Math.max(0, absMin-off);                     // real minutes since this car's green flag
   const mult=(+w.mult)||1;                                   // sim minutes per real minute (day/night rollover)
   const winAdd=(w.todOffsets&&winNo!=null&&isFinite(w.todOffsets[winNo-1]))?+w.todOffsets[winNo-1]:0;   // each start window is its own session with its own sim clock
   const todMin=((((+w.startTod||0) + winAdd + elapsed*mult)%1440)+1440)%1440;
   const night = todMin<6*60 || todMin>=19*60;
-  const wet = !!w.wet || (w.wetFrom!=null && w.wetFrom!=='' && elapsed>=(+w.wetFrom));
+  let wet = !!w.wet || (w.wetFrom!=null && w.wetFrom!=='' && elapsed>=(+w.wetFrom));
   const hh=Math.floor(todMin/60), mm=Math.round(todMin%60);
   const clk=(hh<10?'0':'')+hh+':'+(mm<10?'0':'')+mm;
-  const pct=(w.rainPct!=null&&w.rainPct!=='')?Math.round(+w.rainPct):null;
+  let pct=(w.rainPct!=null&&w.rainPct!=='')?Math.round(+w.rainPct):null;
+  /* 3.0.3: iRacing's hourly forecast, when we have it, beats the one race-wide summary number.
+     The stint's sim-time span [start, end) is matched against the forecast hours (an hour counts
+     if it overlaps the stint); the stint shows the HIGHEST rain chance in it, and is wet only if
+     the forecast actually has rain falling in one of those hours. A manual override of the rain
+     chance or "wet from start" still wins. */
+  if(Array.isArray(w.fc) && w.fc.length && w.src!=='manual'){
+    const span=Math.max(1,(absEnd!=null?absEnd:absMin+Math.max(10,state.stint.len))-absMin)*mult;
+    const a=winAdd+elapsed*mult, b=a+span;
+    const hit=w.fc.filter(function(h){ return h[0]<b && h[0]+60>a; });
+    if(hit.length){ pct=Math.round(Math.max.apply(null,hit.map(function(h){ return +h[1]||0; }))); wet=hit.some(function(h){ return (+h[2]||0)>0; });
+      w=Object.assign({},w,{tempC:Math.round(hit[0][3])}); }
+  }
   const icon = wet?'🌧':(night?'🌙':'☀');
   let label = wet?(clk+' wet'):(night?(clk+' night'):(clk+(w.tempC!=null&&w.tempC!==''?' '+w.tempC+'°':'')));
   if(pct!=null&&pct>0) label+=' · '+pct+'%';   // rain probability, so "wet" vs "1% chance" is unambiguous
@@ -3050,7 +3062,7 @@ function renderStints(byId){
             +((_c.gaps.length||_c.conflicts.length||_c.underFair.length)&&!state.stintsLocked?'<button class="btn btn-ghost" data-action="fixcar" data-key="'+esc(key)+'" style="font-size:10px;padding:4px 10px">Fix this car</button>':'')+'</div>'; }
         html+='<div class="stintwrap" data-key="'+key+'"><div class="stintgrid" style="grid-template-columns:150px repeat('+times.length+',minmax(84px,1fr))">';
         html+='<div class="sg-corner">stint →</div>';
-        times.forEach((t,i)=>{ const wx=weatherAt(t.s,off,win); html+='<div class="sg-time"><b>'+(i+1)+'</b>'+fmtClock(t.s)+(wx?'<div style="font-size:9px;color:'+(wx.wet?'#6ea8ff':wx.night?'var(--dim)':'var(--amber)')+'">'+wx.icon+' '+wx.label+'</div>':'')+'</div>'; });
+        times.forEach((t,i)=>{ const wx=weatherAt(t.s,off,win,t.e); html+='<div class="sg-time"><b>'+(i+1)+'</b>'+fmtClock(t.s)+(wx?'<div style="font-size:9px;color:'+(wx.wet?'#6ea8ff':wx.night?'var(--dim)':'var(--amber)')+'">'+wx.icon+' '+wx.label+'</div>':'')+'</div>'; });
         html+='<div class="sg-label" style="font-family:Prompt;font-weight:600;color:#fff;text-transform:uppercase;font-size:11px;letter-spacing:.05em">Driving</div>';
         arr.forEach((id,i)=>{
           const t=times[i], m=(id!=null&&mem.has(id))?byId[id]:null;
@@ -3478,6 +3490,7 @@ document.getElementById('content').addEventListener('change',e=>{
     else if(a==='wxwetfrom'){ W.wetFrom=e.target.value===''?null:(+e.target.value); }
     else if(a==='wxwet'){ W.wet=e.target.checked; }
     else if(a==='wxrain'){ W.rainPct=e.target.value===''?null:Math.max(0,Math.min(100,+e.target.value)); }
+    W.src='manual';   // 3.0.3: a hand edit wins over iRacing's forecast and is not overwritten by the next auto-pull ("clear" goes back to iRacing)
     save(); renderContent(); }
 });
 /* ---- drag to paint a run of blocks ----------------------------------------------------
