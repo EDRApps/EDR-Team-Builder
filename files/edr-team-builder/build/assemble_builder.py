@@ -17,7 +17,7 @@ open(os.path.join(OUT,"builder.css"),"w",encoding="utf-8").write("/* EDR Team Bu
    the app (white slider boxes, theme-coloured buttons). Force ours back. ---- */
 #edr-tb-app input[type=range]{-webkit-appearance:auto!important;appearance:auto!important;background:transparent!important;border:0!important;box-shadow:none!important;padding:0!important;margin:0!important;min-height:0!important;height:auto!important;width:100%!important;border-radius:0!important}
 #edr-tb-app input[type=checkbox]{-webkit-appearance:auto!important;appearance:auto!important;background:transparent!important;border:none!important;box-shadow:none!important;padding:0!important;min-height:0!important}
-#edr-tb-app select,#edr-tb-app textarea,#edr-tb-app input[type=text],#edr-tb-app input[type=number],#edr-tb-app input[type=time]{background:#0a0a14!important;color:#fff!important;border:1px solid var(--line)!important;border-radius:8px!important;box-shadow:none!important;text-shadow:none!important;line-height:1.4!important;min-height:0!important}
+#edr-tb-app select,#edr-tb-app textarea,#edr-tb-app input[type=text],#edr-tb-app input[type=number],#edr-tb-app input[type=time],#edr-tb-app input[type=password]{background:#0a0a14!important;color:#fff!important;border:1px solid var(--line)!important;border-radius:8px!important;box-shadow:none!important;text-shadow:none!important;line-height:1.4!important;min-height:0!important}
 #edr-tb-app{color-scheme:dark}
 #edr-tb-app optgroup{background:#11111c;color:var(--dim);font-style:normal}
 #edr-tb-app button{box-shadow:none!important;text-shadow:none!important;text-decoration:none!important;letter-spacing:inherit;min-height:0!important}
@@ -191,6 +191,21 @@ function summaryPost(dry){ return apiPOST('summary',{ev:state.evsel||'', dry:dry
 function swapPost(action,body){
   return fetch(API+'swap',{method:'POST',headers:_hdrs(true),body:JSON.stringify(Object.assign({action:action},body))})
     .then(function(r){ return r.json().catch(function(){ return {}; }).then(function(j){ if(!r.ok) throw new Error((j&&j.message)||'Swap not saved.'); return j; }); });
+}
+/* 3.3.0 team captains: every driver-side action carries the captain's PIN; PINs are made by admins */
+function capPost(body){
+  return fetch(API+'captain',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)})
+    .then(function(r){ return r.json().catch(function(){ return {}; }).then(function(j){ if(!r.ok){ var e=new Error((j&&j.message)||'Not saved.'); e.code=(j&&j.code)||''; throw e; } return j; }); });
+}
+function capPinPost(body){
+  return fetch(API+'captain/pin',{method:'POST',headers:_hdrs(true),body:JSON.stringify(body)})
+    .then(function(r){ return r.json().catch(function(){ return {}; }).then(function(j){ if(!r.ok) throw new Error((j&&j.message)||'Not saved.'); return j; }); });
+}
+var _capPinsTry=0;
+function capPinsLoad(){
+  if(!isAdmin()||_capPinsBusy||Date.now()-_capPinsTry<60000) return;   // stays null (unknown) until it loads; retried at most once a minute
+  _capPinsBusy=true; _capPinsTry=Date.now();
+  capPinPost({action:'list'}).then(function(j){ _capPinsBusy=false; CAP_PINS=_asMap(j&&j.pins); renderContent(); }).catch(function(){ _capPinsBusy=false; });
 }
 function persistConfirm(evk,name){
   const rec=((state.confirmStore[evk]||{})[name])||null;
@@ -380,7 +395,7 @@ let lastTrackIds=[], lastTrackEv=null, _saveT=null;
    with its Discord payloads, so the reminder and voice-channel jobs can run for EVERY locked race,
    not only the one an admin happens to have open (see edr_tb_plan_events in the PHP). */
 function _evStashForSwitch(){ evPlanStash({confirm:_confirmForPlan(), channels:_channelsForPlan()}); }
-function serializePlan(){ var _cf=_confirmForPlan(), _ch=_channelsForPlan(); if(state.evsel) evPlanStash({confirm:_cf, channels:_ch}); return {evPlans:evPlansPruned(),confirm:_cf,channels:_ch,drivers:state.drivers,w:state.w,proPct:state.proPct,teams:state.teams,stint:state.stint,stintAssign:state.stintAssign,stintWin:state.stintWin,stintSig:state.stintSig,qualiAssign:state.qualiAssign,stintLens:state.stintLens,tyrePlan:state.tyrePlan,overrides:overrides,meta:IMPORT_META,winStart:WIN_START_MS,startOffsets:START_OFFSETS,startLabels:START_LABELS,matches:lastMatches,trackIds:lastTrackIds,trackEv:lastTrackEv,paceAt:_planPaceAt,evsel:state.evsel,evWinMin:EV_WIN_MIN,evTiming:state.evTiming,teamsLocked:state.teamsLocked,stintsLocked:state.stintsLocked,teamNames:state.teamNames,fuelCfg:state.fuelCfg,customEvents:state.customEvents,irEvents:state.irEvents,evWeather:state.evWeather,swapNote:state.swapNote,excluded:state.excluded}; }
+function serializePlan(){ var _cf=_confirmForPlan(), _ch=_channelsForPlan(); if(state.evsel) evPlanStash({confirm:_cf, channels:_ch}); return {evPlans:evPlansPruned(),confirm:_cf,channels:_ch,drivers:state.drivers,w:state.w,proPct:state.proPct,teams:state.teams,stint:state.stint,stintAssign:state.stintAssign,stintWin:state.stintWin,stintSig:state.stintSig,qualiAssign:state.qualiAssign,stintLens:state.stintLens,tyrePlan:state.tyrePlan,captains:state.captains,overrides:overrides,meta:IMPORT_META,winStart:WIN_START_MS,startOffsets:START_OFFSETS,startLabels:START_LABELS,matches:lastMatches,trackIds:lastTrackIds,trackEv:lastTrackEv,paceAt:_planPaceAt,evsel:state.evsel,evWinMin:EV_WIN_MIN,evTiming:state.evTiming,teamsLocked:state.teamsLocked,stintsLocked:state.stintsLocked,teamNames:state.teamNames,fuelCfg:state.fuelCfg,customEvents:state.customEvents,irEvents:state.irEvents,evWeather:state.evWeather,swapNote:state.swapNote,excluded:state.excluded}; }
 var _postBusy=false, _postAgain=false;
 /* 3.0: saves used to be silent; a refused one only flashed a status line for 3 s */
 function _saveBadge(t,cls){ var b=document.getElementById('savebadge'); if(!b||!isAdmin()) return; b.textContent=t; b.className='savebadge '+(cls||''); }
@@ -426,7 +441,7 @@ function _asMap(v){ return (v && typeof v==='object' && !Array.isArray(v)) ? v :
 function _adoptPlan(p, keepEvsel){
   var _localEv=keepEvsel?state.evsel:null;
   state.drivers=p.drivers; state.w=p.w||state.w; state.proPct=(typeof p.proPct==='number')?p.proPct:state.proPct; state.teams=_asMap(p.teams);
-  state.stint=Object.assign(state.stint,p.stint||{}); state.stintAssign=_asMap(p.stintAssign); state.stintWin=_asMap(p.stintWin); state.qualiAssign=_asMap(p.qualiAssign); state.stintLens=_asMap(p.stintLens); state.tyrePlan=_asMap(p.tyrePlan); state.stintSig=p.stintSig||'';
+  state.stint=Object.assign(state.stint,p.stint||{}); state.stintAssign=_asMap(p.stintAssign); state.stintWin=_asMap(p.stintWin); state.qualiAssign=_asMap(p.qualiAssign); state.stintLens=_asMap(p.stintLens); state.tyrePlan=_asMap(p.tyrePlan); state.captains=_asMap(p.captains); state.stintSig=p.stintSig||'';
   if(p.overrides)overrides=_asMap(p.overrides); if(p.meta)IMPORT_META=p.meta; if(p.winStart)WIN_START_MS=p.winStart;
   if(p.startOffsets&&Object.keys(p.startOffsets).length)START_OFFSETS=p.startOffsets; if(p.startLabels&&Object.keys(p.startLabels).length)START_LABELS=p.startLabels;
   if(p.evsel)state.evsel=p.evsel; if(p.evWinMin)EV_WIN_MIN=p.evWinMin; if(p.evTiming)state.evTiming=_asMap(p.evTiming); state.teamsLocked=!!p.teamsLocked; state.stintsLocked=!!p.stintsLocked;
@@ -471,6 +486,8 @@ function pullAvail(){
       if(av.vc) VC_STATE=av.vc;
       if(av.swaps) SWAPS=_asMap(av.swaps);
       if(av.raceday) RACEDAY=_asMap(av.raceday);
+      if(av.capReports) CAP_REPORTS=_asMap(av.capReports);
+      if(av.capOffers) CAP_OFFERS=_asMap(av.capOffers);
       LOCKED_NAMES=av.locked||[];
     }
   }).catch(function(){});

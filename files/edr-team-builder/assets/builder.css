@@ -173,7 +173,7 @@
   .avmatrix .cov.c0{color:var(--red)} .avmatrix .cov.c1{color:var(--amber)} .avmatrix .cov.c2{color:var(--green)}
   .avmatrix .totals td{color:#fff;font-family:'Prompt',sans-serif;background:rgba(255,255,255,.03)}
   .sumgrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin-top:14px}
-  .sumcard{background:var(--panel);border:1px solid var(--lineSoft);border-radius:var(--rlg);padding:14px;text-align:center;box-shadow:var(--shadow)}
+  .sumcard{background:var(--panel);border:1px solid var(--lineSoft);border-radius:var(--rlg);padding:14px;text-align:center;box-shadow:var(--shadow);min-width:0;overflow-wrap:anywhere}
   .sumcard .v{font-family:'Prompt',sans-serif;font-weight:700;font-size:24px;color:var(--yellow)}
   .sumcard .k{font-size:11px;color:var(--dim);text-transform:uppercase;letter-spacing:.05em;margin-top:3px}
   /* ---- my-availability block picker (mobile-friendly) ---- */
@@ -350,6 +350,27 @@
   .wiz-stint{display:flex;gap:14px;align-items:center;padding:12px 16px;border:1px solid var(--line);border-left:4px solid var(--yellow);border-radius:12px;margin-bottom:8px;background:var(--panel)}
   .wiz-stint .no{font-family:'Prompt',sans-serif;font-weight:700;font-size:20px;color:var(--yellow);min-width:34px}
   .wiz-stint .when{color:#fff;font-weight:700;font-size:15px}
+  .cfnag{display:flex;gap:12px;align-items:center;flex-wrap:wrap;background:var(--panel);border:1px solid var(--yellow);border-left:4px solid var(--yellow);border-radius:12px;padding:12px 14px;margin-bottom:14px;color:var(--body);font-size:14px}
+  .cfnag b{color:#fff} .cfnag span{flex:1;min-width:180px} .cfnag .btn{font-size:12px;padding:10px 16px}
+  /* 3.3.0 captains */
+  .capst{display:flex;gap:10px;align-items:center;padding:8px 0;border-bottom:1px solid var(--lineSoft)}
+  .capst .no{font-family:'Prompt',sans-serif;font-weight:700;font-size:16px;color:var(--yellow);min-width:30px}
+  .capst .t{flex:1;color:#fff;font-size:14px;min-width:0}
+  .capst select{width:42%;flex:none;font-size:14px;padding:6px 8px}
+  .capst.moved .t{color:var(--yellow)}
+  .capwarn{color:var(--amber);margin:2px 0 4px 40px}
+  .capwho{display:flex;gap:10px;align-items:baseline;padding:5px 0;color:#fff;font-size:14px}
+  .capwho .ic{min-width:18px} .capwho .meta{margin-left:auto;text-align:right}
+  .capswap{padding:8px 0;border-bottom:1px solid var(--lineSoft)} .capswap .hacts{margin-top:6px}
+  .wiz textarea.captext{width:100%;min-height:74px;font-size:15px;padding:12px 14px;border-radius:12px;margin-top:10px;font-family:inherit}
+  .wiz input.wiz-input[data-capf]{font-size:16px;padding:12px 14px}
+  .caprow{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:10px;padding-top:8px;border-top:1px solid var(--lineSoft);font-size:12px}
+  .caprow select{font-size:12px;padding:3px 6px;max-width:170px} .caprow .btn{font-size:10px;padding:4px 10px}
+  .capnew{margin-top:8px;padding:10px 12px;border:1px solid var(--yellow);border-radius:10px;font-size:13px;color:var(--body)}
+  .capnew .pin{font-family:'Prompt',sans-serif;font-weight:800;font-size:22px;letter-spacing:.2em;color:var(--yellow);margin-left:6px}
+  .capcov{margin-top:6px;font-size:11px;color:var(--dim);line-height:1.6} .capcov .sug{color:var(--yellow);font-weight:700} .capcov i{font-style:normal;opacity:.7}
+  .capsug{margin-top:6px;font-size:12px;color:var(--body);line-height:1.6} .capsug .btn{font-size:10px;padding:3px 9px;margin-left:4px} .capsug.quiet{color:var(--dim);font-style:italic}
+  .capreport{margin-top:10px;padding:8px 10px;border-left:3px solid var(--yellow);background:rgba(240,240,0,.04);line-height:1.6}
   .wiz .wiz-race{display:flex;flex-direction:column;gap:4px;width:100%;text-align:left;background:var(--panel);border:1.5px solid var(--line);border-radius:14px;padding:16px 18px;margin-bottom:10px;cursor:pointer;color:var(--body);font-family:'Karla',sans-serif}
   .wiz .wiz-race.on{border-color:var(--yellow)}
   .wiz-race .nm{font-family:'Prompt',sans-serif;font-weight:700;font-size:18px;color:#fff}
@@ -369,7 +390,7 @@
    the app (white slider boxes, theme-coloured buttons). Force ours back. ---- */
 #edr-tb-app input[type=range]{-webkit-appearance:auto!important;appearance:auto!important;background:transparent!important;border:0!important;box-shadow:none!important;padding:0!important;margin:0!important;min-height:0!important;height:auto!important;width:100%!important;border-radius:0!important}
 #edr-tb-app input[type=checkbox]{-webkit-appearance:auto!important;appearance:auto!important;background:transparent!important;border:none!important;box-shadow:none!important;padding:0!important;min-height:0!important}
-#edr-tb-app select,#edr-tb-app textarea,#edr-tb-app input[type=text],#edr-tb-app input[type=number],#edr-tb-app input[type=time]{background:#0a0a14!important;color:#fff!important;border:1px solid var(--line)!important;border-radius:8px!important;box-shadow:none!important;text-shadow:none!important;line-height:1.4!important;min-height:0!important}
+#edr-tb-app select,#edr-tb-app textarea,#edr-tb-app input[type=text],#edr-tb-app input[type=number],#edr-tb-app input[type=time],#edr-tb-app input[type=password]{background:#0a0a14!important;color:#fff!important;border:1px solid var(--line)!important;border-radius:8px!important;box-shadow:none!important;text-shadow:none!important;line-height:1.4!important;min-height:0!important}
 #edr-tb-app{color-scheme:dark}
 #edr-tb-app optgroup{background:#11111c;color:var(--dim);font-style:normal}
 #edr-tb-app button{box-shadow:none!important;text-shadow:none!important;text-decoration:none!important;letter-spacing:inherit;min-height:0!important}

@@ -204,6 +204,48 @@ Details in the plugin's [CLAUDE.md](files/edr-team-builder/CLAUDE.md).
   `edr_tb_vc_refresh` (+10 s) and the "Confirmed" post adds "🎙️ All of <car> confirmed: its voice channel opens
   in a minute". Before the usual window, `edr_tb_vc_run` syncs only open + fully confirmed cars
   (`edr_tb_vc_sync($plan, $only)`); from the day before it opens every car as before.
+- 3.3.0 **team captains**: one driver per car is its point of contact. Admin picks them on Teams (`state.captains[carKey]
+  = driverId`, an `EVP_KEYS` entry so it is per race; `capOf(key)` ignores a captain who left the car; delcar and
+  driver removal keep it aligned) and taps **Make PIN** (`POST /captain/pin` new/clear/list, edit-gated): a 6-digit
+  PIN shown once with a copy-ready DM. Only a `password_hash` is stored (`edr_tb_captain_pins`, keyed by
+  `edr_tb_ics_key(name)`, so one PIN covers every car that driver captains); never in `/plan`. Wrong PINs: 8 per IP
+  per 10 min, 20 per captain per hour (a new PIN lifts the second), counted under the plan write lock so parallel
+  guesses cannot lose increments. An address that entered the PIN correctly before (`rec.ok`, hashed) is exempt
+  from the per-captain lock, so strangers guessing cannot lock the real captain out on race day; a device whose PIN
+  is refused forgets it. The stored stint order is read as `stintCars()` reads it (wrong length = all empty), and
+  `was` + `wasPq` must match it; approving a swap also checks the stint is still the releaser's. In driver step 4 the captain enters the PIN
+  (kept in `localStorage.edrTB_cpin`, checked quietly once per load) and gets `capPanel`: race-day block (`rdBody`,
+  shared with the Race day tab), who has confirmed + **Nudge** (Discord, 30 min apart, stint drivers only), their
+  car's swaps (approve/decline), **Who drives what** (a select per P/Q slot and stint, staged in `_capDraft`, fair-share
+  warning, Save/Undo; only once published, not after the car's last stint) and the **captain's report** after the
+  green flag (result, stints followed yes/mostly/no, problems, notes; stored in `edr_tb_captain_reports`, back on
+  `GET /avail` as `capReports`, posted once per change, shown on Race week step 7 "Captains").
+  `POST /captain` (public, every action PIN-checked against the captain the STORED plan names for that car):
+  `save`/`swap` take the plan write lock, refuse a stale `was` order (409), rebuild only that car's slice in every
+  stored copy of the race (`edr_tb_cap_rebuild`: stintAssign, qualiAssign, `channels.cars[key]` first names,
+  `confirm.drivers` signatures computed from minutes off the window start read from the admin-written entries, so they
+  equal what `myStintSig()` computes), bump `edr_tb_plan_rev`, then run `edr_tb_stint_changes(..., captain)` ("🔄 Stint
+  change · by captain X"). An approved swap is marked done first so the diff does not post it twice. An admin tab
+  with unsaved edits gets the usual 409 and re-applies. Stub tests: 50 checks incl. a round trip that reproduces the
+  admin-written confirm entries byte for byte.
+  **Choosing a captain** (Tom, 26 Nov: "availability is the main thing"): the picker shows every driver's cover of
+  THAT car's race window (session open to the flag) by yes blocks (`capCover`), e.g. "★ Saverio 100% · Ryan 84% ·
+  Steve 69%", plus "if needed" cover. `capRank`: cover %, and only on an exact tie practice/qualifying for the car,
+  then races they gave times for (`capRaces`, availStore, so the last ~90 days), then iRating, then if-needed cover.
+  The admin themself (`isAdmin()` and `state.me`) is never the suggestion; the next one is. No captain = a
+  "Suggested: X, covers N% …" line with a one-tap **Make X captain**; a set captain is never switched, only a quiet
+  "Ryan now covers more of the race (96% vs 80%)". Drivers in a car with no captain get **I'll captain this car** in
+  step 4 (`/captain` `offer`/`unoffer`, no PIN, members of that car only, one Discord ping per offer, stored in
+  `edr_tb_captain_offers`, `capOffers` on `/avail`); the admin approves with Make X captain, which clears the car's
+  offers (`/captain/pin` `offers_clear`).
+- 3.3.0 **confirm from Full planner**: a device once switched to Full planner (`edrTB_view='full'`) opened the Discord
+  `#stints` link in the tabs, where there is no confirm button (Luke Hay, 26 Nov). `cfNagHtml()` puts a banner at the
+  top of every planner tab for a non-admin whose current stints (`myStintSig`) are pending or changed while
+  confirmations are open and before the start: "You haven't confirmed your stints for <race> · Confirm now", which
+  goes to My steps step 4 (`cfnaggo`: `_wizStep=4`, `setFullView(false)`). It resolves the driver from `edrTB_irid`
+  the way the steps view does, and is added after the tab routing line (the assembler anchors on `el.innerHTML =`).
+  Same release: the Availability summary's "total driver-hours" is rounded to 0.1 (a float sum read
+  "253.60000000000002h" on 26 Nov and pushed the card off a phone, failing the smoke test on live data).
 - **Smoke test (3.1.6)**: `tests/smoke/` opens the built bundle in headless Chrome (puppeteer-core):
   admin desktop + phone (every tab), driver phone in a Sydney clock (steps 2-4, then the Full planner),
   and fails on any script error, "undefined"/"NaN" text, phone overflow, or Stints showing the wrong
@@ -212,6 +254,9 @@ Details in the plugin's [CLAUDE.md](files/edr-team-builder/CLAUDE.md).
   failing smoke test blocks a release. Locally: `bash tests/smoke/fetch-fixtures.sh && npm i --no-save
   --prefix tests/smoke puppeteer-core@23 && node tests/smoke/run.mjs` (finds Chrome on macOS). Run it
   before asking to ship. It catches 3.0.7's blank Availability tab (verified by re-breaking it).
+  3.3.0 adds a captain run (`?captain=1` makes the identified driver their car's captain, PIN `123456`; `&shift=<h>`
+  moves the page clock): wrong/right PIN, moving a stint and saving, mid-race race-day block + report, and the admin
+  captain picker, Make PIN and Race week step.
 
 ## Team Builder workflow & roles (v2.4)
 

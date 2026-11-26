@@ -2,7 +2,7 @@
 /**
  * Plugin Name: EDR Team Builder
  * Description: Endurotech Racing endurance team + stint planner. Pulls Garage 61 pace and official iRacing session times, collects driver availability in-house, and builds Pro/Casual teams and stint rotations. Add the [edr_team_builder] shortcode to a page.
- * Version: 3.2.1
+ * Version: 3.3.0
  * Author: Endurotech Racing
  * License: GPL-2.0-or-later
  */
@@ -11,7 +11,7 @@ if (!defined('ABSPATH')) exit; // no direct access
 
 define('EDR_TB_DIR', plugin_dir_path(__FILE__));
 define('EDR_TB_URL', plugin_dir_url(__FILE__));
-define('EDR_TB_VER', '3.2.1');
+define('EDR_TB_VER', '3.3.0');
 
 require_once EDR_TB_DIR . 'includes/garage61.php';
 require_once EDR_TB_DIR . 'includes/iracing.php';
@@ -264,6 +264,14 @@ add_action('rest_api_init', function () {
     ));
     register_rest_route('edr/v1', '/raceday', array(
         'methods' => 'POST', 'permission_callback' => '__return_true', 'callback' => 'edr_tb_rest_raceday',
+    ));
+    // 3.3.0 team captains: public, but every action checks the captain's PIN (hash stored server-side,
+    // never in /plan) and only ever touches that captain's own car. PINs are made by an admin.
+    register_rest_route('edr/v1', '/captain', array(
+        'methods' => 'POST', 'permission_callback' => '__return_true', 'callback' => 'edr_tb_rest_captain',
+    ));
+    register_rest_route('edr/v1', '/captain/pin', array(
+        'methods' => 'POST', 'permission_callback' => 'edr_tb_req_can_edit', 'callback' => 'edr_tb_rest_captain_pin',
     ));
     register_rest_route('edr/v1', '/summary', array(
         'methods' => 'POST', 'permission_callback' => 'edr_tb_req_can_edit', 'callback' => 'edr_tb_rest_summary',
@@ -1362,7 +1370,9 @@ function edr_tb_rest_avail_get() {
         'confirmPosted' => (object) get_option('edr_tb_confirm_posted', array()),   // {ev: {d4: ts, d2: ts}}
         'vc'            => edr_tb_vc_public(),                                         // car voice channels: state for the admin box
         'swaps'         => (object) get_option('edr_tb_swaps', array()),
-        'raceday'       => (object) get_option('edr_tb_raceday', array()),           // 3.0: {ev: {carKey: {shift ms, n, at, by}}}             // 3.0: {ev: [{id, key, car, n, s, e, from, to, st, at}]}
+        'raceday'       => (object) get_option('edr_tb_raceday', array()),           // 3.0: {ev: {carKey: {shift ms, n, at, by}}}
+        'capReports'    => (object) get_option('edr_tb_captain_reports', array()),   // 3.3.0: {ev: {carKey: {result, followed, problems, notes, by, car, ts}}}
+        'capOffers'     => (object) get_option('edr_tb_captain_offers', array()),    // 3.3.0: {ev: {carKey: [{name, at}]}} "I'll captain this car"
     ));
 }
 
@@ -2348,7 +2358,7 @@ function edr_tb_stint_change_lines($old, $new, $swaps) {
     foreach ((array) ($new['confirm']['drivers'] ?? array()) as $nm => $d) if ((string) ($d['sig'] ?? '') !== (string) ($od[$nm]['sig'] ?? '')) $again[] = $nm;
     return array($lines, $again);
 }
-function edr_tb_stint_changes($before, $after) {
+function edr_tb_stint_changes($before, $after, $by = '') {
     $oe = edr_tb_plan_events($before);
     $allSwaps = (array) get_option('edr_tb_swaps', array());
     $url = (string) get_option('edr_tb_page_url', '');
@@ -2365,13 +2375,457 @@ function edr_tb_stint_changes($before, $after) {
         if ($carsChanged && !empty($vc[$ev]['chans']) && empty($vc[$ev]['deleted'])) $refresh = true;   // swaps too
         list($lines, $again) = edr_tb_stint_change_lines($o, $p, (array) ($allSwaps[$ev] ?? array()));
         if (!$lines) continue;
-        $msg = '🔄 **Stint change · ' . explode('|', $ev)[0] . "**\n" . implode("\n", array_slice($lines, 0, 20));
+        $msg = '🔄 **Stint change · ' . explode('|', $ev)[0] . '**' . ($by !== '' ? ' · by captain **' . $by . '**' : '') . "\n" . implode("\n", array_slice($lines, 0, 20));
         if ($again && (!$first || time() < $first)) $msg .= "\nYour stints changed, please confirm again: " . implode(', ', $again) . ($url ? "\n<" . $url . '#stints>' : '');   // not mid-race
         if (!empty(edr_tb_settings()['confirm_webhook'])) edr_tb_confirm_post($msg);
     }
     if ($refresh && !wp_next_scheduled('edr_tb_vc_refresh')) wp_schedule_single_event(time() + 30, 'edr_tb_vc_refresh');
 }
 add_action('edr_tb_vc_refresh', 'edr_tb_vc_run');   // same job as the hourly one, run once right after a change
+
+/* ----------------------------------------------------------------
+ * Team captains (3.3.0)
+ * The admin picks one driver per car as captain (plan.captains[carKey] = driver id, per race) and
+ * makes them a 6-digit PIN here. There are no logins and iRacing IDs are public, so the PIN is the
+ * gate: only its hash is stored (edr_tb_captain_pins, keyed by driver name, so one PIN works for
+ * every car that driver captains), and it never appears in /plan. With it a captain can, for their
+ * own car only: move drivers between its stints and set practice / qualifying, approve or decline
+ * swaps in it, nudge the drivers who have not confirmed, and file a short report after the race.
+ * The server rebuilds that car's slice of the stored plan itself (stintAssign, qualiAssign, the
+ * Discord payload in channels, the confirm signatures), so nothing the browser sends can touch
+ * another car, then bumps the plan rev and runs the 3.2.0 stint-change ping.
+ * ---------------------------------------------------------------- */
+define('EDR_TB_MAX_PIN_FAILS', 8);         // wrong PINs per IP per 10 min
+define('EDR_TB_MAX_PIN_FAILS_NAME', 20);   // wrong PINs per captain per hour, from anywhere
+define('EDR_TB_CAP_NUDGE_GAP', 30 * MINUTE_IN_SECONDS);
+
+function edr_tb_cap_key($name) { return edr_tb_ics_key($name); }   // lower case, single spaces, no iRacing digit suffix
+function edr_tb_cap_first($name) { $n = trim((string) $name); return $n === '' ? '' : explode(' ', $n)[0]; }
+function edr_tb_cap_names($plan) {
+    $out = array();
+    foreach ((array) ($plan['drivers'] ?? array()) as $d) if (is_array($d) && isset($d['id'])) $out[intval($d['id'])] = (string) ($d['name'] ?? '');
+    return $out;
+}
+function edr_tb_pin_fail_keys($name) {
+    $ip = isset($_SERVER['REMOTE_ADDR']) ? (string) $_SERVER['REMOTE_ADDR'] : '';
+    return array('edr_tb_pinf_ip_' . md5($ip), 'edr_tb_pinf_nm_' . md5(edr_tb_cap_key($name)));
+}
+function edr_tb_pin_ip_hash() { return md5('edr_tb_ip|' . (isset($_SERVER['REMOTE_ADDR']) ? (string) $_SERVER['REMOTE_ADDR'] : '')); }
+/* Wrong PINs: 8 per IP per 10 min, 20 per captain per hour. The per-captain lock does not apply to an address
+   that has entered this captain's PIN correctly before (rec['ok']), so strangers guessing cannot lock the real
+   captain out on race day. Callers hold the plan write lock, so the counters cannot lose increments. */
+function edr_tb_pin_throttled($name, $rec = null) {
+    list($a, $b) = edr_tb_pin_fail_keys($name);
+    if (intval(get_transient($a)) >= EDR_TB_MAX_PIN_FAILS) return true;
+    $known = is_array($rec) && in_array(edr_tb_pin_ip_hash(), (array) ($rec['ok'] ?? array()), true);
+    return !$known && intval(get_transient($b)) >= EDR_TB_MAX_PIN_FAILS_NAME;
+}
+function edr_tb_pin_failed($name) {
+    list($a, $b) = edr_tb_pin_fail_keys($name);
+    set_transient($a, intval(get_transient($a)) + 1, 10 * MINUTE_IN_SECONDS);
+    set_transient($b, intval(get_transient($b)) + 1, HOUR_IN_SECONDS);
+}
+
+/* Which stored copies hold this race: the top level when it is the race open in the planner, and
+   evPlans[ev] (the admin's save keeps both identical for the open race). Edits go to every copy. */
+function edr_tb_cap_copies($plan, $ev) {
+    $out = array();
+    if ((string) ($plan['evsel'] ?? '') === $ev) $out[] = 'top';
+    if (isset($plan['evPlans'][$ev]) && is_array($plan['evPlans'][$ev]) && !empty($plan['evPlans'][$ev]['teams'])) $out[] = 'ev';
+    return $out;
+}
+function edr_tb_cap_read($plan, $which, $ev) {
+    if ($which === 'ev') return (array) $plan['evPlans'][$ev];
+    $c = $plan; unset($c['evPlans']); return $c;
+}
+function edr_tb_cap_write(&$plan, $which, $ev, $c) {
+    foreach (array('stintAssign', 'qualiAssign', 'channels', 'confirm') as $k) {
+        if (!array_key_exists($k, $c)) continue;
+        if ($which === 'ev') $plan['evPlans'][$ev][$k] = $c[$k]; else $plan[$k] = $c[$k];
+    }
+}
+function edr_tb_cap_team($c, $key) {
+    $p = explode('|', (string) $key);
+    if (count($p) !== 3 || !preg_match('/^\d+$/', $p[2])) return null;
+    $t = $c['teams'][$p[0]][$p[1]][intval($p[2])] ?? null;
+    return is_array($t) ? array_map('intval', $t) : null;
+}
+/* the car's current practice/qualifying drivers; an old single number counts for both */
+function edr_tb_cap_pq($c, $key) {
+    $v = $c['qualiAssign'][$key] ?? null;
+    if ($v === null || $v === '') return array('p' => null, 'q' => null);
+    if (!is_array($v)) return array('p' => intval($v), 'q' => intval($v));
+    return array('p' => isset($v['p']) && $v['p'] !== null ? intval($v['p']) : null, 'q' => isset($v['q']) && $v['q'] !== null ? intval($v['q']) : null);
+}
+function edr_tb_cap_norm_ids($v, $team) {
+    $out = array();
+    foreach (array_values((array) $v) as $x) {
+        if ($x === null || $x === '' || $x === false) { $out[] = null; continue; }
+        if (!is_numeric($x)) return null;
+        $x = intval($x);
+        if (!in_array($x, $team, true)) return null;   // only drivers in this car
+        $out[] = $x;
+    }
+    return $out;
+}
+function edr_tb_cap_soft_ids($v, $team, $len) {
+    $v = array_values((array) $v);
+    if (count($v) !== $len) return array_fill(0, $len, null);
+    foreach ($v as $i => $x) $v[$i] = (is_numeric($x) && in_array(intval($x), $team, true)) ? intval($x) : null;
+    return $v;
+}
+function edr_tb_cap_channel_car($c, $key) {
+    foreach (array_values((array) ($c['channels']['cars'] ?? array())) as $i => $car) if (is_array($car) && (string) ($car['key'] ?? '') === (string) $key) return array($i, $car);
+    return array(-1, null);
+}
+function edr_tb_cap_pre_slot($label) { return stripos((string) $label, 'qualif') === 0 ? 'q' : 'p'; }   // "Practice & qualifying" is the p slot, as in preSlots()
+
+/**
+ * Rebuild one race copy's slice for one car from the new stint order and practice/qualifying,
+ * the same way the admin's browser would (channelPlan / confirmPlan): first names in the channel
+ * payload, and per driver the stint numbers, times and the signature their confirmation is held
+ * against. Times never change here; only who drives. Signatures use minutes from the window start,
+ * read off the entries the admin's browser already wrote (so they match what drivers' pages compute).
+ */
+function edr_tb_cap_rebuild($c, $key, $arr, $pq, $names, $winStart = 0) {
+    $team = edr_tb_cap_team($c, $key);
+    if ($team === null) return new WP_Error('bad_car', 'That car is no longer in the line-up.', array('status' => 409));
+    list($ci, $car) = edr_tb_cap_channel_car($c, $key);
+    $cf = (isset($c['confirm']) && is_array($c['confirm'])) ? $c['confirm'] : null;
+    if ($ci < 0 || !$cf) return new WP_Error('no_plan', 'This race\'s stints have not been saved by an admin yet.', array('status' => 409));
+    $st = array_values((array) ($car['stints'] ?? array()));
+    if (count($arr) !== count($st)) return new WP_Error('stale', 'This car\'s stints changed a moment ago. The page has the latest now: check and try again.', array('status' => 409));
+    $first = function ($id) use ($names) { return $id === null ? '' : edr_tb_cap_first($names[$id] ?? ''); };
+    foreach ($st as $i => $x) $st[$i]['d'] = $first($arr[$i]);
+    $pre = array_values((array) ($car['pre'] ?? array()));
+    foreach ($pre as $j => $x) $pre[$j]['d'] = $first($pq[edr_tb_cap_pre_slot($x['l'] ?? '')]);
+    $car['stints'] = $st; $car['pre'] = $pre;
+    $c['channels']['cars'][$ci] = $car;
+
+    $sa = is_array($c['stintAssign'] ?? null) ? $c['stintAssign'] : array();
+    $sa[$key] = $arr; $c['stintAssign'] = $sa;
+    $qa = is_array($c['qualiAssign'] ?? null) ? $c['qualiAssign'] : array();
+    $q = array(); if ($pq['p'] !== null) $q['p'] = $pq['p']; if ($pq['q'] !== null) $q['q'] = $pq['q'];
+    if ($q) $qa[$key] = $q; else unset($qa[$key]);
+    $c['qualiAssign'] = $qa;
+
+    $drv = (array) ($cf['drivers'] ?? array());
+    $base = null; $prefix = null; $label = null;
+    foreach ($drv as $nm => $d) {
+        if (!is_array($d)) continue;
+        $mine = (string) ($d['key'] ?? '') === (string) $key;
+        if ($mine && $label === null && !empty($d['car'])) $label = (string) $d['car'];
+        if (preg_match('~^(.*@\d+:)(\d+)-(\d+)~', (string) ($d['sig'] ?? ''), $m) && !empty($d['times'][0][0])) {
+            if ($base === null) $base = intval($d['times'][0][0]) - intval($m[2]) * 60000;
+            if ($mine && $prefix === null) $prefix = $m[1];
+        }
+    }
+    if ($base === null) $base = intval($winStart);
+    if (!$base) return new WP_Error('no_plan', 'This race\'s stints have not been saved by an admin yet.', array('status' => 409));
+    if ($prefix === null) {
+        $w = intval($c['stintWin'][$key] ?? 0); if (!$w) $w = intval($c['stint']['window'] ?? 1);
+        $prefix = $key . '@' . $w . ':';
+    }
+    if ($label === null) $label = (string) ($car['name'] ?? 'Car');
+    $mem = array(); foreach ($team as $id) if (($names[$id] ?? '') !== '') $mem[$names[$id]] = 1;
+    foreach ($drv as $nm => $d) if ((is_array($d) && (string) ($d['key'] ?? '') === (string) $key) || isset($mem[$nm])) unset($drv[$nm]);
+    $mn = function ($ms) use ($base) { return intval(round((intval($ms) - $base) / 60000)); };
+    foreach ($team as $id) {
+        $nm = $names[$id] ?? ''; if ($nm === '') continue;
+        $e = null; $pieces = array(); $times = array(); $nums = array();
+        foreach ($arr as $i => $x) if ($x === $id) {
+            $pieces[] = $mn($st[$i]['s'] ?? 0) . '-' . $mn($st[$i]['e'] ?? 0);
+            $times[] = array(intval($st[$i]['s'] ?? 0), intval($st[$i]['e'] ?? 0)); $nums[] = $i + 1;
+        }
+        if ($nums) $e = array('sig' => $prefix . implode(',', $pieces), 'car' => $label, 'key' => $key, 'stints' => $nums, 'times' => $times);
+        foreach ($pre as $x) if ($pq[edr_tb_cap_pre_slot($x['l'] ?? '')] === $id) {
+            if (!$e) $e = array('sig' => '', 'car' => $label, 'key' => $key, 'stints' => array(), 'times' => array());
+            $e['pre'][] = array('l' => (string) ($x['l'] ?? ''), 's' => intval($x['s'] ?? 0), 'e' => intval($x['e'] ?? 0));
+        }
+        if ($e) $drv[$nm] = $e;
+    }
+    $cf['drivers'] = $drv; $c['confirm'] = $cf;
+    return $c;
+}
+
+/** Check the PIN against the captain the stored plan names for this race's car. */
+function edr_tb_cap_auth($plan, $ev, $key, $pin) {
+    $which = edr_tb_cap_copies($plan, $ev);
+    if (!$which) return new WP_Error('no_plan', 'That race has no line-up yet.', array('status' => 409));
+    $c = edr_tb_cap_read($plan, $which[0], $ev);
+    $team = edr_tb_cap_team($c, $key);
+    if ($team === null) return new WP_Error('bad_car', 'That car is not in the line-up.', array('status' => 409));
+    $cid = intval($c['captains'][$key] ?? 0);
+    if (!$cid || !in_array($cid, $team, true)) return new WP_Error('no_captain', 'This car has no captain set.', array('status' => 403));
+    $name = edr_tb_cap_names($plan)[$cid] ?? '';
+    if ($name === '') return new WP_Error('no_captain', 'This car has no captain set.', array('status' => 403));
+    wp_cache_delete('edr_tb_captain_pins', 'options');
+    $pins = (array) get_option('edr_tb_captain_pins', array());
+    $rec = $pins[edr_tb_cap_key($name)] ?? null;
+    if (edr_tb_pin_throttled($name, $rec)) return new WP_Error('pin_locked', 'Too many wrong PINs. Wait an hour, or ask an admin for a new PIN.', array('status' => 429));
+    $pin = preg_replace('/\D/', '', (string) $pin);
+    if (!is_array($rec) || empty($rec['h']) || strlen($pin) < 4 || !password_verify($pin, (string) $rec['h'])) {
+        edr_tb_pin_failed($name);
+        return new WP_Error('bad_pin', is_array($rec) ? 'That PIN is not right for the captain of this car.' : 'No captain PIN has been made yet. Ask an admin for one.', array('status' => 403));
+    }
+    $ip = edr_tb_pin_ip_hash(); $ok = array_values((array) ($rec['ok'] ?? array()));
+    if (!in_array($ip, $ok, true)) { $ok[] = $ip; $pins[edr_tb_cap_key($name)]['ok'] = array_slice($ok, -8); update_option('edr_tb_captain_pins', $pins, false); }
+    return array('which' => $which, 'id' => $cid, 'name' => $name, 'team' => $team, 'c' => $c);
+}
+
+function edr_tb_rest_captain(WP_REST_Request $req) {
+    $act = (string) $req->get_param('action');
+    $ev  = substr(sanitize_text_field((string) $req->get_param('ev')), 0, 120);
+    $key = substr(sanitize_text_field((string) $req->get_param('key')), 0, 80);
+    if (!edr_tb_valid_ev($ev) || $key === '') return new WP_Error('bad_req', 'Unknown race or car.', array('status' => 400));
+    $pin = (string) $req->get_param('pin');
+    if ($act === 'offer' || $act === 'unoffer') return edr_tb_cap_offer($req, $act, $ev, $key);
+    if ($act === 'save' || $act === 'swap') return edr_tb_cap_edit($req, $act, $ev, $key, $pin);
+    global $wpdb;
+    $locked = $wpdb->get_var("SELECT GET_LOCK('edr_tb_plan_write', 3)");
+    if ((int) $locked !== 1) return new WP_Error('busy', 'Busy, try again in a moment.', array('status' => 503));
+    wp_cache_delete('edr_tb_plan', 'options');
+    $plan = (array) get_option('edr_tb_plan', array());
+    $a = edr_tb_cap_auth($plan, $ev, $key, $pin);
+    $wpdb->query("SELECT RELEASE_LOCK('edr_tb_plan_write')");
+    if (is_wp_error($a)) return $a;
+    list(, $car) = edr_tb_cap_channel_car($a['c'], $key);
+    $carName = (string) ($car['name'] ?? 'your car');
+    if ($act === 'check') return rest_ensure_response(array('ok' => true, 'name' => $a['name'], 'car' => $carName));
+    if ($act === 'nudge') return edr_tb_cap_nudge($plan, $ev, $key, $a, $carName);
+    if ($act === 'report') return edr_tb_cap_report($req, $ev, $key, $a, $car, $carName);
+    return new WP_Error('bad_req', 'Unknown action.', array('status' => 400));
+}
+
+/* save: a new driver order for the car's stints (+ practice/qualifying). swap: approve or decline a
+   swap in the captain's car; approving moves the stint here, server-side, in the same step. */
+function edr_tb_cap_edit(WP_REST_Request $req, $act, $ev, $key, $pin) {
+    global $wpdb;
+    $locked = $wpdb->get_var("SELECT GET_LOCK('edr_tb_plan_write', 3)");
+    if ((int) $locked !== 1) return new WP_Error('busy', 'Another save is in progress, try again.', array('status' => 503));
+    $done = function ($r) use ($wpdb) { $wpdb->query("SELECT RELEASE_LOCK('edr_tb_plan_write')"); return $r; };
+    wp_cache_delete('edr_tb_plan_rev', 'options'); wp_cache_delete('edr_tb_plan', 'options');
+    $plan = (array) get_option('edr_tb_plan', array());
+    $rev  = intval(get_option('edr_tb_plan_rev', 0));
+    $a = edr_tb_cap_auth($plan, $ev, $key, $pin);
+    if (is_wp_error($a)) return $done($a);
+    $c0 = $a['c'];
+    if (empty($c0['teamsLocked']) || empty($c0['stintsLocked'])) return $done(new WP_Error('not_published', 'The plan for this race is not published yet. Captain changes open once it is.', array('status' => 409)));
+    list(, $car0) = edr_tb_cap_channel_car($c0, $key);
+    $lastEnd = 0; foreach ((array) ($car0['stints'] ?? array()) as $x) $lastEnd = max($lastEnd, intval($x['e'] ?? 0));
+    if ($lastEnd && time() * 1000 > $lastEnd) return $done(new WP_Error('race_over', 'This car\'s race is over.', array('status' => 409)));
+    $names = edr_tb_cap_names($plan);
+    /* the stored order as the pages read it (stintCars): a list of the wrong length means all empty, and anyone no
+       longer in the car is an empty stint */
+    $arr0 = edr_tb_cap_soft_ids($c0['stintAssign'][$key] ?? array(), $a['team'], count((array) ($car0['stints'] ?? array())));
+    $pq0 = edr_tb_cap_pq($c0, $key);
+    foreach ($pq0 as $k => $x) if ($x !== null && !in_array($x, $a['team'], true)) $pq0[$k] = null;
+    $swap = null; $swapDo = '';
+    if ($act === 'swap') {
+        $swapDo = (string) $req->get_param('do');
+        $all = (array) get_option('edr_tb_swaps', array());
+        foreach ((array) ($all[$ev] ?? array()) as $x) if ((string) ($x['id'] ?? '') === (string) $req->get_param('id')) $swap = $x;
+        if (!$swap || (string) ($swap['key'] ?? '') !== $key || !in_array($swap['st'] ?? '', array('open', 'claimed'), true))
+            return $done(new WP_Error('gone', 'That swap is no longer open.', array('status' => 409)));
+        if ($swapDo === 'decline') {
+            $done(null);
+            return edr_tb_cap_swap_mark($ev, $swap['id'], 'declined', '');
+        }
+        if ($swapDo !== 'approve' || ($swap['st'] ?? '') !== 'claimed') return $done(new WP_Error('bad_req', 'Nobody has offered to take that stint yet.', array('status' => 409)));
+        $toId = 0; foreach ($a['team'] as $id) if (edr_tb_cap_key($names[$id] ?? '') === edr_tb_cap_key($swap['to'] ?? '')) $toId = $id;
+        $n = intval($swap['n'] ?? -1);
+        if (!$toId || $n < 0 || $n >= count($arr0)) return $done(new WP_Error('bad_req', 'That driver is no longer in this car: decline it and sort it by hand.', array('status' => 409)));
+        if ($arr0[$n] === null || edr_tb_cap_key($names[$arr0[$n]] ?? '') !== edr_tb_cap_key($swap['from'] ?? ''))
+            return $done(new WP_Error('stale', 'That stint has changed since it was released: decline it and sort it by hand.', array('status' => 409)));
+        $arr = $arr0; $arr[$n] = $toId; $pq = $pq0;
+    } else {
+        $arr = edr_tb_cap_norm_ids($req->get_param('stints'), $a['team']);
+        $pqIn = (array) $req->get_param('pq');
+        $pp = edr_tb_cap_norm_ids(array($pqIn['p'] ?? null, $pqIn['q'] ?? null), $a['team']);
+        if ($arr === null || $pp === null) return $done(new WP_Error('bad_req', 'Only drivers in your car can be given its stints.', array('status' => 400)));
+        $pq = array('p' => $pp[0], 'q' => $pp[1]);
+        /* the order this page started from: if the stored one moved since (an admin, or the captain on
+           another device), refuse rather than overwrite it */
+        $was = $req->get_param('was');
+        if (is_array($was)) {
+            $w = edr_tb_cap_soft_ids($was, $a['team'], count($arr0));
+            $wp = (array) $req->get_param('wasPq');   // 7: practice/qualifying are part of what the page started from
+            $wpq = $req->get_param('wasPq') === null ? $pq0 : array('p' => edr_tb_cap_soft_ids(array($wp['p'] ?? null), $a['team'], 1)[0], 'q' => edr_tb_cap_soft_ids(array($wp['q'] ?? null), $a['team'], 1)[0]);
+            if ($w !== $arr0 || $wpq !== $pq0) return $done(new WP_Error('stale', 'This car\'s stints changed a moment ago. The page has the latest now: check and try again.', array('status' => 409)));
+        }
+    }
+    if ($arr === $arr0 && $pq === $pq0) return $done(rest_ensure_response(array('ok' => true, 'rev' => $rev, 'message' => 'Nothing changed.')));
+    $before = $plan;
+    foreach ($a['which'] as $w) {
+        $c = edr_tb_cap_rebuild(edr_tb_cap_read($plan, $w, $ev), $key, $arr, $pq, $names, $w === 'top' ? intval($plan['winStart'] ?? 0) : 0);
+        if (is_wp_error($c)) return $done($c);
+        edr_tb_cap_write($plan, $w, $ev, $c);
+    }
+    update_option('edr_tb_plan', $plan, false);
+    update_option('edr_tb_plan_rev', $rev + 1, false);
+    update_option('edr_tb_plan_updated', current_time('mysql'), false);
+    $done(null);
+    $note = '';
+    if ($swap) {
+        $say = '✅ Stint ' . (intval($swap['n']) + 1) . ' in **' . ($swap['car'] ?? '') . '** is now **' . ($swap['to'] ?? '') . '**\'s (approved by captain ' . edr_tb_cap_first($a['name']) . ').';
+        $m = edr_tb_cap_swap_mark($ev, $swap['id'], 'done', $say);
+        if (is_wp_error($m)) { sleep(1); $m = edr_tb_cap_swap_mark($ev, $swap['id'], 'done', $say); }
+        if (is_wp_error($m)) $note = ' The swap list did not update: decline the swap to close it.';
+    }
+    edr_tb_stint_changes($before, $plan, edr_tb_cap_first($a['name']));
+    return rest_ensure_response(array('ok' => true, 'rev' => $rev + 1, 'stints' => $arr, 'pq' => $pq, 'message' => ($swap ? 'Swap approved: the stint has moved.' : 'Saved. The team channel has been told.') . $note));
+}
+
+/* the swap record itself, under the same lock /swap uses; marked BEFORE the stint-change diff runs so
+   the diff knows this stint moved by a swap and does not post it twice */
+function edr_tb_cap_swap_mark($ev, $id, $st, $say) {
+    global $wpdb;
+    $locked = $wpdb->get_var("SELECT GET_LOCK('edr_tb_avail_write', 5)");
+    if ((int) $locked !== 1) return new WP_Error('busy', 'Try again in a moment.', array('status' => 503));
+    wp_cache_delete('edr_tb_swaps', 'options');
+    $all = (array) get_option('edr_tb_swaps', array());
+    $list = (isset($all[$ev]) && is_array($all[$ev])) ? array_values($all[$ev]) : array();
+    foreach ($list as $i => $x) if ((string) ($x['id'] ?? '') === (string) $id) { $list[$i]['st'] = $st; $list[$i]['at'] = time(); }
+    $all[$ev] = $list;
+    update_option('edr_tb_swaps', $all, false);
+    edr_tb_bump_avail_rev();
+    $wpdb->query("SELECT RELEASE_LOCK('edr_tb_avail_write')");
+    if ($say !== '') edr_tb_swap_say($say);
+    return rest_ensure_response(array('ok' => true, 'message' => $st === 'declined' ? 'Swap cancelled.' : 'Swap approved.', 'swaps' => $list));
+}
+
+/* one Discord line naming the drivers in the captain's car who have not confirmed yet */
+function edr_tb_cap_nudge($plan, $ev, $key, $a, $carName) {
+    $p = edr_tb_plan_event($plan, $ev);
+    if (!$p || empty($p['teamsLocked']) || empty($p['stintsLocked'])) return new WP_Error('not_published', 'The plan for this race is not published yet.', array('status' => 409));
+    if ((string) ($p['confirm']['ev'] ?? '') !== $ev) return new WP_Error('no_plan', 'No stints to confirm for this race yet.', array('status' => 409));
+    $start = intval($p['confirm']['start'] ?? 0);
+    if ($start && time() * 1000 < $start - 4 * DAY_IN_SECONDS * 1000) return new WP_Error('too_early', 'Confirmations open 4 days before the race.', array('status' => 409));
+    $green = 0; foreach ((array) ($p['channels']['cars'] ?? array()) as $cc) if ((string) ($cc['key'] ?? '') === (string) $key) foreach ((array) ($cc['stints'] ?? array()) as $x) { $s0 = intval($x['s'] ?? 0); if ($s0 && (!$green || $s0 < $green)) $green = $s0; }
+    if (time() * 1000 > ($green ?: $start)) return new WP_Error('too_late', 'Your car has started the race.', array('status' => 409));
+    $status = edr_tb_confirm_status($p);
+    $drv = (array) ($p['confirm']['drivers'] ?? array());
+    $pend = array_values(array_filter($status['pending'], function ($n) use ($drv, $key) { return (string) ($drv[$n]['key'] ?? '') === (string) $key && !empty($drv[$n]['stints']); }));   // P/Q-only drivers have nothing to confirm
+    if (!$pend) return rest_ensure_response(array('ok' => true, 'message' => 'Everyone in your car has confirmed. Nothing to send.'));
+    if (empty(edr_tb_settings()['confirm_webhook'])) return new WP_Error('no_webhook', 'The team channel webhook is not set, so there is nowhere to post. Message them directly.', array('status' => 409));
+    $seen = (array) get_option('edr_tb_captain_nudged', array());
+    $last = intval($seen[$ev][$key] ?? 0);
+    if (time() - $last < EDR_TB_CAP_NUDGE_GAP) return new WP_Error('too_soon', 'You nudged them ' . max(1, round((time() - $last) / 60)) . ' min ago. Give them a little time.', array('status' => 429));
+    $url = (string) get_option('edr_tb_page_url', '');
+    $msg = '👋 **' . $carName . '**: captain **' . edr_tb_cap_first($a['name']) . '** is waiting on **' . implode('**, **', $pend) . '** to confirm their stints for **' . explode('|', $ev)[0] . '**.'
+        . "\nTakes 30 seconds: open the Team Builder, check your stint times, tap **✓ I'm good for these**." . ($url ? "\n<" . $url . '#stints>' : '');
+    $r = edr_tb_confirm_post($msg);
+    if (is_wp_error($r)) return $r;
+    foreach (array_keys($seen) as $k) if ($k !== $ev && count($seen) > 20) unset($seen[$k]);
+    $seen[$ev][$key] = time();
+    update_option('edr_tb_captain_nudged', $seen, false);
+    return rest_ensure_response(array('ok' => true, 'message' => 'Nudged ' . count($pend) . ' driver' . (count($pend) === 1 ? '' : 's') . ' in the team channel.', 'names' => $pend));
+}
+
+/* the captain's report after the race: stored per race and car (shown to admins on Race week) and posted */
+function edr_tb_cap_report(WP_REST_Request $req, $ev, $key, $a, $car, $carName) {
+    global $wpdb;
+    $first = 0; foreach ((array) ($car['stints'] ?? array()) as $x) { $s = intval($x['s'] ?? 0); if ($s && (!$first || $s < $first)) $first = $s; }
+    if (!$first || time() * 1000 < $first) return new WP_Error('too_early', 'The captain\'s report opens once your car has taken the green flag.', array('status' => 409));
+    $followed = (string) $req->get_param('followed');
+    if (!in_array($followed, array('yes', 'mostly', 'no'), true)) $followed = '';
+    $rep = array(
+        'result'   => substr(sanitize_text_field((string) $req->get_param('result')), 0, 120),
+        'followed' => $followed,
+        'problems' => substr(sanitize_textarea_field((string) $req->get_param('problems')), 0, 800),
+        'notes'    => substr(sanitize_textarea_field((string) $req->get_param('notes')), 0, 800),
+        'by' => $a['name'], 'car' => $carName, 'ts' => time(), 'at' => current_time('mysql'),
+    );
+    if ($rep['result'] === '' && $rep['followed'] === '') return new WP_Error('bad_req', 'Add the result, or say whether the stints were followed.', array('status' => 400));
+    $locked = $wpdb->get_var("SELECT GET_LOCK('edr_tb_avail_write', 5)");
+    if ((int) $locked !== 1) return new WP_Error('busy', 'Try again in a moment.', array('status' => 503));
+    wp_cache_delete('edr_tb_captain_reports', 'options');
+    $all = (array) get_option('edr_tb_captain_reports', array());
+    $old = (isset($all[$ev][$key]) && is_array($all[$ev][$key])) ? $all[$ev][$key] : null;
+    $same = $old && $old['result'] === $rep['result'] && $old['followed'] === $rep['followed'] && $old['problems'] === $rep['problems'] && $old['notes'] === $rep['notes'];
+    if (!$same) {
+        if (!isset($all[$ev]) || !is_array($all[$ev])) $all[$ev] = array();
+        $all[$ev][$key] = $rep;
+        if (count($all) > 20) $all = array_slice($all, -20, null, true);
+        update_option('edr_tb_captain_reports', $all, false);
+        edr_tb_bump_avail_rev();
+    }
+    $wpdb->query("SELECT RELEASE_LOCK('edr_tb_avail_write')");
+    $posted = false;
+    if (!$same && !empty(edr_tb_settings()['confirm_webhook'])) {
+        $fl = array('yes' => 'Yes', 'mostly' => 'Mostly', 'no' => 'No');
+        $lines = array('📋 **Captain\'s report · ' . $carName . '** · ' . explode('|', $ev)[0] . ($old ? ' (updated)' : ''), 'by ' . $a['name']);
+        if ($rep['result'] !== '')   $lines[] = '**Result:** ' . $rep['result'];
+        if ($rep['followed'] !== '') $lines[] = '**Stints followed:** ' . $fl[$rep['followed']];
+        if ($rep['problems'] !== '') $lines[] = '**Problems:** ' . $rep['problems'];
+        if ($rep['notes'] !== '')    $lines[] = '**Notes:** ' . $rep['notes'];
+        $posted = !is_wp_error(edr_tb_confirm_post(implode("\n", $lines)));
+    }
+    return rest_ensure_response(array('ok' => true, 'report' => $rep, 'message' => $same ? 'No changes to send.' : ($posted ? 'Report saved and posted to the team channel.' : 'Report saved.')));
+}
+
+/* "I'll captain this car": a driver in the car offers; an admin approves by making them captain on Teams.
+   Public and PIN-free like /swap release, bounded to drivers the stored plan has in that car. */
+function edr_tb_cap_offer(WP_REST_Request $req, $act, $ev, $key) {
+    global $wpdb;
+    $plan = (array) get_option('edr_tb_plan', array());
+    $which = edr_tb_cap_copies($plan, $ev);
+    if (!$which) return new WP_Error('no_plan', 'That race has no line-up yet.', array('status' => 409));
+    $c = edr_tb_cap_read($plan, $which[0], $ev);
+    $team = edr_tb_cap_team($c, $key);
+    $name = edr_tb_swap_name($req->get_param('name'));
+    $names = edr_tb_cap_names($plan); $inCar = false;
+    foreach ((array) $team as $id) if (edr_tb_cap_key($names[$id] ?? '') === edr_tb_cap_key($name) && $name !== '') { $inCar = true; $name = $names[$id]; }
+    if (!$inCar) return new WP_Error('bad_req', 'Only a driver in this car can offer to captain it.', array('status' => 403));
+    list(, $car) = edr_tb_cap_channel_car($c, $key);
+    $carName = (string) ($car['name'] ?? 'the car');
+    $locked = $wpdb->get_var("SELECT GET_LOCK('edr_tb_avail_write', 5)");
+    if ((int) $locked !== 1) return new WP_Error('busy', 'Try again in a moment.', array('status' => 503));
+    wp_cache_delete('edr_tb_captain_offers', 'options');
+    $all = (array) get_option('edr_tb_captain_offers', array());
+    $list = array_values(array_filter((array) ($all[$ev][$key] ?? array()), function ($x) use ($name) { return is_array($x) && edr_tb_cap_key($x['name'] ?? '') !== edr_tb_cap_key($name); }));
+    $had = count($list) !== count((array) ($all[$ev][$key] ?? array()));
+    if ($act === 'offer') $list[] = array('name' => $name, 'at' => time());
+    if ($list) $all[$ev][$key] = array_slice($list, -10); else unset($all[$ev][$key]);
+    if (isset($all[$ev]) && !$all[$ev]) unset($all[$ev]);
+    if (count($all) > 20) $all = array_slice($all, -20, null, true);
+    update_option('edr_tb_captain_offers', $all, false);
+    edr_tb_bump_avail_rev();
+    $wpdb->query("SELECT RELEASE_LOCK('edr_tb_avail_write')");
+    if ($act === 'offer' && !$had) edr_tb_swap_say('🧢 **' . $name . '** offered to captain **' . $carName . '** (' . explode('|', $ev)[0] . '). Admins: make them captain on the Teams tab.');
+    return rest_ensure_response(array('ok' => true, 'offers' => (object) ($all[$ev] ?? array()),
+        'message' => $act === 'offer' ? 'Thanks. An admin will confirm it.' : 'Offer taken back.'));
+}
+
+/* admin: make (or replace) a captain's PIN, clear it, or list who has one. The PIN is shown once. */
+function edr_tb_rest_captain_pin(WP_REST_Request $req) {
+    $act  = (string) $req->get_param('action');
+    $pins = (array) get_option('edr_tb_captain_pins', array());
+    if ($act === 'offers_clear') {   // the admin picked a captain for this car: its open offers are answered
+        $ev = substr(sanitize_text_field((string) $req->get_param('ev')), 0, 120); $key = substr(sanitize_text_field((string) $req->get_param('key')), 0, 80);
+        $all = (array) get_option('edr_tb_captain_offers', array());
+        if (isset($all[$ev][$key])) { unset($all[$ev][$key]); if (!$all[$ev]) unset($all[$ev]); update_option('edr_tb_captain_offers', $all, false); edr_tb_bump_avail_rev(); }
+        return rest_ensure_response(array('ok' => true));
+    }
+    if ($act === 'list') {
+        $out = array(); foreach ($pins as $k => $r) if (is_array($r)) $out[$k] = array('name' => (string) ($r['name'] ?? ''), 'at' => intval($r['at'] ?? 0));
+        return rest_ensure_response(array('ok' => true, 'pins' => (object) $out));
+    }
+    $name = substr(sanitize_text_field((string) $req->get_param('name')), 0, 80);
+    $k = edr_tb_cap_key($name);
+    if ($k === '') return new WP_Error('bad_req', 'Which driver?', array('status' => 400));
+    if ($act === 'clear') {
+        unset($pins[$k]); update_option('edr_tb_captain_pins', $pins, false);
+        return rest_ensure_response(array('ok' => true));
+    }
+    if ($act !== 'new') return new WP_Error('bad_req', 'Unknown action.', array('status' => 400));
+    if (!isset($pins[$k]) && count($pins) >= 60) return new WP_Error('full', 'Too many captain PINs stored. Clear some first.', array('status' => 409));
+    $pin = sprintf('%06d', random_int(0, 999999));
+    $pins[$k] = array('h' => password_hash($pin, PASSWORD_DEFAULT), 'name' => $name, 'at' => time());
+    update_option('edr_tb_captain_pins', $pins, false);
+    list(, $b) = edr_tb_pin_fail_keys($name); delete_transient($b);   // a new PIN lifts the per-captain lockout
+    return rest_ensure_response(array('ok' => true, 'pin' => $pin, 'name' => $name, 'at' => time()));
+}
 
 function edr_tb_rest_tracks() {
     $s = edr_tb_settings();

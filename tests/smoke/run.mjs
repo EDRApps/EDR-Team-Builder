@@ -89,11 +89,137 @@ else {
   const s4 = await page.evaluate(() => { const t = document.getElementById('edr-tb-app').innerText; return { drive: /YOU DRIVE|not driving a stint yet/i.test(t), order: /DRIVING ORDER/i.test(t), sydney: /sydney/i.test(t) }; });
   if ((await step()) !== '4' || !s4.drive || !s4.order) fails.push(`${label}: step 4 (your stints) incomplete ${JSON.stringify(s4)}`);
   if (!s4.sydney) fails.push(`${label}: step 4 does not say the times are Sydney time`);
+  // 3.3.0: a car with no captain offers "I'll captain this car"; tapping it is a request, not a captaincy
+  const offered = await page.evaluate(() => { const o = document.querySelector('[data-action=capoffer]'); if (!o) return 'none'; o.click(); return 'clicked'; });
+  if (offered === 'clicked') { await sleep(400);
+    const ob = await page.evaluate(() => window.__posts.filter((x) => x.path === 'captain').map((x) => x.body)[0]);
+    if (!ob || ob.action !== 'offer' || !ob.name || ob.pin) fails.push(`${label}: offer posted ${JSON.stringify(ob)}`);
+    if (!/You offered to captain this car/i.test(await page.evaluate(() => document.getElementById('edr-tb-app').innerText))) fails.push(`${label}: offer not shown back`);
+  } else if (!(p.captains && Object.keys(p.captains).length)) fails.push(`${label}: no "I'll captain this car" for a car without a captain`);
   const errs = await page.evaluate(() => window.__errs.slice());
   if (errs.length) fails.push(`${label}: ${errs.join(' | ')}`);
   console.log(`${label}: steps 2-4 checked`);
   await page.evaluate(() => [...document.querySelectorAll('#edr-tb-app a, #edr-tb-app button, #edr-tb-app [data-action]')].find((x) => /full planner/i.test(x.textContent))?.click()); await sleep(600);
   await crawl('driver phone full planner', page);
+  await page.close();
+}
+
+// A device left in Full planner opens the Discord "#stints" link: it must still be able to confirm
+if (irid && p.confirm && p.confirm.start) {
+  const label = 'driver phone in Full planner (unconfirmed)';
+  const shift = (p.confirm.start - 86400000 - Date.now()) / 3600000;   // a day before the green flag: confirmations open
+  const page = await open(label, `?driver=1&irid=${irid}&view=full&noconfirm=1&shift=${shift}#stints`, { phone: true });
+  const nm = nameOf[[...inCar].find((id) => nameOf[id] === roster.ids[irid])];
+  const hasStints = !!(p.confirm.drivers[nm] && p.confirm.drivers[nm].stints && p.confirm.drivers[nm].stints.length);
+  const banner = () => page.evaluate(() => { const b = document.querySelector('#content .cfnag'); return b ? b.innerText : ''; });
+  if (!hasStints) console.log(`${label}: skipped (${nm} has no stints in this plan)`);
+  else {
+    if (!/haven't confirmed your stints/i.test(await banner())) fails.push(`${label}: no confirm banner on #stints`);
+    for (const tab of ['Teams', 'Race day']) {
+      await page.evaluate((t) => [...document.querySelectorAll('#edr-tb-app .tabs button')].find((b) => b.textContent.trim().startsWith(t))?.click(), tab); await sleep(300);
+      if (!/haven't confirmed/i.test(await banner())) fails.push(`${label}: no banner on ${tab}`);
+    }
+    await page.evaluate(() => document.querySelector('#content [data-action=cfnaggo]')?.click()); await sleep(600);
+    const t = await page.evaluate(() => document.getElementById('edr-tb-app').innerText);
+    if (!/STEP 4 OF 4/i.test(t) || !/I'm good for these/i.test(t)) fails.push(`${label}: Confirm now did not land on step 4 with the confirm button`);
+    await page.evaluate(() => document.querySelector('[data-action=cfok]')?.click()); await sleep(500);
+    const cf = await page.evaluate(() => window.__posts.filter((x) => x.path === 'confirm').map((x) => x.body)[0]);
+    if (!cf || cf.st !== 'ok') fails.push(`${label}: confirm not posted ${JSON.stringify(cf)}`);
+    await page.evaluate(() => [...document.querySelectorAll('#edr-tb-app [data-action]')].find((x) => /full planner/i.test(x.textContent))?.click()); await sleep(500);
+    if (await banner()) fails.push(`${label}: banner still there after confirming`);
+    const errs = await page.evaluate(() => window.__errs.slice()); if (errs.length) fails.push(`${label}: ${errs.join(' | ')}`);
+    console.log(`${label}: banner, Confirm now and answer checked`);
+  }
+  await page.close();
+}
+
+// 3.3.0 captains: the driver above as their car's captain, on a phone
+if (irid) {
+  const label = 'captain phone';
+  const go4 = async (page) => {
+    await page.evaluate(() => document.querySelector('[data-action=wizrace]')?.click()); await sleep(500);
+    await page.evaluate(() => [...document.querySelectorAll('#edr-tb-app button')].find((b) => /your stints/i.test(b.textContent))?.click()); await sleep(700);
+  };
+  const txt = (page) => page.evaluate(() => document.getElementById('edr-tb-app').innerText);
+  const capPosts = (page) => page.evaluate(() => window.__posts.filter((x) => x.path === 'captain').map((x) => x.body));
+  const overflow = (page) => page.evaluate(() => { const W = document.documentElement.clientWidth, c = document.getElementById('capcard'); if (!c) return ['no #capcard'];
+    return [...c.querySelectorAll('*')].filter((e) => e.offsetParent && e.getBoundingClientRect().right > W + 1).slice(0, 3).map((e) => e.tagName.toLowerCase() + '.' + String(e.className).split(' ')[0]); });
+  // the clock a day before the green flag, so this keeps working after the live plan's race has been run
+  const green0 = (p.confirm && p.confirm.start) || ((p.channels?.cars || [])[0]?.stints?.[0]?.s) || 0;
+  const pre = green0 ? `&shift=${(green0 - 86400000 - Date.now()) / 3600000}` : '';
+  const published = !!(p.teamsLocked && p.stintsLocked);
+  let page = await open(label, `?driver=1&irid=${irid}&captain=1${pre}`, { phone: true });
+  await go4(page);
+  if (!/You're the captain of/i.test(await txt(page))) fails.push(`${label}: step 4 has no captain card`);
+  await page.type('#cappin', '000000'); await page.evaluate(() => document.querySelector('[data-action=capunlock]').click()); await sleep(400);
+  if (!/PIN is not right/i.test(await txt(page))) fails.push(`${label}: a wrong PIN was not refused`);
+  await page.evaluate(() => { document.getElementById('cappin').value = ''; }); await page.type('#cappin', '123456');
+  await page.evaluate(() => document.querySelector('[data-action=capunlock]').click()); await sleep(500);
+  const t1 = await txt(page);
+  if (!/WHO DRIVES WHAT/i.test(t1) || !/CONFIRMATIONS/i.test(t1)) fails.push(`${label}: captain tools did not open (${/WHO DRIVES WHAT/i.test(t1)}, ${/CONFIRMATIONS/i.test(t1)})`);
+  const pinKept = await page.evaluate(() => localStorage.getItem('edrTB_cpin'));
+  if (pinKept !== '123456') fails.push(`${label}: PIN not remembered on the device`);
+  // give stint 1 to the next driver in the car, then save
+  const moved = await page.evaluate(() => { const s = document.querySelector('select[data-action=capsel][data-i="0"]'); if (!s) return null;
+    const cur = s.value, o = [...s.options].find((x) => x.value && x.value !== cur); s.value = o.value; s.dispatchEvent(new Event('change', { bubbles: true })); return { from: cur, to: o.value }; });
+  await sleep(300);
+  if (!published) console.log(`${label}: plan not published, stint moves skipped`);
+  else if (!moved) fails.push(`${label}: no stint selects`);
+  else {
+    if (!/Save changes/i.test(await txt(page))) fails.push(`${label}: no Save button after a change`);
+    await page.evaluate(() => document.querySelector('[data-action=capsave]').click()); await sleep(800);
+    const sv = (await capPosts(page)).filter((b) => b.action === 'save')[0];
+    if (!sv || String(sv.stints[0]) !== moved.to || String(sv.was[0]) !== moved.from || sv.pin !== '123456') fails.push(`${label}: save posted ${JSON.stringify(sv)}`);
+    if (!/Saved\. The team channel/i.test(await txt(page))) fails.push(`${label}: no saved message`);
+  }
+  const ov = await overflow(page); if (ov.length) fails.push(`${label}: off the screen: ${ov.join(', ')}`);
+  let errs = await page.evaluate(() => window.__errs.slice()); if (errs.length) fails.push(`${label}: ${errs.join(' | ')}`);
+  console.log(`${label}: PIN, stint move and save checked`);
+  await page.close();
+
+  // mid-race: the race-day block and the captain's report (PIN remembered from a reload is checked quietly)
+  const green = (() => { const c = (p.channels?.cars || [])[0]; return c?.stints?.[0]?.s || 0; })();
+  if (green) {
+    const lab2 = 'captain phone mid-race';
+    const shift = ((green - Date.now()) / 3600000) + 2;
+    page = await open(lab2, `?driver=1&irid=${irid}&captain=1&shift=${shift}`, { phone: true });
+    await page.evaluate(() => localStorage.setItem('edrTB_cpin', '123456'));
+    await go4(page); await sleep(600);
+    const t2 = await txt(page);
+    if (!/RACE DAY/i.test(t2) || !/Driver change done|Last stint|Finished/i.test(t2)) fails.push(`${lab2}: no race-day block`);
+    if (!/CAPTAIN'S REPORT/i.test(t2)) fails.push(`${lab2}: no report form`);
+    await page.type('input[data-capf=result]', 'P4 in class');
+    await page.evaluate(() => document.querySelector('[data-action=capfol][data-v=mostly]').click()); await sleep(200);
+    await page.type('textarea[data-capf=problems]', 'one disconnect');
+    await page.evaluate(() => document.querySelector('[data-action=capreport]').click()); await sleep(600);
+    const rp = (await capPosts(page)).filter((b) => b.action === 'report')[0];
+    if (!rp || rp.result !== 'P4 in class' || rp.followed !== 'mostly' || rp.problems !== 'one disconnect') fails.push(`${lab2}: report posted ${JSON.stringify(rp)}`);
+    if (!/Sent .*P4 in class/i.test(await txt(page))) fails.push(`${lab2}: report not shown back`);
+    const ov2 = await overflow(page); if (ov2.length) fails.push(`${lab2}: off the screen: ${ov2.join(', ')}`);
+    errs = await page.evaluate(() => window.__errs.slice()); if (errs.length) fails.push(`${lab2}: ${errs.join(' | ')}`);
+    console.log(`${lab2}: race day + report checked`);
+    await page.close();
+  }
+
+  // admin: pick a captain on Teams and make a PIN; Race week lists captains
+  const lab3 = 'admin captains';
+  page = await open(lab3, '?admin=1');
+  await page.evaluate(() => [...document.querySelectorAll('#edr-tb-app .tabs button')].find((b) => /^Teams/.test(b.textContent.trim()))?.click()); await sleep(500);
+  const picked = await page.evaluate(() => { const s = document.querySelector('select[data-action=capset]'); if (!s) return null; s.value = s.options[1].value; s.dispatchEvent(new Event('change', { bubbles: true })); return { key: s.dataset.key, id: s.options[1].value }; });
+  await sleep(900);
+  if (!picked) fails.push(`${lab3}: no captain picker on Teams`);
+  else {
+    const saved = await page.evaluate(() => window.__posts.filter((x) => x.path === 'plan').map((x) => x.body.plan).pop());
+    if (!saved || String((saved.captains || {})[picked.key]) !== picked.id) fails.push(`${lab3}: captain not saved in the plan`);
+    if (saved && String(((saved.evPlans || {})[saved.evsel] || {}).captains?.[picked.key]) !== picked.id) fails.push(`${lab3}: captain not in the race's own plan`);
+    await page.evaluate(() => document.querySelector('[data-action=capnewpin]')?.click()); await sleep(400);
+    if (!/654321/.test(await txt(page))) fails.push(`${lab3}: PIN not shown after Make PIN`);
+    if (JSON.stringify(saved || {}).includes('654321')) fails.push(`${lab3}: PIN leaked into the plan`);
+  }
+  await page.evaluate(() => [...document.querySelectorAll('#edr-tb-app .tabs button')].find((b) => /Race week/i.test(b.textContent.trim()))?.click()); await sleep(500);
+  if (!/CAPTAINS/i.test(await txt(page))) fails.push(`${lab3}: Race week has no Captains step`);
+  errs = await page.evaluate(() => window.__errs.slice()); if (errs.length) fails.push(`${lab3}: ${errs.join(' | ')}`);
+  console.log(`${lab3}: picker, PIN and Race week checked`);
   await page.close();
 }
 

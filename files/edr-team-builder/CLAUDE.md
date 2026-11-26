@@ -82,6 +82,10 @@ source. Install/usage steps are in [INSTALL.md](INSTALL.md) and [HANDOFF.md](HAN
 - `POST /avail/prune` (edit-gated) — drops availability, prefs and stamps for events whose date
   is more than `days` (default 90) old. The store caps above are only ever reached legitimately
   by accumulation, so admins need a way to tidy up; the Availability tab has a button.
+- `POST /captain` (public, PIN-gated per action) and `POST /captain/pin` (edit-gated) — 3.3.0 team captains:
+  check / save / swap / nudge / report for the captain's own car only; the server rebuilds that car's slice of the
+  stored plan and bumps the plan rev. PIN hashes live in `edr_tb_captain_pins`, reports in
+  `edr_tb_captain_reports` (returned by `GET /avail` as `capReports`). Details in the repo CLAUDE.md (3.3.0).
 - `GET /rev` (public) — the heartbeat: `{plan, avail, paceAt, paceErr}` from three option reads.
   Every open tab polls it every 20s and only pulls `/plan` or `/avail` when a number moved, so
   the steady-state cost of feeling live is a few bytes per tab. It is also the **scheduler

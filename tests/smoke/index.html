@@ -2,7 +2,9 @@
 <!-- Smoke-test page: the real built plugin bundle on top of a fetch stub that serves the live site's
      public data from fixtures/ (fetched at test time, never committed: the repo is public).
      ?driver=1 = driver mode, &irid=<iRacing id> = this device already identified. Writes are recorded
-     in window.__posts and never leave the page. -->
+     in window.__posts and never leave the page. ?captain=1 makes the identified driver their car's
+     captain (PIN 123456 opens the tools), &shift=<hours> moves the page clock (race day, report). &view=full = a device left in Full planner,
+     &noconfirm=1 = no stint answers stored yet. -->
 <link rel="stylesheet" href="/files/edr-team-builder/assets/builder.css"></head><body style="background:#111;margin:0">
 <div id="edr-tb-app"></div>
 <script>
@@ -12,8 +14,15 @@
   window.__posts=[]; window.__errs=[];
   window.addEventListener('error',function(e){ window.__errs.push(String(e.message)); });
   var ce=console.error; console.error=function(){ window.__errs.push([].slice.call(arguments).join(' ')); ce.apply(console,arguments); };
-  try{ localStorage.clear(); if(q.get('irid')) localStorage.setItem('edrTB_irid',q.get('irid')); }catch(e){}
-  var real=window.fetch.bind(window), snap={}, rev=1, avrev=1;
+  try{ localStorage.clear(); if(q.get('irid')) localStorage.setItem('edrTB_irid',q.get('irid')); if(q.get('view')) localStorage.setItem('edrTB_view',q.get('view')); }catch(e){}
+  var real=window.fetch.bind(window), snap={}, rev=1, avrev=1, capKey=null;
+  if(q.get('shift')){ var _dn=Date.now.bind(Date), _off=(+q.get('shift'))*3600000; Date.now=function(){ return _dn()+_off; }; }
+  /* ?captain=1: the identified driver captains their own car, in both stored copies of the race */
+  function capify(x){ if(!q.get('captain')||!x||!x.plan||x._cap) return x; var p=x.plan, r=snap.roster, id=null, nm=r&&r.ids&&r.ids[q.get('irid')];
+    (p.drivers||[]).forEach(function(d){ if(d.name===nm) id=d.id; });
+    Object.keys(p.teams||{}).forEach(function(c){ ['pro','casual'].forEach(function(t){ ((p.teams[c]||{})[t]||[]).forEach(function(car,j){ if(car.indexOf(id)>=0) capKey=c+'|'+t+'|'+j; }); }); });
+    if(capKey){ p.captains={}; p.captains[capKey]=id; if(p.evPlans&&p.evPlans[p.evsel]) p.evPlans[p.evsel].captains=p.captains; }
+    x._cap=1; return x; }
   function j(o,st){ return Promise.resolve(new Response(JSON.stringify(o),{status:st||200,headers:{'Content-Type':'application/json'}})); }
   function load(n){ return snap[n]?Promise.resolve(snap[n]):real('/tests/smoke/fixtures/'+n+'.json').then(function(r){ return r.ok?r.json():{}; }).then(function(x){ return (snap[n]=x); }); }
   window.fetch=function(url,opt){
@@ -23,9 +32,17 @@
       if(path==='plan'){ return load('plan').then(function(p){ p.plan=b.plan||b; rev++; return j({ok:true,rev:rev}); }); }
       if(path==='avail'){ avrev++; return j({ok:true,locked:[],seen:{at:'2026-01-01 00:00:00',ts:Math.floor(Date.now()/1000),n:(b.slots||[]).length}}); }
       if(path==='swap'){ return j({ok:true,message:'ok',swaps:[]}); }
+      if(path==='captain'){
+        if(b.action==='offer'||b.action==='unoffer'){ var of={}; if(b.action==='offer') of[b.key]=[{name:b.name,at:1}]; return j({ok:true,offers:of,message:b.action==='offer'?'Thanks. An admin will confirm it.':'Offer taken back.'}); }
+        if(b.pin!=='123456') return j({code:'bad_pin',message:'That PIN is not right for the captain of this car.'},403);
+        if(b.action==='save') return load('plan').then(function(p){ [p.plan, (p.plan.evPlans||{})[b.ev]].forEach(function(c){ if(c&&c.stintAssign){ c.stintAssign[b.key]=b.stints; (c.qualiAssign=c.qualiAssign||{})[b.key]=b.pq; } }); rev++; return j({ok:true,rev:rev,message:'Saved. The team channel has been told.'}); });
+        if(b.action==='report') return j({ok:true,message:'Report saved and posted to the team channel.',report:{result:b.result,followed:b.followed,problems:b.problems,notes:b.notes,by:'Test',car:'Car',ts:Math.floor(Date.now()/1000)}});
+        return j({ok:true,name:'Test',message:'Done.'}); }
+      if(path==='captain/pin'){ if(b.action==='list') return j({ok:true,pins:{}}); return j({ok:true,pin:'654321',name:b.name,at:Math.floor(Date.now()/1000)}); }
       return j({ok:true}); }
     if(path==='rev') return j({plan:rev,avail:avrev,paceAt:0,paceErr:'',pacePending:false});
-    if(path==='plan') return load('plan').then(function(p){ return j(Object.assign({},p,{rev:rev})); });
+    if(path==='plan') return load('roster').then(function(){ return load('plan'); }).then(function(p){ return j(Object.assign({},capify(p),{rev:rev})); });
+    if(path==='avail'&&q.get('noconfirm')) return load(path).then(function(x){ return j(Object.assign({},x,{confirm:{}})); });   /* nobody has answered yet */
     if(['avail','roster','pace','iracing'].indexOf(path)>=0) return load(path).then(function(x){ return j(x); });
     return j({});
   };
