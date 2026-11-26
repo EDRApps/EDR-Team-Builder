@@ -199,6 +199,11 @@ Details in the plugin's [CLAUDE.md](files/edr-team-builder/CLAUDE.md).
   with the new order, P/Q changes, "please confirm again" for changed drivers before the start only),
   skips publishing, unpublished/finished races and stints just moved by an approved swap (15 min), and
   schedules `edr_tb_vc_refresh` (+30 s) so open car voice channels repost within a minute, not hourly.
+- 3.2.1: a car's voice channel opens **as soon as every driver in it with a stint has confirmed**
+  (`edr_tb_vc_confirmed_cars`), instead of waiting for the day before. A ✓ that completes a car schedules
+  `edr_tb_vc_refresh` (+10 s) and the "Confirmed" post adds "🎙️ All of <car> confirmed: its voice channel opens
+  in a minute". Before the usual window, `edr_tb_vc_run` syncs only open + fully confirmed cars
+  (`edr_tb_vc_sync($plan, $only)`); from the day before it opens every car as before.
 - **Smoke test (3.1.6)**: `tests/smoke/` opens the built bundle in headless Chrome (puppeteer-core):
   admin desktop + phone (every tab), driver phone in a Sydney clock (steps 2-4, then the Full planner),
   and fails on any script error, "undefined"/"NaN" text, phone overflow, or Stints showing the wrong

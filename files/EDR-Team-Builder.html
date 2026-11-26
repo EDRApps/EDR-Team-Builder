@@ -1271,7 +1271,7 @@ function renderVcAdmin(byId){
   const st=((VC_STATE||{}).events||{})[cp.ev]||{}, n=Object.keys(st.chans||{}).length, locked=state.teamsLocked&&state.stintsLocked;
   const line=st.deleted?'<span style="color:var(--dim)">Deleted '+fmtWhen(st.deleted*1000)+'.</span>'
     :n?'<span style="color:var(--green)">'+n+' channel'+(n===1?'':'s')+' open since '+fmtWhen(st.created*1000)+'</span> · deleted around '+fmtWhen(last+12*3600000)
-    :'Made around '+fmtWhen(first-86400000)+' (the day before) · deleted around '+fmtWhen(last+12*3600000);
+    :'Made around '+fmtWhen(first-86400000)+' (the day before), or earlier for a car once all its drivers confirm · deleted around '+fmtWhen(last+12*3600000);
   return '<div class="importbox" style="margin-bottom:16px">'
     +'<div class="meta" style="text-transform:uppercase;letter-spacing:.04em;margin-bottom:6px">Discord car voice channels · Racing Preparation and Events</div>'
     +'<div class="meta">'+line+'</div>'
@@ -3947,8 +3947,8 @@ function renderHome(byId){
      the server skips them silently, so say so here instead of listing them as scheduled. */
   const hookOff=(typeof EDR_TB!=='undefined'&&EDR_TB&&EDR_TB.remind_hook==='no');
   const when=start?(hookOff
-      ?'<b style="color:var(--amber)">Discord reminders and swap pings are OFF: no team-channel webhook is set (WordPress → Settings → EDR Team Builder → "Discord webhook (stint confirmations)").</b> Car voice channels '+fmtWhen(start-86400000)+'.'
-      :'Discord: 4-day reminder '+fmtWhen(start-4*86400000)+', 2-day reminder '+fmtWhen(start-2*86400000)+', car voice channels '+fmtWhen(start-86400000)+'.'):'';
+      ?'<b style="color:var(--amber)">Discord reminders and swap pings are OFF: no team-channel webhook is set (WordPress → Settings → EDR Team Builder → "Discord webhook (stint confirmations)").</b> Car voice channels '+fmtWhen(start-86400000)+', or earlier for a car once all its drivers confirm.'
+      :'Discord: 4-day reminder '+fmtWhen(start-4*86400000)+', 2-day reminder '+fmtWhen(start-2*86400000)+', car voice channels '+fmtWhen(start-86400000)+', or earlier for a car once all its drivers confirm.'):'';
   const pqGap=nCars?pqMissing(byId):[];
   h+=homeStep(5,'Publish the plan', pub?(hookOff?'warn':'done'):(nCars?'todo':'todo'),
     (pub?'Published: line-up and stints are locked. ':'Not published. The Discord reminders and voice channels only run once it is. ')+when

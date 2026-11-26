@@ -2,7 +2,7 @@
 /**
  * Plugin Name: EDR Team Builder
  * Description: Endurotech Racing endurance team + stint planner. Pulls Garage 61 pace and official iRacing session times, collects driver availability in-house, and builds Pro/Casual teams and stint rotations. Add the [edr_team_builder] shortcode to a page.
- * Version: 3.2.0
+ * Version: 3.2.1
  * Author: Endurotech Racing
  * License: GPL-2.0-or-later
  */
@@ -11,7 +11,7 @@ if (!defined('ABSPATH')) exit; // no direct access
 
 define('EDR_TB_DIR', plugin_dir_path(__FILE__));
 define('EDR_TB_URL', plugin_dir_url(__FILE__));
-define('EDR_TB_VER', '3.2.0');
+define('EDR_TB_VER', '3.2.1');
 
 require_once EDR_TB_DIR . 'includes/garage61.php';
 require_once EDR_TB_DIR . 'includes/iracing.php';
@@ -1541,6 +1541,11 @@ function edr_tb_rest_confirm_set(WP_REST_Request $req) {
     edr_tb_bump_avail_rev();   // admins see it on their next heartbeat
     $wpdb->query("SELECT RELEASE_LOCK('edr_tb_avail_write')");
     if ($st !== 'clear') edr_tb_confirm_announce($ev, $name, $st, $sig, $cant);
+    if ($st === 'ok' && edr_tb_vc_public()['ready']) {
+        $pl = edr_tb_plan_event((array) get_option('edr_tb_plan', array()), $ev);
+        $k = $pl ? (string) ($pl['confirm']['drivers'][$name]['key'] ?? '') : '';
+        if ($k !== '' && in_array($k, edr_tb_vc_confirmed_cars($pl), true) && !wp_next_scheduled('edr_tb_vc_refresh')) wp_schedule_single_event(time() + 10, 'edr_tb_vc_refresh');
+    }
     return rest_ensure_response(array('ok' => true, 'rec' => $all[$ev][$name] ?? null));
 }
 
@@ -1573,6 +1578,11 @@ function edr_tb_confirm_announce($ev, $name, $st, $sig, $cant) {
     $where = trim($car . ($stints ? ', stint' . (count($stints) > 1 ? 's ' : ' ') . implode(' + ', $stints) : ''), ', ');
     if ($st === 'ok') {
         $msg = '✅ Confirmed: **' . $name . '**' . ($where !== '' ? ' · ' . $where : '') . ' · ' . count($status['ok']) . ' of ' . $total . ' in';
+        $key = (string) ($d['key'] ?? '');
+        if ($key !== '' && $car !== '' && in_array($key, edr_tb_vc_confirmed_cars($plan), true)) {
+            $vcs = edr_tb_vc_public(); $open = edr_tb_vc_state_get($ev);
+            $msg .= "\n🎙️ All of **" . $car . '** confirmed' . (!empty($vcs['ready']) && empty($open['chans'][$key]['id']) ? ': its voice channel opens in a minute.' : '.');
+        }
         if (!$status['pending'] && !$status['no']) $msg .= "\n🏁 That's everyone. All stints confirmed for **" . explode('|', $ev)[0] . '**.';
     } else {
         $msg = '✗ **' . $name . '** can\'t make ' . ($cant ? 'stint ' . implode(' + ', $cant) : 'one of their stints') . ($car !== '' ? ' in ' . $car : '') . '. Admins: this needs a swap.';
@@ -2091,7 +2101,7 @@ function edr_tb_vc_public() {
 }
 
 /** Create the missing channels for the plan's event and (re)post each car's stints when they changed. */
-function edr_tb_vc_sync($plan) {
+function edr_tb_vc_sync($plan, $only = null) {   // $only: car keys to make/refresh (null = every car)
     $ch = (isset($plan['channels']) && is_array($plan['channels'])) ? $plan['channels'] : array();
     $ev = (string) ($ch['ev'] ?? '');
     if ($ev === '' || empty($ch['cars'])) return new WP_Error('no_cars', 'No cars in the saved plan yet.', array('status' => 409));
@@ -2111,6 +2121,7 @@ function edr_tb_vc_sync($plan) {
     $made = 0; $posted = 0;
     foreach ((array) $ch['cars'] as $car) {
         $key = (string) ($car['key'] ?? ''); if ($key === '') continue;
+        if ($only !== null && !in_array($key, $only, true)) continue;
         $name = substr((string) ($car['name'] ?? 'Car'), 0, 90);
         if (empty($chans[$key]['id'])) {
             if ($made) sleep(1);
@@ -2169,6 +2180,17 @@ function edr_tb_vc_window($plan) {
  * a plan still being shuffled should not open channels. Anything this run made before its plan
  * moved to another event is still cleaned up once that event is over.
  */
+/** 3.2.1: car keys whose every driver with a stint has confirmed (✓) their current stints. */
+function edr_tb_vc_confirmed_cars($plan) {
+    $c = edr_tb_confirm_status($plan);
+    $ok = array_flip($c['ok']); $cars = array();
+    foreach ((array) ($plan['confirm']['drivers'] ?? array()) as $nm => $d) {
+        $k = (string) ($d['key'] ?? ''); if ($k === '') continue;
+        if (!isset($cars[$k])) $cars[$k] = true;
+        if (!isset($ok[$nm])) $cars[$k] = false;
+    }
+    return array_keys(array_filter($cars));
+}
 add_action('edr_tb_vc_tick', 'edr_tb_vc_run');
 function edr_tb_vc_run() {
     $pub = edr_tb_vc_public();
@@ -2182,6 +2204,12 @@ function edr_tb_vc_run() {
         if ($first && !empty($plan['teamsLocked']) && !empty($plan['stintsLocked'])
             && $now >= $first - EDR_TB_VC_BEFORE && $now < $last) {
             edr_tb_vc_sync($plan);
+        } elseif ($first && !empty($plan['teamsLocked']) && !empty($plan['stintsLocked']) && $now < $first - EDR_TB_VC_BEFORE) {
+            /* 3.2.1: before the usual day-before opening, a car gets its channel as soon as all its
+               drivers have confirmed; channels already open keep their stint post up to date */
+            $st = edr_tb_vc_state_get($ev);
+            $keys = array_values(array_unique(array_merge(array_keys((array) ($st['chans'] ?? array())), edr_tb_vc_confirmed_cars($plan))));
+            if ($keys && empty($st['deleted'])) edr_tb_vc_sync($plan, $keys);
         }
     }
     foreach ((array) get_option('edr_tb_vc', array()) as $k => $st) {
