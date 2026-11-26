@@ -86,7 +86,7 @@ else {
   const cells = await page.evaluate(() => document.querySelectorAll('.blockcell').length);
   if ((await step()) !== '3' || !cells) fails.push(`${label}: step 3 (your times) did not draw its blocks (${cells})`);
   await page.evaluate(() => [...document.querySelectorAll('#edr-tb-app button')].find((b) => /your stints/i.test(b.textContent))?.click()); await sleep(600);
-  const s4 = await page.evaluate(() => { const t = document.getElementById('edr-tb-app').innerText; return { drive: /YOU DRIVE|not driving a stint yet/i.test(t), order: /DRIVING ORDER/i.test(t), sydney: /Sydney/.test(t) }; });
+  const s4 = await page.evaluate(() => { const t = document.getElementById('edr-tb-app').innerText; return { drive: /YOU DRIVE|not driving a stint yet/i.test(t), order: /DRIVING ORDER/i.test(t), sydney: /sydney/i.test(t) }; });
   if ((await step()) !== '4' || !s4.drive || !s4.order) fails.push(`${label}: step 4 (your stints) incomplete ${JSON.stringify(s4)}`);
   if (!s4.sydney) fails.push(`${label}: step 4 does not say the times are Sydney time`);
   const errs = await page.evaluate(() => window.__errs.slice());

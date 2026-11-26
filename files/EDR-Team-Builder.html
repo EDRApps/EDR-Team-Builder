@@ -3307,7 +3307,17 @@ function fmtClock(absMin){
 }
 function availBadge(d){ return d.avail ? d.avail.pct+'%' : 'no avail'; }
 function driverSure(d,s,e){ return !!(d.avail && d.avail.windows && d.avail.windows.some(w=>w[0]<=s && w[1]>=e)); }
-function driverFree(d,s,e){ return driverSure(d,s,e) || !!(d.avail && d.avail.maybeW && d.avail.maybeW.some(w=>w[0]<=s && w[1]>=e)); }
+/* 3.1.7: free = yes and "if needed" blocks TOGETHER cover the stint. Checking each list on its own
+   called a driver busy for a stint that starts in an if-needed block and runs on into a yes block
+   (Jake: if needed 16-22, yes 22-10, stint 20:10-22:32 showed "not available"). */
+function driverFree(d,s,e){
+  if(driverSure(d,s,e)) return true;
+  const a=d.avail; if(!a||!a.maybeW||!a.maybeW.length) return false;
+  const ws=(a.windows||[]).concat(a.maybeW).slice().sort((x,y)=>x[0]-y[0]);
+  let cur=s;
+  for(const w of ws){ if(w[0]>cur) break; if(w[1]>cur) cur=w[1]; if(cur>=e) return true; }
+  return false;
+}
 /* a stint falls in the driver's own night (00:00-06:00 where they live), for the "avoid my night" preference */
 function inLocalNight(tz,s){ if(!tz) return false; try{ const h=+new Date(WIN_START_MS+s*60000).toLocaleString('en-GB',{timeZone:tz,hour:'2-digit',hour12:false}); return h>=0&&h<6; }catch(e){ return false; } }
 function isWetStint(s,e){ if(!(state.evWeather&&state.evWeather[state.evsel])) return false; if(typeof weatherAt!=='function') return false; const wx=weatherAt(s,undefined,undefined,e); return !!(wx&&wx.wet); }

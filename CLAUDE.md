@@ -174,6 +174,11 @@ Details in the plugin's [CLAUDE.md](files/edr-team-builder/CLAUDE.md).
   header `#rolebar` wraps), Stints shows **one car at a time** with a `.carpick` row (`_phoneCar`,
   `.stintcar.cur`; desktop unchanged), the timezone picker adds Sydney/Melbourne/Hobart, Adelaide, Perth,
   Auckland, and step 4 lists the car's drivers in driving order with the timezone on "Driving order".
+- 3.1.7: `driverFree` checks yes + "if needed" windows **together** (merged), so a stint that starts in
+  an if-needed block and runs into a yes block is free (Jake, 992 Cup: if needed 16-22, yes 22-10, stint
+  20:10-22:32 showed busy). Availability changes never re-plan stints by themselves (manual work sticks);
+  the lane colours update and **Fix this car** hands the stints out. Smoke test's timezone check is
+  case-insensitive (the only "Sydney" for a driver with no stints is an uppercase heading).
 - **Smoke test (3.1.6)**: `tests/smoke/` opens the built bundle in headless Chrome (puppeteer-core):
   admin desktop + phone (every tab), driver phone in a Sydney clock (steps 2-4, then the Full planner),
   and fails on any script error, "undefined"/"NaN" text, phone overflow, or Stints showing the wrong
