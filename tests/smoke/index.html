@@ -38,7 +38,10 @@
         if(b.action==='save') return load('plan').then(function(p){ [p.plan, (p.plan.evPlans||{})[b.ev]].forEach(function(c){ if(c&&c.stintAssign){ c.stintAssign[b.key]=b.stints; (c.qualiAssign=c.qualiAssign||{})[b.key]=b.pq; } }); rev++; return j({ok:true,rev:rev,message:'Saved. The team channel has been told.'}); });
         if(b.action==='report') return j({ok:true,message:'Report saved and posted to the team channel.',report:{result:b.result,followed:b.followed,problems:b.problems,notes:b.notes,by:'Test',car:'Car',ts:Math.floor(Date.now()/1000)}});
         return j({ok:true,name:'Test',message:'Done.'}); }
-      if(path==='captain/pin'){ if(b.action==='list') return j({ok:true,pins:{}}); return j({ok:true,pin:'654321',name:b.name,at:Math.floor(Date.now()/1000)}); }
+      if(path==='captain/pin'){ if(b.action==='list') return j({ok:true,pins:{}}); if(b.action==='wrong_dc') return j({ok:true});
+        /* 3.3.1: the first try finds no single Discord account (PIN back to copy + accounts to pick); picking one sends it */
+        if(b.discord_id) return j({ok:true,name:b.name,at:Math.floor(Date.now()/1000),dm:{sent:true,to:'Test Driver (@testdriver)'}});
+        return j({ok:true,pin:'654321',name:b.name,at:Math.floor(Date.now()/1000),dm:{sent:false,why:'Could not find them on the EDR Discord by name.',pick:[{id:'123456789012345678',label:'Test Driver (@testdriver)'}]}}); }
       return j({ok:true}); }
     if(path==='rev') return j({plan:rev,avail:avrev,paceAt:0,paceErr:'',pacePending:false});
     if(path==='plan') return load('roster').then(function(){ return load('plan'); }).then(function(p){ return j(Object.assign({},capify(p),{rev:rev})); });

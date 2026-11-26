@@ -215,6 +215,15 @@ if (irid) {
     await page.evaluate(() => document.querySelector('[data-action=capnewpin]')?.click()); await sleep(400);
     if (!/654321/.test(await txt(page))) fails.push(`${lab3}: PIN not shown after Make PIN`);
     if (JSON.stringify(saved || {}).includes('654321')) fails.push(`${lab3}: PIN leaked into the plan`);
+    // 3.3.1: not sent by Discord → the reason and an account to pick; picking it has the bot send a new PIN
+    if (!/Not sent by Discord/i.test(await txt(page))) fails.push(`${lab3}: no reason shown when the DM was not sent`);
+    const mk = await page.evaluate(() => window.__posts.filter((x) => x.path === 'captain/pin' && x.body.action === 'new').map((x) => x.body)[0]);
+    if (!mk || !mk.car || mk.discord_id) fails.push(`${lab3}: Make PIN posted ${JSON.stringify(mk)}`);
+    await page.evaluate(() => document.querySelector('[data-action=capdcpick]')?.click()); await sleep(400);
+    const dm = await page.evaluate(() => window.__posts.filter((x) => x.path === 'captain/pin' && x.body.action === 'new').map((x) => x.body).pop());
+    if (!dm || dm.discord_id !== '123456789012345678') fails.push(`${lab3}: picking an account posted ${JSON.stringify(dm)}`);
+    const t3 = await txt(page);
+    if (!/PIN sent to Test Driver/i.test(t3) || /654321/.test(t3)) fails.push(`${lab3}: sent DM not shown (or the old PIN still is)`);
   }
   await page.evaluate(() => [...document.querySelectorAll('#edr-tb-app .tabs button')].find((b) => /Race week/i.test(b.textContent.trim()))?.click()); await sleep(500);
   if (!/CAPTAINS/i.test(await txt(page))) fails.push(`${lab3}: Race week has no Captains step`);

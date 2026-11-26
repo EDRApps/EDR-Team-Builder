@@ -2,7 +2,7 @@
 /**
  * Plugin Name: EDR Team Builder
  * Description: Endurotech Racing endurance team + stint planner. Pulls Garage 61 pace and official iRacing session times, collects driver availability in-house, and builds Pro/Casual teams and stint rotations. Add the [edr_team_builder] shortcode to a page.
- * Version: 3.3.0
+ * Version: 3.3.1
  * Author: Endurotech Racing
  * License: GPL-2.0-or-later
  */
@@ -11,7 +11,7 @@ if (!defined('ABSPATH')) exit; // no direct access
 
 define('EDR_TB_DIR', plugin_dir_path(__FILE__));
 define('EDR_TB_URL', plugin_dir_url(__FILE__));
-define('EDR_TB_VER', '3.3.0');
+define('EDR_TB_VER', '3.3.1');
 
 require_once EDR_TB_DIR . 'includes/garage61.php';
 require_once EDR_TB_DIR . 'includes/iracing.php';
@@ -2043,7 +2043,7 @@ function edr_tb_discord_api($method, $path, $body = null) {
         $why = is_array($json) && isset($json['message']) ? $json['message'] : 'HTTP ' . $code;
         if ($code === 401) $why = 'the bot token is wrong';
         if ($code === 403) $why = 'the bot is missing a permission (View Channels, Manage Channels, Send Messages) in that category';
-        return new WP_Error('discord', 'Discord refused: ' . $why, array('status' => 502));
+        return new WP_Error('discord', 'Discord refused: ' . $why, array('status' => 502, 'http' => $code, 'dc' => intval(is_array($json) ? ($json['code'] ?? 0) : 0)));
     }
     return is_array($json) ? $json : array();
 }
@@ -2808,7 +2808,8 @@ function edr_tb_rest_captain_pin(WP_REST_Request $req) {
         return rest_ensure_response(array('ok' => true));
     }
     if ($act === 'list') {
-        $out = array(); foreach ($pins as $k => $r) if (is_array($r)) $out[$k] = array('name' => (string) ($r['name'] ?? ''), 'at' => intval($r['at'] ?? 0));
+        $dcs = (array) get_option('edr_tb_discord_ids', array());
+        $out = array(); foreach ($pins as $k => $r) if (is_array($r)) $out[$k] = array('name' => (string) ($r['name'] ?? ''), 'at' => intval($r['at'] ?? 0), 'dc' => (string) ($dcs[$k]['label'] ?? ''), 'sent' => !empty($r['sent']));
         return rest_ensure_response(array('ok' => true, 'pins' => (object) $out));
     }
     $name = substr(sanitize_text_field((string) $req->get_param('name')), 0, 80);
@@ -2818,13 +2819,128 @@ function edr_tb_rest_captain_pin(WP_REST_Request $req) {
         unset($pins[$k]); update_option('edr_tb_captain_pins', $pins, false);
         return rest_ensure_response(array('ok' => true));
     }
+    if ($act === 'wrong_dc') {   // 3.3.1: the bot DMed the wrong account: forget it, and the PIN it carried stops working
+        $dcs = (array) get_option('edr_tb_discord_ids', array());
+        unset($dcs[$k]); update_option('edr_tb_discord_ids', $dcs, false);
+        unset($pins[$k]); update_option('edr_tb_captain_pins', $pins, false);
+        return rest_ensure_response(array('ok' => true));
+    }
     if ($act !== 'new') return new WP_Error('bad_req', 'Unknown action.', array('status' => 400));
     if (!isset($pins[$k]) && count($pins) >= 60) return new WP_Error('full', 'Too many captain PINs stored. Clear some first.', array('status' => 409));
     $pin = sprintf('%06d', random_int(0, 999999));
     $pins[$k] = array('h' => password_hash($pin, PASSWORD_DEFAULT), 'name' => $name, 'at' => time());
     update_option('edr_tb_captain_pins', $pins, false);
     list(, $b) = edr_tb_pin_fail_keys($name); delete_transient($b);   // a new PIN lifts the per-captain lockout
-    return rest_ensure_response(array('ok' => true, 'pin' => $pin, 'name' => $name, 'at' => time()));
+    /* 3.3.1: the bot DMs the PIN to the captain. Only when that worked is the PIN left out of the reply;
+       otherwise the admin gets it back to send by hand, with the reason and any accounts to pick from. */
+    $dm = edr_tb_cap_pin_dm($name, $pin, (string) $req->get_param('discord_id'),
+        substr(sanitize_text_field((string) $req->get_param('car')), 0, 60), substr(sanitize_text_field((string) $req->get_param('race')), 0, 120));
+    if (!empty($dm['sent'])) {
+        $pins = (array) get_option('edr_tb_captain_pins', array());
+        if (isset($pins[$k])) { $pins[$k]['sent'] = 1; update_option('edr_tb_captain_pins', $pins, false); }
+        return rest_ensure_response(array('ok' => true, 'name' => $name, 'at' => time(), 'dm' => $dm));
+    }
+    return rest_ensure_response(array('ok' => true, 'pin' => $pin, 'name' => $name, 'at' => time(), 'dm' => $dm));
+}
+
+/* ----------------------------------------------------------------
+ * Captain PIN by Discord DM (3.3.1)
+ * Make PIN finds the captain's account on the EDR server and the bot DMs them the PIN. The account is
+ * remembered per driver name (edr_tb_discord_ids, server-side only, never in /plan). A name search must
+ * match exactly one member on their nickname, display name or username, else nothing is sent and the
+ * admin picks from the members whose names start like the driver's, or pastes the Discord user ID.
+ * ---------------------------------------------------------------- */
+function edr_tb_dc_guild() {
+    $s = edr_tb_settings();
+    if (!empty($s['discord_guild_id'])) return $s['discord_guild_id'];
+    if (empty($s['discord_category_id'])) return new WP_Error('no_guild', 'Set the Discord server ID in plugin Settings first.', array('status' => 400));
+    $g = get_transient('edr_tb_dc_guild');
+    if ($g) return $g;
+    $c = edr_tb_discord_api('GET', '/channels/' . $s['discord_category_id']);
+    if (is_wp_error($c)) return $c;
+    if (empty($c['guild_id'])) return new WP_Error('no_guild', 'Set the Discord server ID in plugin Settings first.', array('status' => 400));
+    set_transient('edr_tb_dc_guild', (string) $c['guild_id'], DAY_IN_SECONDS);
+    return (string) $c['guild_id'];
+}
+function edr_tb_dc_norm($t) { return trim(preg_replace('~\s+~', ' ', preg_replace('~[^a-z0-9]+~', ' ', strtolower(remove_accents((string) $t))))); }
+/** "Larry Smith (@lsmith)": what the admin sees, so a wrong account is easy to spot. */
+function edr_tb_dc_label($m) {
+    $u = (array) ($m['user'] ?? array());
+    $shown = trim((string) ($m['nick'] ?? '')) ?: trim((string) ($u['global_name'] ?? '')) ?: (string) ($u['username'] ?? '');
+    return substr($shown . (!empty($u['username']) && $u['username'] !== $shown ? ' (@' . $u['username'] . ')' : ''), 0, 80);
+}
+/** Is this member the driver? Their nickname, display name or username reads as the full name
+    (a tag after it is fine: "Larry Smith | EDR"), or the username is the name run together. */
+function edr_tb_dc_is($m, $full) {
+    $u = (array) ($m['user'] ?? array());
+    foreach (array($m['nick'] ?? '', $u['global_name'] ?? '', $u['username'] ?? '') as $t) {
+        $n = edr_tb_dc_norm($t);
+        if ($n === '') continue;
+        if ($n === $full || strpos($n . ' ', $full . ' ') === 0) return true;
+        if (str_replace(' ', '', $n) === str_replace(' ', '', $full)) return true;
+    }
+    return false;
+}
+/** array('id' => …, 'label' => …) for the one member who is this driver, or a WP_Error whose data
+    carries 'pick': members whose names start like the driver's, for the admin to choose from. */
+function edr_tb_dc_find($name) {
+    $g = edr_tb_dc_guild();
+    if (is_wp_error($g)) return $g;
+    $full = edr_tb_dc_norm(edr_tb_ics_key($name));
+    if ($full === '') return new WP_Error('no_match', 'No name to look for.', array('pick' => array()));
+    $words = explode(' ', $full);
+    $seen = array();
+    foreach (array_unique(array($words[0], end($words), str_replace(' ', '', $full))) as $q) {
+        $r = edr_tb_discord_api('GET', '/guilds/' . $g . '/members/search?limit=25&query=' . rawurlencode($q));
+        if (is_wp_error($r)) {
+            $d = (array) $r->get_error_data();
+            if (intval($d['http'] ?? 0) === 403) return new WP_Error('discord', 'The bot is not allowed to look up members of the EDR Discord.', array('pick' => array()));
+            return $r;
+        }
+        foreach ($r as $m) if (is_array($m) && !empty($m['user']['id']) && empty($m['user']['bot'])) $seen[(string) $m['user']['id']] = $m;
+    }
+    $hits = array_filter($seen, function ($m) use ($full) { return edr_tb_dc_is($m, $full); });
+    if (count($hits) === 1) { $m = reset($hits); return array('id' => (string) $m['user']['id'], 'label' => edr_tb_dc_label($m)); }
+    $pick = array();
+    foreach (($hits ?: $seen) as $id => $m) { $pick[] = array('id' => (string) $id, 'label' => edr_tb_dc_label($m)); if (count($pick) >= 6) break; }
+    $why = count($hits) > 1 ? 'More than one Discord member is called ' . $name . '.' : 'Could not find ' . $name . ' on the EDR Discord by name.';
+    return new WP_Error('no_match', $why, array('pick' => $pick));
+}
+/** Send the PIN. Returns array('sent' => bool, 'to' => label, 'why' => reason, 'pick' => […]). */
+function edr_tb_cap_pin_dm($name, $pin, $want_id, $car, $race) {
+    $k = edr_tb_cap_key($name);
+    $dcs = (array) get_option('edr_tb_discord_ids', array());
+    $want_id = preg_replace('/\D/', '', $want_id);
+    $guild = edr_tb_dc_guild();
+    if (is_wp_error($guild)) return array('sent' => false, 'why' => $guild->get_error_message(), 'pick' => array());
+    if ($want_id !== '') {   // the admin chose the account (from the list, or pasted the ID): check it is on the server
+        if (strlen($want_id) < 15 || strlen($want_id) > 21) return array('sent' => false, 'why' => 'That is not a Discord user ID (a long number).', 'pick' => array());
+        $m = edr_tb_discord_api('GET', '/guilds/' . $guild . '/members/' . $want_id);
+        if (is_wp_error($m)) return array('sent' => false, 'why' => 'That Discord user is not on the EDR server.', 'pick' => array());
+        $who = array('id' => $want_id, 'label' => edr_tb_dc_label($m));
+    } elseif (!empty($dcs[$k]['id'])) {
+        $who = array('id' => (string) $dcs[$k]['id'], 'label' => (string) ($dcs[$k]['label'] ?? ''));
+    } else {
+        $who = edr_tb_dc_find($name);
+        if (is_wp_error($who)) { $d = (array) $who->get_error_data(); return array('sent' => false, 'why' => $who->get_error_message(), 'pick' => (array) ($d['pick'] ?? array())); }
+    }
+    $url = (string) get_option('edr_tb_page_url', '') ?: home_url('/');
+    $first = edr_tb_cap_first($name);
+    $msg = '🧢 Hi ' . $first . ', you\'re the captain of **' . ($car !== '' ? $car : 'your car') . '**' . ($race !== '' ? ' for **' . $race . '**' : '') . ".\n"
+         . 'Your captain PIN: ||' . $pin . "|| (tap to show it; keep it to yourself)\n"
+         . 'Open the Team Builder, go to Your stints and enter it under Captain: ' . $url . '#stints';
+    $ch = edr_tb_discord_api('POST', '/users/@me/channels', array('recipient_id' => $who['id']));
+    if (!is_wp_error($ch) && !empty($ch['id'])) $ch = edr_tb_discord_api('POST', '/channels/' . $ch['id'] . '/messages', array('content' => $msg, 'allowed_mentions' => array('parse' => array())));
+    if (is_wp_error($ch) || empty($ch['id'])) {
+        $d = is_wp_error($ch) ? (array) $ch->get_error_data() : array();
+        $why = intval($d['dc'] ?? 0) === 50007 ? $first . ' does not accept DMs from the bot (Discord privacy settings).'
+             : (is_wp_error($ch) ? $ch->get_error_message() : 'Discord did not take the message.');
+        if (empty($dcs[$k]['id'])) { $dcs[$k] = array('id' => $who['id'], 'label' => $who['label'], 'at' => time()); update_option('edr_tb_discord_ids', array_slice($dcs, -200, null, true), false); }
+        return array('sent' => false, 'why' => $why, 'to' => $who['label'], 'pick' => array());
+    }
+    $dcs[$k] = array('id' => $who['id'], 'label' => $who['label'], 'at' => time());
+    update_option('edr_tb_discord_ids', array_slice($dcs, -200, null, true), false);
+    return array('sent' => true, 'to' => $who['label']);
 }
 
 function edr_tb_rest_tracks() {

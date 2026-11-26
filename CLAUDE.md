@@ -238,6 +238,16 @@ Details in the plugin's [CLAUDE.md](files/edr-team-builder/CLAUDE.md).
   step 4 (`/captain` `offer`/`unoffer`, no PIN, members of that car only, one Discord ping per offer, stored in
   `edr_tb_captain_offers`, `capOffers` on `/avail`); the admin approves with Make X captain, which clears the car's
   offers (`/captain/pin` `offers_clear`).
+- 3.3.1 **captain PIN by Discord DM**: Make PIN sends `car` + `race` (and `discord_id` when the admin chose an account);
+  `edr_tb_cap_pin_dm` has the bot DM the PIN (spoiler-tagged, with the page link). The account comes from
+  `edr_tb_discord_ids` (per `edr_tb_cap_key(name)`, server-side only, never in /plan), else a member search
+  (`/guilds/{g}/members/search` on first name, last name, name run together; guild from settings or the category's
+  `guild_id`) that must match exactly ONE member whose nick/display name/username reads as the full name (a tag after
+  it is fine, never first name alone), else nothing is sent. Sent: the reply has no PIN, only `dm.to` ("Larry Smith
+  (@lsmith)"), and the row says "sent to X"; "Not them? Wrong person" (`wrong_dc`, two taps) forgets the account and
+  cancels that PIN. Not sent: the PIN comes back to copy as before, with `dm.why` (no match, several matches, DMs closed =
+  Discord 50007, bot not allowed to search) and `dm.pick` accounts to tap, or a pasted user ID (checked to be on the
+  server); either makes and sends a fresh PIN. `edr_tb_discord_api` errors now carry `http` + Discord's `dc` code.
 - 3.3.0 **confirm from Full planner**: a device once switched to Full planner (`edrTB_view='full'`) opened the Discord
   `#stints` link in the tabs, where there is no confirm button (Luke Hay, 26 Nov). `cfNagHtml()` puts a banner at the
   top of every planner tab for a non-admin whose current stints (`myStintSig`) are pending or changed while

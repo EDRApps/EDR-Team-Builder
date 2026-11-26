@@ -1014,7 +1014,7 @@ function renderConfirmCard(car,mine,byId){
    /captain, which checks the PIN and rebuilds only that car's slice of the stored plan server-side.
    The standalone file has no server, so the stubs below only say so. */
 let _capPinsBusy=false;   /* the admin's "who has a PIN" list is loading */
-let CAP_REPORTS={}, CAP_PINS=null, _capMsg='', _capErr=false, _capDraft=null, _capOk={}, _capNewPin=null, _capRep=null, _capArm='', _capAdminMsg='';
+let CAP_REPORTS={}, CAP_PINS=null, _capMsg='', _capErr=false, _capDraft=null, _capOk={}, _capNewPin=null, _capRep=null, _capArm='', _capAdminMsg='', _capSent=null;
 function capPost(body){ return Promise.reject(new Error('Captain tools run on the live site.')); }        /* WP build overrides: POST /captain */
 function capPinPost(body){ return Promise.reject(new Error('Captain PINs are made on the live site.')); }  /* WP build overrides: POST /captain/pin */
 function capPinsLoad(){ CAP_PINS={}; }                                                                     /* WP build overrides: who has a PIN (null until it is known) */
@@ -1199,17 +1199,39 @@ function capClick(el){
   if(!isAdmin()) return true;
   if(a==='capnewpin'){ const name=el.dataset.name, arm='pin|'+nameKey(name);
     if((capPinFor(name)||CAP_PINS===null||_capPinsBusy)&&_capArm!==arm){ _capArm=arm; renderContent(); setTimeout(function(){ if(_capArm===arm){ _capArm=''; renderContent(); } },6000); return true; }
-    _capArm=''; _capAdminMsg='Making a PIN…'; renderContent();
-    capPinPost({action:'new', name:name}).then(function(j){ _capNewPin={name:j.name||name, pin:j.pin}; _capAdminMsg=''; if(CAP_PINS!==null) CAP_PINS[nameKey(name)]={name:j.name||name, at:j.at||Math.round(Date.now()/1000)}; renderContent(); })
-      .catch(function(e){ _capAdminMsg=(e&&e.message)||'Could not make a PIN.'; renderContent(); });
+    _capArm=''; capMakePin(name,key,''); return true; }
+  if(a==='capdcpick'||a==='capdcsend'){ if(!_capNewPin) return true;
+    const id=a==='capdcpick'?el.dataset.id:((document.getElementById('capdcid')||{}).value||'').replace(/\D/g,'');
+    if(!id){ _capAdminMsg='Paste their Discord user ID first (right-click them in Discord → Copy User ID).'; renderContent(); return true; }
+    capMakePin(_capNewPin.name,key,id); return true; }
+  if(a==='capwrongdc'){ if(!_capSent) return true; const name=_capSent.name, arm='dc|'+nameKey(name);
+    if(_capArm!==arm){ _capArm=arm; renderContent(); setTimeout(function(){ if(_capArm===arm){ _capArm=''; renderContent(); } },6000); return true; }
+    _capArm=''; _capAdminMsg='Cancelling that PIN…'; renderContent();
+    capPinPost({action:'wrong_dc', name:name}).then(function(){ _capSent=null; if(CAP_PINS!==null) delete CAP_PINS[nameKey(name)];
+      _capAdminMsg='That PIN no longer works and the account is forgotten. Make a new PIN to choose the right one.'; renderContent(); })
+      .catch(function(e){ _capAdminMsg=(e&&e.message)||'Could not cancel it.'; renderContent(); });
     return true; }
   if(a==='capcopy'){ if(!_capNewPin) return true; const t=capPinMessage(key);
     const done=function(ok){ _capAdminMsg=ok?'Copied. Paste it in a Discord DM to them.':t; renderContent(); };
     try{ navigator.clipboard.writeText(t).then(function(){ done(true); },function(){ done(false); }); }catch(err){ done(false); }
     return true; }
-  if(a==='capdone'){ _capNewPin=null; _capAdminMsg=''; renderContent(); return true; }
+  if(a==='capdone'){ _capNewPin=null; _capSent=null; _capAdminMsg=''; renderContent(); return true; }
   return false;
 }
+/* 3.3.1: make the PIN; the server has the bot DM it to the captain (discordId: the account the admin chose).
+   Sent: only "sent to X" comes back. Not sent: the PIN comes back to copy, with why and accounts to pick from. */
+function capMakePin(name,rkey,discordId){
+  _capAdminMsg=discordId?'Sending a new PIN…':'Making a PIN and sending it…'; _capSent=null; renderContent();
+  const ev=state.evsel?calEvent(state.evsel):null;
+  capPinPost({action:'new', name:name, car:capCarName(rkey), race:ev?ev.n:'', discord_id:discordId||''}).then(function(j){
+    const nm=j.name||name, dm=objOr(j.dm), at=j.at||Math.round(Date.now()/1000);
+    if(CAP_PINS!==null) CAP_PINS[nameKey(nm)]={name:nm, at:at, dc:dm.to||'', sent:!!dm.sent};
+    if(dm.sent){ _capNewPin=null; _capSent={name:nm, to:dm.to||''}; _capAdminMsg=''; }
+    else { _capNewPin={name:nm, pin:j.pin, why:dm.why||'', pick:Array.isArray(dm.pick)?dm.pick:[]}; _capAdminMsg=''; }
+    renderContent(); })
+    .catch(function(e){ _capAdminMsg=(e&&e.message)||'Could not make a PIN.'; renderContent(); });
+}
+function capCarName(rkey){ const p=rkey.split('|'); return carLabel(p[0],p[1],+p[2])||((p[1]==='pro'?'Pro ':'Casual ')+(+p[2]+1)); }
 /* the car this device's driver captains in the open race, if any */
 function capMyKey(){ const byId=modelById(), r=wizCar(byId); if(!r.car) return ''; const k=r.car.cls+'|'+r.car.tier+'|'+r.car.ti; return String(capOf(k))===String(r.me.id)?k:''; }
 /* Teams tab, admin: pick the captain and make their PIN. Everyone else just sees who it is. */
@@ -1225,7 +1247,7 @@ function capRowHtml(rkey,members,car){
   let h='<div class="caprow"><span class="meta">Captain</span><select class="avfree" data-action="capset" data-key="'+esc(rkey)+'"><option value="">nobody</option>'
     +members.map(function(m){ return '<option value="'+m.id+'"'+(cm&&m.id===cm.id?' selected':'')+'>'+esc(m.name)+(pctOf[m.id]!=null?' · '+pctOf[m.id]+'%':'')+(sug&&sug.m.id===m.id?' ★':'')+'</option>'; }).join('')+'</select>';
   if(cm&&!pinsKnown) h+='<button class="btn '+(arm?'btn-amber':'btn-ghost')+'" data-action="capnewpin" data-name="'+esc(cm.name)+'" data-key="'+esc(rkey)+'">'+(arm?'Tap again: replaces any PIN they have':'PIN')+'</button>';
-  else if(cm) h+=pin?'<span class="meta">PIN made '+esc(fmtWhen(pin.at*1000))+'</span><button class="btn '+(arm?'btn-amber':'btn-ghost')+'" data-action="capnewpin" data-name="'+esc(cm.name)+'" data-key="'+esc(rkey)+'">'+(arm?'Tap again: old PIN stops working':'New PIN')+'</button>'
+  else if(cm) h+=pin?'<span class="meta">PIN made '+esc(fmtWhen(pin.at*1000))+(pin.sent&&pin.dc?', sent to '+esc(pin.dc):'')+'</span><button class="btn '+(arm?'btn-amber':'btn-ghost')+'" data-action="capnewpin" data-name="'+esc(cm.name)+'" data-key="'+esc(rkey)+'">'+(arm?'Tap again: old PIN stops working':'New PIN')+'</button>'
     :'<button class="btn btn-amber" data-action="capnewpin" data-name="'+esc(cm.name)+'" data-key="'+esc(rkey)+'">Make PIN</button>';
   h+='</div>';
   if(rank.length) h+='<div class="capcov">Race window covered: '+rank.map(function(r){ const me=capIsAdminMe(r.m);
@@ -1234,22 +1256,29 @@ function capRowHtml(rkey,members,car){
   if(cm&&sug&&sug.m.id!==cm.id&&sug.pct>(pctOf[cm.id]||0)) h+='<div class="capsug quiet">'+esc(sug.m.name.split(' ')[0])+' now covers more of the race ('+sug.pct+'% vs '+(pctOf[cm.id]||0)+'%).</div>';
   capOffersFor(rkey).forEach(function(o){ const m=members.find(function(x){ return nameKey(x.name)===nameKey(o.name); }); if(!m||(cm&&m.id===cm.id)) return;
     h+='<div class="capsug">🧢 <b>'+esc(m.name.split(' ')[0])+'</b> offered to captain this car'+(pctOf[m.id]!=null?' ('+pctOf[m.id]+'%)':'')+'. <button class="btn btn-ghost" data-action="capaccept" data-key="'+esc(rkey)+'" data-id="'+m.id+'">Make '+esc(m.name.split(' ')[0])+' captain</button></div>'; });
-  if(cm&&_capNewPin&&nameKey(_capNewPin.name)===nameKey(cm.name))
-    h+='<div class="capnew">PIN for <b>'+esc(cm.name.split(' ')[0])+'</b>: <span class="pin">'+esc(_capNewPin.pin)+'</span>'
+  if(cm&&_capSent&&nameKey(_capSent.name)===nameKey(cm.name)){ const wa=_capArm==='dc|'+nameKey(cm.name);
+    h+='<div class="capnew">✓ PIN sent to <b>'+esc(_capSent.to||cm.name)+'</b> in a Discord DM.'
+      +'<div class="hacts"><button class="btn btn-ghost" data-action="capdone">Done</button><button class="btn '+(wa?'btn-amber':'btn-ghost')+'" data-action="capwrongdc" data-key="'+esc(rkey)+'">'+(wa?'Tap again: cancel that PIN':'Not them? Wrong person')+'</button></div></div>'; }
+  if(cm&&_capNewPin&&nameKey(_capNewPin.name)===nameKey(cm.name)){ const np=_capNewPin, pick=np.pick||[];
+    h+='<div class="capnew">PIN for <b>'+esc(cm.name.split(' ')[0])+'</b>: <span class="pin">'+esc(np.pin)+'</span>'
+      +(np.why?'<div class="meta">Not sent by Discord: '+esc(np.why)+'</div>':'')
       +'<div class="meta">Send it to them privately (a Discord DM). It is only shown now; making a new one replaces it.</div>'
-      +'<div class="hacts"><button class="btn btn-amber" data-action="capcopy" data-key="'+esc(rkey)+'">Copy the message</button><button class="btn btn-ghost" data-action="capdone">Done</button></div></div>';
+      +'<div class="hacts"><button class="btn btn-amber" data-action="capcopy" data-key="'+esc(rkey)+'">Copy the message</button><button class="btn btn-ghost" data-action="capdone">Done</button></div>'
+      +'<div class="meta" style="margin-top:8px">Or let the bot send a new PIN'+(pick.length?' to one of these:':', to their Discord user ID:')+'</div>'
+      +(pick.length?'<div class="hacts">'+pick.map(function(p){ return '<button class="btn btn-ghost" data-action="capdcpick" data-key="'+esc(rkey)+'" data-id="'+esc(p.id)+'">'+esc(p.label)+'</button>'; }).join('')+'</div>':'')
+      +'<div class="hacts"><input type="text" id="capdcid" inputmode="numeric" placeholder="Discord user ID (right-click them → Copy User ID)" style="padding:7px 10px;font-size:12px;min-width:260px"><button class="btn btn-ghost" data-action="capdcsend" data-key="'+esc(rkey)+'">Send</button></div></div>'; }
   if(_capAdminMsg&&cm) h+='<div class="meta" style="margin-top:4px">'+esc(_capAdminMsg)+'</div>';
   return h;
 }
 /* the one place a captain is set: the picker, "Make X captain" (suggestion or offer) */
 function capSetCaptain(key,id){
   state.captains=objOr(state.captains); if(id==null) delete state.captains[key]; else state.captains[key]=+id;
-  _capNewPin=null; _capAdminMsg=''; save(); renderContent();
+  _capNewPin=null; _capSent=null; _capAdminMsg=''; save(); renderContent();
   if(id!=null&&capOffersFor(key).length){ capPinPost({action:'offers_clear', ev:state.evsel, key:key}).catch(function(){}); const o=objOr(CAP_OFFERS[state.evsel]); delete o[key]; }
-  setStatus(id==null?'Captain cleared.':'Captain set. Make them a PIN next.');
+  setStatus(id==null?'Captain cleared.':'Captain set. Make PIN sends them one in a Discord DM.');
 }
 function capPinMessage(rkey){
-  const p=rkey.split('|'), label=carLabel(p[0],p[1],+p[2])||((p[1]==='pro'?'Pro ':'Casual ')+(+p[2]+1)), ev=state.evsel?calEvent(state.evsel):null;
+  const label=capCarName(rkey), ev=state.evsel?calEvent(state.evsel):null;
   const url=(typeof EDR_TB!=='undefined'&&EDR_TB.page)?EDR_TB.page:(location.href.split('#')[0]);
   return 'Hi '+_capNewPin.name.split(' ')[0]+', you\'re the captain of '+label+(ev?' for '+ev.n:'')+'. Your captain PIN is '+_capNewPin.pin+' (keep it to yourself). '
     +'Open the Team Builder, go to Your stints, and enter it under Captain: '+url+'#stints';
