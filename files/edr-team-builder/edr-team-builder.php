@@ -2,7 +2,7 @@
 /**
  * Plugin Name: EDR Team Builder
  * Description: Endurotech Racing endurance team + stint planner. Pulls Garage 61 pace and official iRacing session times, collects driver availability in-house, and builds Pro/Casual teams and stint rotations. Add the [edr_team_builder] shortcode to a page.
- * Version: 3.1.7
+ * Version: 3.1.8
  * Author: Endurotech Racing
  * License: GPL-2.0-or-later
  */
@@ -11,7 +11,7 @@ if (!defined('ABSPATH')) exit; // no direct access
 
 define('EDR_TB_DIR', plugin_dir_path(__FILE__));
 define('EDR_TB_URL', plugin_dir_url(__FILE__));
-define('EDR_TB_VER', '3.1.7');
+define('EDR_TB_VER', '3.1.8');
 
 require_once EDR_TB_DIR . 'includes/garage61.php';
 require_once EDR_TB_DIR . 'includes/iracing.php';
@@ -1824,38 +1824,57 @@ function edr_tb_confirm_status($plan) {
 }
 
 function edr_tb_confirm_text($stage, $plan) {
+    /* 3.1.8: laid out for a phone in Discord. Drivers asked "how do we confirm?" after the
+       one-paragraph 2-day post, so it now says how in three steps, shows each car's driving
+       order in every reader's own time (<t:…> stamps), and the link is wrapped in <> so Discord
+       does not add a page preview under it. */
     $c = edr_tb_confirm_status($plan);
     $evName = explode('|', $c['ev'])[0];
     $url = (string) get_option('edr_tb_page_url', '');
-    $link = $url ? "\n" . $url . '#stints' : '';
+    $open = $url ? '<' . $url . '#stints>' : 'the Team Builder';
     $total = count($c['ok']) + count($c['no']) + count($c['pending']);
     $cant = array();
     foreach ($c['no'] as $n => $st) $cant[] = $n . ($st ? ' (stint ' . implode(', ', $st) . ')' : '');
+    if ($stage !== 'd4' && !$c['pending'] && !$cant) {
+        return array('text' => '✅ Everyone has confirmed their stints for **' . $evName . '**. See you on track.', 'status' => $c);
+    }
+    $t = function ($ms, $f) { return '<t:' . intval(intval($ms) / 1000) . ':' . $f . '>'; };
+    $first = function ($n) { $n = trim((string) $n); return $n === '' ? '' : explode(' ', $n)[0]; };
+    $start = intval($plan['confirm']['start'] ?? 0);
     $lines = array();
-    if ($stage === 'd4') {
-        $lines[] = '🏁 **' . $evName . '** — the stints are set.';
-        $lines[] = 'Check yours and tap **I\'m good for these**, or **I can\'t make one** so we can sort a swap early.' . $link;
+    $lines[] = '🏁 **' . $evName . ': please confirm your stints**';
+    $lines[] = ($stage === 'd4' ? 'The stints are set' : '2 days to go')
+        . ($start ? ' · race day ' . $t($start, 'D') . ', first green flag ' . $t($start, 't') : '')
+        . ' · **' . count($c['ok']) . ' of ' . $total . '** confirmed';
+    $lines[] = '';
+    $lines[] = '**How to confirm** (takes 30 seconds)';
+    $lines[] = '1. Open ' . $open;
+    $lines[] = '2. First time on this phone or PC? Enter your iRacing ID';
+    $lines[] = '3. Check your stint times, then tap **✓ I\'m good for these**';
+    $lines[] = 'Can\'t make one? Tap **✗ I can\'t make one** and pick the stint, so we can sort a swap.';
+    $cars = (array) ($plan['channels']['cars'] ?? array());
+    if ($cars) {
         $lines[] = '';
-        if ($c['pending']) $lines[] = '⏳ Still to confirm: ' . implode(', ', $c['pending']);
-        if ($cant)         $lines[] = '✗ Can\'t make one: ' . implode(', ', $cant);
-        $lines[] = '✓ Confirmed: ' . count($c['ok']) . ' of ' . $total;
-    } else {
-        if (!$c['pending'] && !$cant) {
-            $lines[] = '✅ Everyone has confirmed their stints for **' . $evName . '**. See you on track.';
-        } else {
-            $lines[] = '⏳ **' . $evName . '** is 2 days away.';
-            $q = array();
-            foreach ((array) ($plan['channels']['cars'] ?? array()) as $car) {
-                $bits = array();
-                foreach ((array) ($car['pre'] ?? array()) as $p) if (!empty($p['d'])) $bits[] = strtolower((string) ($p['l'] ?? '')) . ' ' . $p['d'];
-                if ($bits) $q[] = $car['name'] . ': ' . implode(', ', $bits);
+        $lines[] = '**Driving order** (times are your own time zone)';
+        foreach ($cars as $car) {
+            $pre = array(); $who = array();
+            foreach ((array) ($car['pre'] ?? array()) as $x) if (!empty($x['d'])) $who[strtolower((string) ($x['l'] ?? ''))] = (string) $x['d'];
+            if ($who) {
+                $p = $who['practice'] ?? ''; $q = $who['qualifying'] ?? '';
+                $pre[] = ($p !== '' && $p === $q) ? 'practice + qualifying: ' . $p
+                    : implode(', ', array_filter(array($p !== '' ? 'practice: ' . $p : '', $q !== '' ? 'qualifying: ' . $q : '')));
             }
-            if ($q) $lines[] = 'Before the race · ' . implode(' · ', $q) . '.';
-            if ($c['pending']) $lines[] = 'Still waiting on: ' . implode(', ', $c['pending']) . ' — please confirm your stints.' . $link;
-            if ($cant)         $lines[] = '✗ Can\'t make one: ' . implode(', ', $cant) . ' — admins, these need a swap.';
+            $order = array();
+            foreach ((array) ($car['stints'] ?? array()) as $x) $order[] = ($first($x['d'] ?? '') ?: 'open') . ' ' . $t($x['s'] ?? 0, 't');
+            $lines[] = '**' . ($car['name'] ?? 'Car') . '**' . ($pre ? ' · ' . $pre[0] : '');
+            if ($order) $lines[] = implode(' → ', $order);
         }
     }
-    return array('text' => implode("\n", $lines), 'status' => $c);
+    $lines[] = '';
+    if ($c['pending']) $lines[] = '⏳ **Still to confirm:** ' . implode(', ', $c['pending']);
+    if ($cant)         $lines[] = '✗ **Can\'t make one:** ' . implode(', ', $cant) . ' (admins: these need a swap)';
+    if ($c['ok'])      $lines[] = '✓ **Confirmed:** ' . implode(', ', $c['ok']);
+    return array('text' => rtrim(implode("\n", $lines)), 'status' => $c);
 }
 
 function edr_tb_confirm_post($text) {

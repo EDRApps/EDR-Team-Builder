@@ -179,6 +179,12 @@ Details in the plugin's [CLAUDE.md](files/edr-team-builder/CLAUDE.md).
   20:10-22:32 showed busy). Availability changes never re-plan stints by themselves (manual work sticks);
   the lane colours update and **Fix this car** hands the stints out. Smoke test's timezone check is
   case-insensitive (the only "Sydney" for a driver with no stints is an uppercase heading).
+- 3.1.8: the Discord confirmation reminder (`edr_tb_confirm_text`, 4-day and 2-day) is laid out for a phone:
+  title, race day + first green flag as `<t:…>` stamps, "N of M confirmed", a 3-step **How to confirm**, each
+  car's driving order with `<t:…:t>` times (every reader's own zone) and P/Q driver, then Still to confirm /
+  Can't make one / Confirmed. The link is wrapped in `<…>` so Discord adds no preview card. Drivers asked
+  "how do we confirm?" after the old one-paragraph post (26 Nov). The `#stints` link lands a known device on
+  step 4 (Your stints, ✓ I'm good for these); a new device asks for the iRacing ID first, then goes to step 4.
 - **Smoke test (3.1.6)**: `tests/smoke/` opens the built bundle in headless Chrome (puppeteer-core):
   admin desktop + phone (every tab), driver phone in a Sydney clock (steps 2-4, then the Full planner),
   and fails on any script error, "undefined"/"NaN" text, phone overflow, or Stints showing the wrong
