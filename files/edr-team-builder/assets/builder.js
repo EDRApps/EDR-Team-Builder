@@ -2999,12 +2999,27 @@ function carFuelInfo(team, byId, key){
   return {car:car, tank:tank, fpl:fpl, lap:lap, laps:laps, pit:pit, tankMin:laps*lap/60+pit, how:how, g61:g61,
     src:{mine:'your number for this car', model:'your number for every '+car, g61:'Garage 61'+(g61&&g61.byStints?', weighted by stints driven':''), 'default':'the default'}[how]};
 }
+/* 3.2.0: tanks per driver can differ per car (tyrePlan[key].tanks, 1-3); blank = the team setting */
+function teamTanks(){ return Math.max(1,Math.min(4,+state.stint.tanks||2)); }
+function carTanks(key){ const v=+objOr(objOr(state.tyrePlan)[key]).tanks; return (v>=1&&v<=3)?v:teamTanks(); }
 function carStintLen(key, team, byId){
   if(stintMode()!=='fuel') return Math.max(10,state.stint.len);
   if(state.stintsLocked && +objOr(state.stintLens)[key]>0) return +state.stintLens[key];
   const f=carFuelInfo(team,byId,key); if(!f) return Math.max(10,state.stint.len);
-  const tanks=Math.max(1,Math.min(4,+state.stint.tanks||2));
+  const tanks=carTanks(key);
   return Math.max(10, Math.round(f.tankMin*tanks/5)*5);
+}
+/* change one car's tanks: its stints are rebuilt (times, stops, drivers) and, when the plan is
+   locked, frozen again so the other cars and the lock stay exactly as they were */
+function setCarTanks(k,v){
+  state.tyrePlan=objOr(state.tyrePlan); const p=(state.tyrePlan[k]=objOr(state.tyrePlan[k]));
+  if(v>=1&&v<=3) p.tanks=v; else delete p.tanks;
+  delete p.stops;                                   // per-stop tyre picks belonged to the old stops
+  state.stintLens=objOr(state.stintLens); delete state.stintLens[k];
+  delete state.stintAssign[k];
+  const byId=modelById(), c=stintCars(byId).find(function(x){ return x.key===k; });
+  if(c){ state.stintAssign[k]=autoPlan(c.team,byId,c.times); if(state.stintsLocked) state.stintLens[k]=freezeTimes(c); }
+  save(); renderContent();
 }
 /* stint times for one car; in tank mode a leftover shorter than half a stint joins the last stint
    (that driver takes the car to the flag with a short extra stop) instead of a 20-min change */
@@ -3106,7 +3121,7 @@ function carTimes(key, team, byId, off, race){
     if(typeof fr==='object' && Array.isArray(fr.t)) return fr.t.map(function(x,i){ return {s:off+x[0], e:off+x[1], stops:(fr.st&&fr.st[i])||[]}; });
     if(+fr>0) return stintTimes(off,+fr,race);
   }
-  if(stintMode()==='fuel'){ _fuelEq[key]=false; const tk=Math.max(1,Math.min(4,+state.stint.tanks||2)); let f=carFuelInfo(team,byId,key);
+  if(stintMode()==='fuel'){ _fuelEq[key]=false; const tk=carTanks(key); let f=carFuelInfo(team,byId,key);
     if(f){ let t=fuelPlanTimes(off,f,tk,race,key); const a=objOr(state.stintAssign)[key];
       if(f.how==='g61'&&f.g61.byStints&&Array.isArray(a)&&a.length&&a.length!==t.length){ _fuelEq[key]=true; f=carFuelInfo(team,byId,key); t=fuelPlanTimes(off,f,tk,race,key); }
       return t; } }
@@ -3316,6 +3331,11 @@ function renderStints(byId){
         html+='<div class="stintcar'+(key===_phoneCar?' cur':'')+'" data-key="'+esc(key)+'"><div style="display:flex;align-items:center;gap:10px;margin-bottom:12px;flex-wrap:wrap"><span class="swatch" style="background:'+col+'"></span><span class="head" style="letter-spacing:.04em;color:#fff;font-size:15px">'+(_renaming===key
           ? esc(cls)+' · <input class="avfree" data-action="renamesave" data-key="'+key+'" value="'+esc(carLabel(cls,tier,ti)||'')+'" placeholder="'+label[0]+(ti+1)+'" style="font-size:13px;padding:3px 7px;width:150px">'
           : esc(cls)+' · '+(carLabel(cls,tier,ti)?esc(carLabel(cls,tier,ti))+' <span class="meta" style="font-size:11px">'+label[0]+(ti+1)+'</span>':label[0]+(ti+1))+(isAdmin()?' <span class="iconbtn" data-action="renamecar" data-key="'+key+'" title="rename this car" style="cursor:pointer;font-size:12px;opacity:.6">✎</span>':''))+'</span>'+winTabs+badge+(fp.anyCfg?'<span class="meta" style="color:var(--dim)">⛽ '+fp.totLaps+' laps · '+fp.totFuel+'L · '+fp.pits+' stop'+(fp.pits===1?'':'s')+(fp.tyreStops?', '+fp.tyreStops+' with tyres':'')+(fp.lostSec?' ('+fmtLost(fp.lostSec)+' lost)':'')+'</span>':'')+'</div>';
+        if(stintMode()==='fuel'&&isAdmin()){ const own=+objOr(objOr(state.tyrePlan)[key]).tanks||0;
+          html+='<div class="meta" style="margin:-4px 0 6px;font-size:11px;display:flex;gap:6px;align-items:center;flex-wrap:wrap">Stint length for this car:'
+            +[[0,'Team setting ('+teamTanks()+' tank'+(teamTanks()>1?'s':'')+')'],[1,'1 tank'],[2,'2 tanks'],[3,'3 tanks']].map(function(o){ const on=own===o[0], arm=_tankArm===key+'|'+o[0];
+              return '<button class="btn '+(on?'btn-amber':'btn-ghost')+'" data-action="cartanks" data-key="'+esc(key)+'" data-v="'+o[0]+'" style="font-size:10px;padding:4px 10px'+(arm?';color:var(--red);border-color:var(--red)':'')+'">'+(arm?'Tap again: re-plan this car':o[1])+'</button>'; }).join('')
+            +(state.stintsLocked?'<span style="color:var(--dim)">Changing it re-plans this car\'s stints and its drivers confirm again. Other cars stay as they are.</span>':'')+'</div>'; }
         if(stintMode()==='fuel'&&isAdmin()){ const cr=objOr(objOr(state.tyrePlan)[key]);
           html+='<div class="meta" style="margin:-4px 0 6px;font-size:11px">Tyres for this car: <select data-action="cartyre" data-key="'+esc(key)+'"'+(state.stintsLocked?' disabled':'')+' style="font-size:11px;padding:2px 6px">'
             +[['','Team setting ('+({second:'every 2nd stop',every:'every stop',driver:'at driver changes',none:'never'})[tyreRule()]+')'],['second','Every 2nd stop'],['every','Every stop'],['driver','At driver changes'],['none','Never']].map(function(o){ return '<option value="'+o[0]+'"'+(((cr.rule||'')===o[0])?' selected':'')+'>'+o[1]+'</option>'; }).join('')+'</select>'
@@ -3403,7 +3423,7 @@ function renderStints(byId){
   if(_autoHtml) html+='<details class="autobox"'+(_autoOpen?' open':'')+'><summary data-action="autotoggle">Race-day automation: Discord reminders, voice channels, weather</summary><div style="margin-top:12px">'+_autoHtml+'</div></details>';
   return html;
 }
-let _autoOpen=false, _resetArm=false, _phoneCar='';
+let _autoOpen=false, _resetArm=false, _phoneCar='', _tankArm='';
 /* 3.0 "Fix": fill a car's empty and clashing stints with a driver from that car who is free for
    it, least-used first, skipping anyone it would put over 4 h in 6 h. Stints it cannot fill stay
    as they are for a hand decision. */
@@ -3912,6 +3932,11 @@ document.getElementById('content').addEventListener('click',e=>{
   const sno=e.target.closest&&e.target.closest('[data-action="swapno"]');
   if(sno&&isAdmin()){ swapDo('decline',{id:sno.dataset.id}); return; }
   const tz=e.target.closest&&e.target.closest('[data-action="tyreset"]');
+  const ctk=e.target.closest&&e.target.closest('[data-action="cartanks"]');
+  if(ctk){ if(!isAdmin()) return; const k=ctk.dataset.key, v=+ctk.dataset.v||0, cur=+objOr(objOr(state.tyrePlan)[k]).tanks||0;
+    if(v===cur){ _tankArm=''; renderContent(); return; }
+    if(state.stintsLocked && _tankArm!==k+'|'+v){ _tankArm=k+'|'+v; renderContent(); return; }   // locked: second tap re-plans
+    _tankArm=''; setCarTanks(k,v); return; }
   if(tz){ if(!isAdmin()||state.stintsLocked) return; const k=tz.dataset.key, n=+tz.dataset.n, v=tz.dataset.v==='1'; state.tyrePlan=objOr(state.tyrePlan); const p=(state.tyrePlan[k]=objOr(state.tyrePlan[k])); p.stops=objOr(p.stops);
     if(tz.classList.contains('on')) return;
     const r=carTyreRule(k), ps=tz.closest('.pitstop,.stopln'), chg=!!(ps&&ps.classList.contains('chg')), def=!(ps&&ps.classList.contains('sp'))&&(r==='every'||(r==='second'&&n%2===0)||(r==='driver'&&chg));

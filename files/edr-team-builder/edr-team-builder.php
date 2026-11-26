@@ -2,7 +2,7 @@
 /**
  * Plugin Name: EDR Team Builder
  * Description: Endurotech Racing endurance team + stint planner. Pulls Garage 61 pace and official iRacing session times, collects driver availability in-house, and builds Pro/Casual teams and stint rotations. Add the [edr_team_builder] shortcode to a page.
- * Version: 3.1.9
+ * Version: 3.2.0
  * Author: Endurotech Racing
  * License: GPL-2.0-or-later
  */
@@ -11,7 +11,7 @@ if (!defined('ABSPATH')) exit; // no direct access
 
 define('EDR_TB_DIR', plugin_dir_path(__FILE__));
 define('EDR_TB_URL', plugin_dir_url(__FILE__));
-define('EDR_TB_VER', '3.1.9');
+define('EDR_TB_VER', '3.2.0');
 
 require_once EDR_TB_DIR . 'includes/garage61.php';
 require_once EDR_TB_DIR . 'includes/iracing.php';
@@ -2269,12 +2269,81 @@ function edr_tb_rest_plan_set(WP_REST_Request $req) {
             if ($keep) $incoming['evPlans'] = $keep;
         }
     }
+    $before = (array) get_option('edr_tb_plan', array());
     update_option('edr_tb_plan', $incoming, false);
     update_option('edr_tb_plan_rev', $rev + 1, false);
     update_option('edr_tb_plan_updated', current_time('mysql'), false);
     $wpdb->query("SELECT RELEASE_LOCK('edr_tb_plan_write')");
+    if (is_array($incoming)) edr_tb_stint_changes($before, $incoming);
     return rest_ensure_response(array('ok' => true, 'rev' => $rev + 1));
 }
+
+/**
+ * 3.2.0: when a PUBLISHED race's stints change (a driver moved, practice/qualifying swapped, a car
+ * re-planned), say so in the team channel straight away and refresh the car voice channels within
+ * a minute instead of at the next hourly run. Drivers' phones already pick the change up on their
+ * 20-second heartbeat. Publishing itself, unpublished races and finished races stay quiet, and a
+ * stint an admin just moved by approving a swap is left out (the swap already posted it).
+ */
+function edr_tb_stint_change_lines($old, $new, $swaps) {
+    $t = function ($ms) { return '<t:' . intval(intval($ms) / 1000) . ':t>'; };
+    $oc = array(); foreach ((array) ($old['channels']['cars'] ?? array()) as $c) $oc[(string) ($c['key'] ?? '')] = $c;
+    $lines = array();
+    foreach ((array) ($new['channels']['cars'] ?? array()) as $c) {
+        $key = (string) ($c['key'] ?? ''); if ($key === '' || !isset($oc[$key])) continue;
+        $o = $oc[$key]; $name = (string) ($c['name'] ?? 'Car');
+        $ns = array_values((array) ($c['stints'] ?? array())); $os = array_values((array) ($o['stints'] ?? array()));
+        $sameTimes = count($ns) === count($os);
+        if ($sameTimes) foreach ($ns as $i => $x) if (intval($x['s'] ?? 0) !== intval($os[$i]['s'] ?? 0) || intval($x['e'] ?? 0) !== intval($os[$i]['e'] ?? 0)) { $sameTimes = false; break; }
+        if (!$sameTimes) {
+            $order = array(); foreach ($ns as $x) $order[] = (($x['d'] ?? '') !== '' ? $x['d'] : 'open') . ' ' . $t($x['s'] ?? 0);
+            $lines[] = '**' . $name . '**: stints re-planned (' . count($ns) . ' stints now): ' . implode(' → ', $order);
+        } else {
+            foreach ($ns as $i => $x) {
+                $was = (string) ($os[$i]['d'] ?? ''); $now = (string) ($x['d'] ?? '');
+                if ($was === $now) continue;
+                $n = intval($x['n'] ?? ($i + 1)); $viaSwap = false;
+                foreach ($swaps as $w) if (($w['key'] ?? '') === $key && intval($w['n'] ?? -1) === $n - 1 && ($w['st'] ?? '') === 'done'
+                    && time() - intval($w['at'] ?? 0) < 900 && strtolower(explode(' ', trim((string) ($w['to'] ?? '')))[0]) === strtolower($now)) $viaSwap = true;
+                if ($viaSwap) continue;
+                $lines[] = '**' . $name . '** · stint ' . $n . ' ' . $t($x['s'] ?? 0) . ': **' . ($now !== '' ? $now : 'nobody yet') . '**' . ($was !== '' ? ' (was ' . $was . ')' : '');
+            }
+        }
+        $op = array(); foreach ((array) ($o['pre'] ?? array()) as $x) $op[(string) ($x['l'] ?? '')] = (string) ($x['d'] ?? '');
+        foreach ((array) ($c['pre'] ?? array()) as $x) {
+            $l = (string) ($x['l'] ?? ''); $now = (string) ($x['d'] ?? ''); $was = $op[$l] ?? '';
+            if ($l !== '' && $was !== $now) $lines[] = '**' . $name . '** · ' . strtolower($l) . ': **' . ($now !== '' ? $now : 'nobody yet') . '**' . ($was !== '' ? ' (was ' . $was . ')' : '');
+        }
+    }
+    $again = array();
+    $od = (array) ($old['confirm']['drivers'] ?? array());
+    foreach ((array) ($new['confirm']['drivers'] ?? array()) as $nm => $d) if ((string) ($d['sig'] ?? '') !== (string) ($od[$nm]['sig'] ?? '')) $again[] = $nm;
+    return array($lines, $again);
+}
+function edr_tb_stint_changes($before, $after) {
+    $oe = edr_tb_plan_events($before);
+    $allSwaps = (array) get_option('edr_tb_swaps', array());
+    $url = (string) get_option('edr_tb_page_url', '');
+    $vc = (array) get_option('edr_tb_vc', array());
+    $refresh = false;
+    foreach (edr_tb_plan_events($after) as $ev => $p) {
+        if (empty($p['teamsLocked']) || empty($p['stintsLocked'])) continue;           // not published
+        $o = $oe[$ev] ?? null;
+        if (!$o || empty($o['teamsLocked']) || empty($o['stintsLocked'])) continue;    // publishing now: the reminders cover it
+        if ((string) ($p['channels']['ev'] ?? '') !== $ev || (string) ($o['channels']['ev'] ?? '') !== $ev) continue;
+        list($first, $last) = edr_tb_vc_window($p);
+        if ($last && time() > $last) continue;                                           // race over
+        $carsChanged = wp_json_encode($o['channels']['cars'] ?? array()) !== wp_json_encode($p['channels']['cars'] ?? array());
+        if ($carsChanged && !empty($vc[$ev]['chans']) && empty($vc[$ev]['deleted'])) $refresh = true;   // swaps too
+        list($lines, $again) = edr_tb_stint_change_lines($o, $p, (array) ($allSwaps[$ev] ?? array()));
+        if (!$lines) continue;
+        $msg = '🔄 **Stint change · ' . explode('|', $ev)[0] . "**\n" . implode("\n", array_slice($lines, 0, 20));
+        if ($again && (!$first || time() < $first)) $msg .= "\nYour stints changed, please confirm again: " . implode(', ', $again) . ($url ? "\n<" . $url . '#stints>' : '');   // not mid-race
+        if (!empty(edr_tb_settings()['confirm_webhook'])) edr_tb_confirm_post($msg);
+    }
+    if ($refresh && !wp_next_scheduled('edr_tb_vc_refresh')) wp_schedule_single_event(time() + 30, 'edr_tb_vc_refresh');
+}
+add_action('edr_tb_vc_refresh', 'edr_tb_vc_run');   // same job as the hourly one, run once right after a change
 
 function edr_tb_rest_tracks() {
     $s = edr_tb_settings();

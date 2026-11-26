@@ -190,6 +190,15 @@ Details in the plugin's [CLAUDE.md](files/edr-team-builder/CLAUDE.md).
   last one) or "✗ **Name** can't make stint 2 in Pro 1. Admins: this needs a swap." Only for a published race,
   only when the answer's `sig` matches the driver's current `plan.confirm` sig, once per exact answer
   (`edr_tb_confirm_said[ev][name]` = st|sig|cant), never for "clear". Quiet without a webhook.
+- 3.2.0: **tanks per car**: a "Stint length for this car" row (Team setting / 1 / 2 / 3 tanks) on each car in tank
+  mode, stored as `tyrePlan[key].tanks` (`carTanks(key)`, blank = `stint.tanks`). Allowed while published:
+  a second tap (`_tankArm`) re-plans only that car (`setCarTanks`: new times, `autoPlan`, per-stop tyre picks
+  cleared, `stintLens[key]` re-frozen), so only its drivers' confirmations lapse. **Stint-change pings**:
+  `edr_tb_rest_plan_set` diffs the stored vs saved `channels` per published race (`edr_tb_stint_changes`) and
+  posts one "🔄 Stint change" message to the confirmation webhook (moved stints "was X", re-planned cars
+  with the new order, P/Q changes, "please confirm again" for changed drivers before the start only),
+  skips publishing, unpublished/finished races and stints just moved by an approved swap (15 min), and
+  schedules `edr_tb_vc_refresh` (+30 s) so open car voice channels repost within a minute, not hourly.
 - **Smoke test (3.1.6)**: `tests/smoke/` opens the built bundle in headless Chrome (puppeteer-core):
   admin desktop + phone (every tab), driver phone in a Sydney clock (steps 2-4, then the Full planner),
   and fails on any script error, "undefined"/"NaN" text, phone overflow, or Stints showing the wrong
