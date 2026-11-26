@@ -185,6 +185,11 @@ Details in the plugin's [CLAUDE.md](files/edr-team-builder/CLAUDE.md).
   Can't make one / Confirmed. The link is wrapped in `<…>` so Discord adds no preview card. Drivers asked
   "how do we confirm?" after the old one-paragraph post (26 Nov). The `#stints` link lands a known device on
   step 4 (Your stints, ✓ I'm good for these); a new device asks for the iRacing ID first, then goes to step 4.
+- 3.1.9: every stint answer posts one line to the confirmation webhook (`edr_tb_confirm_announce`, called
+  from `/confirm`): "✅ Confirmed: **Name** · Pro 2, stint 4 · 4 of 11 in" (plus "🏁 That's everyone" on the
+  last one) or "✗ **Name** can't make stint 2 in Pro 1. Admins: this needs a swap." Only for a published race,
+  only when the answer's `sig` matches the driver's current `plan.confirm` sig, once per exact answer
+  (`edr_tb_confirm_said[ev][name]` = st|sig|cant), never for "clear". Quiet without a webhook.
 - **Smoke test (3.1.6)**: `tests/smoke/` opens the built bundle in headless Chrome (puppeteer-core):
   admin desktop + phone (every tab), driver phone in a Sydney clock (steps 2-4, then the Full planner),
   and fails on any script error, "undefined"/"NaN" text, phone overflow, or Stints showing the wrong

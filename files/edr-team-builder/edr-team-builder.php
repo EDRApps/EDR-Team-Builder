@@ -2,7 +2,7 @@
 /**
  * Plugin Name: EDR Team Builder
  * Description: Endurotech Racing endurance team + stint planner. Pulls Garage 61 pace and official iRacing session times, collects driver availability in-house, and builds Pro/Casual teams and stint rotations. Add the [edr_team_builder] shortcode to a page.
- * Version: 3.1.8
+ * Version: 3.1.9
  * Author: Endurotech Racing
  * License: GPL-2.0-or-later
  */
@@ -11,7 +11,7 @@ if (!defined('ABSPATH')) exit; // no direct access
 
 define('EDR_TB_DIR', plugin_dir_path(__FILE__));
 define('EDR_TB_URL', plugin_dir_url(__FILE__));
-define('EDR_TB_VER', '3.1.8');
+define('EDR_TB_VER', '3.1.9');
 
 require_once EDR_TB_DIR . 'includes/garage61.php';
 require_once EDR_TB_DIR . 'includes/iracing.php';
@@ -1540,7 +1540,44 @@ function edr_tb_rest_confirm_set(WP_REST_Request $req) {
     update_option('edr_tb_confirm', $all, false);
     edr_tb_bump_avail_rev();   // admins see it on their next heartbeat
     $wpdb->query("SELECT RELEASE_LOCK('edr_tb_avail_write')");
+    if ($st !== 'clear') edr_tb_confirm_announce($ev, $name, $st, $sig, $cant);
     return rest_ensure_response(array('ok' => true, 'rec' => $all[$ev][$name] ?? null));
+}
+
+/**
+ * 3.1.9: one line in the team channel each time a driver answers, e.g.
+ * "✅ Confirmed: **Jake Lennox-Bradley** · Pro 2, stint 4 · 4 of 11 in". Only for a published race
+ * (line-up and stints locked), only for an answer against the driver's CURRENT stints, and only once
+ * per answer: tapping again, or "change my answer" then the same answer, posts nothing new
+ * (edr_tb_confirm_said remembers what was announced). Quiet when no webhook is set.
+ */
+function edr_tb_confirm_announce($ev, $name, $st, $sig, $cant) {
+    $s = edr_tb_settings();
+    if (empty($s['confirm_webhook'])) return;
+    $plan = edr_tb_plan_event((array) get_option('edr_tb_plan', array()), $ev);
+    if (!$plan || empty($plan['teamsLocked']) || empty($plan['stintsLocked'])) return;
+    $c = (isset($plan['confirm']) && is_array($plan['confirm'])) ? $plan['confirm'] : array();
+    if ((string) ($c['ev'] ?? '') !== $ev) return;
+    $d = (isset($c['drivers'][$name]) && is_array($c['drivers'][$name])) ? $c['drivers'][$name] : null;
+    if (!$d || (string) ($d['sig'] ?? '') !== (string) $sig) return;      // stale page or not driving: say nothing
+    $key = $st . '|' . $sig . ($st === 'no' ? '|' . implode(',', $cant) : '');
+    $said = (array) get_option('edr_tb_confirm_said', array());
+    if (isset($said[$ev][$name]) && $said[$ev][$name] === $key) return;    // already announced this exact answer
+    foreach (array_keys($said) as $k) if ($k !== $ev && count($said) > 20) unset($said[$k]);   // keep it small
+    $said[$ev][$name] = $key;
+    update_option('edr_tb_confirm_said', $said, false);
+    $status = edr_tb_confirm_status($plan);
+    $total = count($status['ok']) + count($status['no']) + count($status['pending']);
+    $car = (string) ($d['car'] ?? '');
+    $stints = array_map('intval', (array) ($d['stints'] ?? array()));
+    $where = trim($car . ($stints ? ', stint' . (count($stints) > 1 ? 's ' : ' ') . implode(' + ', $stints) : ''), ', ');
+    if ($st === 'ok') {
+        $msg = '✅ Confirmed: **' . $name . '**' . ($where !== '' ? ' · ' . $where : '') . ' · ' . count($status['ok']) . ' of ' . $total . ' in';
+        if (!$status['pending'] && !$status['no']) $msg .= "\n🏁 That's everyone. All stints confirmed for **" . explode('|', $ev)[0] . '**.';
+    } else {
+        $msg = '✗ **' . $name . '** can\'t make ' . ($cant ? 'stint ' . implode(' + ', $cant) : 'one of their stints') . ($car !== '' ? ' in ' . $car : '') . '. Admins: this needs a swap.';
+    }
+    edr_tb_confirm_post($msg);
 }
 
 /**
